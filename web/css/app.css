@@ -1,0 +1,310 @@
+@import url("./tokens.css");
+
+/* ---- 基礎 ------------------------------------------------------------- */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 var(--t-md)/1.6 var(--font-ui);
+  font-feature-settings: "kern" 1;
+  text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3 { margin: 0; font-weight: 600; line-height: 1.25; letter-spacing: -0.01em; }
+p { margin: 0; }
+button, input, select { font: inherit; color: inherit; }
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+:focus:not(:focus-visible) { outline: none; }
+
+.sr {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+
+.skip {
+  position: absolute; left: var(--s3); top: -100px; z-index: var(--z-toast);
+  padding: var(--s2) var(--s4); background: var(--surface); color: var(--text);
+  border: 1px solid var(--border-strong); border-radius: var(--r-control);
+}
+.skip:focus { top: var(--s3); }
+
+/* 數字一律等寬對齊，統計數字才不會左右跳。 */
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+
+/* 法文一律用襯線，而且標好語言讓瀏覽器套對的斷字與引號規則。 */
+.fr { font-family: var(--font-fr); }
+
+/* ---- 版面骨架 --------------------------------------------------------- */
+
+.shell {
+  display: grid;
+  grid-template-columns: 216px minmax(0, 1fr);
+  min-height: 100dvh;
+}
+
+.rail {
+  position: sticky; top: 0; align-self: start;
+  height: 100dvh; display: flex; flex-direction: column;
+  padding: var(--s5) var(--s3) var(--s4);
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.brand {
+  display: flex; align-items: baseline; gap: var(--s2);
+  padding: 0 var(--s2) var(--s5);
+}
+.brand b { font-size: var(--t-lg); font-weight: 600; letter-spacing: -0.02em; }
+.brand span { font-size: var(--t-xs); color: var(--text-faint); }
+
+.nav { display: flex; flex-direction: column; gap: 2px; }
+
+.nav a {
+  display: flex; align-items: center; gap: var(--s3);
+  min-height: 40px; padding: 0 var(--s3);
+  border-radius: var(--r-control);
+  color: var(--text-muted); text-decoration: none;
+  transition: background var(--dur-out) var(--ease), color var(--dur-out) var(--ease);
+}
+.nav a:hover { background: var(--sunken); color: var(--text); }
+.nav a[aria-current="page"] {
+  background: var(--accent-weak); color: var(--accent); font-weight: 600;
+}
+.nav a svg { flex: none; width: 18px; height: 18px; }
+.nav .badge {
+  margin-left: auto; min-width: 22px; padding: 1px 6px;
+  border-radius: var(--r-pill); background: var(--accent); color: var(--accent-on);
+  font-family: var(--font-num); font-size: var(--t-xs); text-align: center;
+}
+.nav a[aria-current="page"] .badge { background: var(--accent); }
+
+.rail-foot {
+  margin-top: auto; padding-top: var(--s4);
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s2);
+  border-top: 1px solid var(--border);
+  font-size: var(--t-xs); color: var(--text-faint);
+}
+
+.main { min-width: 0; padding: var(--s6) var(--s6) var(--s8); }
+.wrap { max-width: 940px; margin: 0 auto; }
+
+.page-head {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: var(--s4); margin-bottom: var(--s5);
+}
+.page-head h1 { font-size: var(--t-2xl); }
+.page-head p { color: var(--text-muted); font-size: var(--t-sm); margin-top: var(--s1); }
+
+/* ---- 元件 ------------------------------------------------------------- */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-card);
+}
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--s2);
+  min-height: 40px; padding: 0 var(--s4);
+  border: 1px solid var(--border-strong); border-radius: var(--r-control);
+  background: var(--surface); color: var(--text);
+  font-size: var(--t-md); font-weight: 500; cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--dur-out) var(--ease), border-color var(--dur-out) var(--ease),
+              transform var(--dur-out) var(--ease);
+}
+.btn:hover:not(:disabled) { background: var(--sunken); }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.btn-primary {
+  background: var(--accent); border-color: var(--accent); color: var(--accent-on);
+}
+.btn-primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+
+.btn-quiet { border-color: transparent; background: transparent; color: var(--text-muted); }
+.btn-quiet:hover:not(:disabled) { background: var(--sunken); color: var(--text); }
+
+.btn-sm { min-height: 32px; padding: 0 var(--s3); font-size: var(--t-sm); }
+
+.field { display: flex; flex-direction: column; gap: var(--s1); }
+.field label { font-size: var(--t-sm); font-weight: 500; }
+.field .hint { font-size: var(--t-xs); color: var(--text-faint); }
+
+.input {
+  min-height: 40px; padding: 0 var(--s3);
+  background: var(--surface); border: 1px solid var(--border-strong);
+  border-radius: var(--r-control); color: var(--text);
+}
+.input:focus-visible { border-color: var(--accent); }
+
+.chip {
+  display: inline-flex; align-items: center; gap: var(--s1);
+  padding: 2px var(--s2); border-radius: var(--r-pill);
+  background: var(--sunken); color: var(--text-muted);
+  font-size: var(--t-xs); white-space: nowrap;
+}
+.chip-accent { background: var(--accent-weak); color: var(--accent); }
+
+/* 篩選用的多選 chip。用真的 checkbox，鍵盤與螢幕閱讀器都能用。 */
+.toggle { position: relative; display: inline-flex; }
+.toggle input {
+  position: absolute; inset: 0; opacity: 0; cursor: pointer; margin: 0;
+}
+.toggle span {
+  display: inline-flex; align-items: center; min-height: 32px; padding: 0 var(--s3);
+  border: 1px solid var(--border-strong); border-radius: var(--r-pill);
+  font-size: var(--t-sm); color: var(--text-muted);
+  transition: background var(--dur-out) var(--ease), color var(--dur-out) var(--ease);
+}
+.toggle input:checked + span {
+  background: var(--accent-weak); border-color: var(--accent); color: var(--accent); font-weight: 500;
+}
+.toggle input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px; }
+.toggle:hover span { background: var(--sunken); }
+
+/* ---- 狀態 ------------------------------------------------------------- */
+
+.empty, .errorbox {
+  display: flex; flex-direction: column; align-items: center; gap: var(--s3);
+  padding: var(--s8) var(--s5); text-align: center;
+}
+.empty h2 { font-size: var(--t-lg); }
+/* icon() 產出的 svg 沒有 width/height 屬性，尺寸一律由 CSS 給。
+   漏掉這一條的話它會撐成容器寬（實測 570px），空狀態變成一顆巨大的放大鏡。 */
+.empty svg, .errorbox svg { flex: none; width: 28px; height: 28px; color: var(--text-faint); }
+.empty p, .errorbox p { color: var(--text-muted); max-width: 42ch; font-size: var(--t-sm); }
+.errorbox { color: var(--bad); }
+.errorbox p { color: var(--text-muted); }
+.empty .sub { font-size: var(--t-xs); color: var(--text-faint); }
+
+.skeleton {
+  background: var(--sunken); border-radius: var(--r-control);
+  animation: pulse 1.4s var(--ease) infinite;
+}
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
+
+.toast {
+  position: fixed; left: 50%; bottom: var(--s5); transform: translateX(-50%);
+  z-index: var(--z-toast);
+  display: flex; align-items: center; gap: var(--s3);
+  padding: var(--s3) var(--s4);
+  background: var(--surface); border: 1px solid var(--border-strong);
+  border-radius: var(--r-control); box-shadow: var(--shadow-pop);
+  font-size: var(--t-sm); max-width: min(90vw, 520px);
+}
+.toast[data-tone="bad"] { border-color: var(--bad); color: var(--bad); }
+
+/* ---- 側欄：篩選、設定、佈景 ------------------------------------------- */
+
+.brand { color: inherit; text-decoration: none; }
+.brand:hover b { color: var(--accent); }
+
+/*
+ * 範圍篩選常駐在側欄，不收進選單裡。
+ * 「我現在只練動詞變位」是每天都會改的東西，藏兩層就不會有人用。
+ */
+.scope { padding: var(--s5) var(--s2) 0; }
+.scope-h {
+  font-size: var(--t-xs); font-weight: 500; color: var(--text-faint);
+  letter-spacing: 0.04em; margin-bottom: var(--s2);
+}
+.scope-h + .toggles { margin-bottom: var(--s4); }
+.toggles { display: flex; flex-wrap: wrap; gap: var(--s1); }
+.scope-note { font-size: var(--t-xs); color: var(--text-faint); line-height: 1.5; }
+
+.rail-foot { flex-wrap: wrap; }
+.rail-actions { display: flex; align-items: center; gap: var(--s1); }
+.built { font-family: var(--font-num); font-size: var(--t-xs); color: var(--text-faint); }
+.theme svg { width: 15px; height: 15px; }
+
+/* ---- 設定面板 --------------------------------------------------------- */
+
+/*
+ * 用原生 <dialog>：Esc 關閉、焦點鎖在面板內、背景不可點，
+ * 這三件事自己實作一定會漏掉其中一件。
+ */
+.sheet {
+  width: min(440px, calc(100vw - var(--s6)));
+  padding: 0; border: 1px solid var(--border-strong); border-radius: var(--r-card);
+  background: var(--surface); color: var(--text);
+  box-shadow: var(--shadow-pop);
+}
+.sheet::backdrop { background: rgba(0, 0, 0, 0.32); }
+.sheet-body { display: flex; flex-direction: column; gap: var(--s5); padding: var(--s5); }
+.sheet-body > h2 { font-size: var(--t-lg); }
+.sheet-foot { display: flex; justify-content: flex-end; gap: var(--s2); }
+.field-error { font-size: var(--t-sm); color: var(--bad); }
+.range-row { display: flex; align-items: center; gap: var(--s3); }
+.range-row input[type="range"] { flex: 1; accent-color: var(--accent); }
+.range-row output { min-width: 4ch; text-align: right; font-size: var(--t-md); }
+
+.toasts { position: fixed; inset: auto 0 0 0; z-index: var(--z-toast); pointer-events: none; }
+.toasts .toast { pointer-events: auto; }
+
+.noscript {
+  margin: var(--s6) auto; max-width: 42ch; padding: var(--s4);
+  border: 1px solid var(--bad); border-radius: var(--r-card); color: var(--bad);
+  text-align: center;
+}
+
+/* ---- 響應式 ----------------------------------------------------------- */
+
+@media (max-width: 860px) {
+  .shell { grid-template-columns: minmax(0, 1fr); }
+  .rail {
+    flex-wrap: wrap;
+    position: sticky; top: 0; z-index: var(--z-sticky);
+    height: auto; flex-direction: row; align-items: center; gap: var(--s3);
+    padding: var(--s2) var(--s3);
+    border-right: none; border-bottom: 1px solid var(--border);
+  }
+  .brand { padding: 0; }
+  .brand span { display: none; }
+  /* 導覽移到畫面底部。留在置頂列裡的話，品牌與設定會把它擠到剩約 105px
+     （四個項目實測要 207px），後兩個分頁就只能靠一個沒有任何提示的橫向捲軸才點得到。
+     底部列是拇指最好按的位置，也讓四個標籤都能寫出來。 */
+  .nav {
+    position: fixed; inset: auto 0 0 0; z-index: var(--z-sticky);
+    flex-direction: row; gap: 0;
+    padding: var(--s1) var(--s2);
+    padding-bottom: calc(var(--s1) + env(safe-area-inset-bottom));
+    background: var(--surface); border-top: 1px solid var(--border);
+  }
+  .nav a {
+    position: relative; flex: 1 1 0; min-width: 0;
+    flex-direction: column; justify-content: center; gap: 2px;
+    min-height: 46px; padding: 0 var(--s1);
+    font-size: var(--t-xs);
+  }
+  .nav a .label { white-space: nowrap; }
+  /* 直向排列時 margin-left:auto 推不動了，改用絕對定位釘在圖示右上。 */
+  .nav .badge { position: absolute; top: 2px; left: 50%; margin: 0 0 0 6px; }
+  .rail .toggle, .rail-foot .btn { min-height: 40px; }
+  .rail-foot { margin: 0 0 0 auto; padding: 0; border: none; }
+  .rail-foot .built { display: none; }
+  /* 篩選改成第二列的橫向捲軸；標題與說明在這個寬度只是噪音。 */
+  .scope { order: 9; flex-basis: 100%; display: flex; gap: var(--s1);
+           overflow-x: auto; padding: var(--s1) 0 0; }
+  .scope-h, .scope-note { display: none; }
+  .scope .toggles { flex-wrap: nowrap; margin: 0; }
+  .toggle span { white-space: nowrap; }
+  /* toast 也要避開底部導覽，不然批改結果會被蓋掉一半。 */
+  .toast { bottom: calc(var(--s5) + 60px + env(safe-area-inset-bottom)); }
+  /* 底部導覽是 fixed，內容要自己讓出那一條的高度，否則最後一列永遠被蓋住。 */
+  .main { padding: var(--s4) var(--s4) calc(var(--s8) + 60px + env(safe-area-inset-bottom)); }
+  .page-head { flex-direction: column; align-items: stretch; }
+}

@@ -1,43 +1,40 @@
-# ccarchive — 專案規則
+# cadence — 專案規則
 
-## 這個 repo 是什麼
-Claude Code 對話存檔（`~/.claude/projects`）的索引、分岔分析、檢索與回收工具。
-純 Node ESM，零第三方依賴，只用內建模組。
+本地法文複習工作台。改這個 repo 之前先讀 [README.md](README.md) 與 [docs/](docs/)。
 
-## 不可違反的規則
+## 不可協商的四條
 
-1. **`~/.claude` 一律唯讀。** 除了 `reclaim --apply` 與 `undo` 這兩條明確的路徑之外，
-   任何程式碼都不得寫入、移動或刪除存檔目錄下的東西。新增指令時預設就是唯讀。
-2. **`memory/`、`todos/`、`shell-snapshots/`、`scripts/` 永不進入任何計畫。**
-   這幾個目錄在 `src/scan.mjs` 的 `RESERVED_DIRS` 定義，掃描階段就排除。
-   `memory/` 存的是跨對話持久記憶，誤刪無法重建。
-3. **`reclaim` 預設是 dry-run。** `--apply` 必須同時有 `--yes`。
-   `--apply` 的語意是「搬到隔離區並寫 manifest」，不是刪除，且必須能 `undo` 回去。
-4. **不得引入第三方依賴。** 需要什麼就用 Node 內建模組實作。
-   `package.json` 不該出現 `dependencies` 或 `devDependencies`。
-5. **開發時不要對真實存檔跑 `reclaim --apply`。** 要驗證就在 `os.tmpdir()` 造假存檔。
+1. **零第三方依賴。** `dependencies` 與 `devDependencies` 都必須維持空的。要用的東西只能來自 Node 內建模組（含 `node:sqlite`）或自己寫。引一個套件之前先問使用者。
+2. **`data/reviews.jsonl` 只增不改。** 它是唯一不可重建的資料。任何操作都不得改寫或刪除既有的行。schema 要加欄位就加，舊行少欄位由讀取端處理。
+3. **GPL-2.0 隔離。** Verbiste 的 XML 只在 `npm run build` 時讀取，產物一律寫進 `data/bank/`，而 `data/bank/` 在 `.gitignore` 裡。不得把任何變位衍生資料提交進版控，不得把 Verbiste 內容內嵌進 `src/`。
+4. **法文重音完整保留。** 程式碼、測試、資料、註解裡的 `é è ê ë à â ù û ü ï î ç œ æ` 一律原樣，不得轉成 ASCII 替代。
 
-## 語言
-- 程式碼註解、CLI 輸出、文件、commit message 全部用繁體中文。
-- 註解寫「為什麼這樣做」，不要覆述程式碼在做什麼。
+## 改動前後要跑的
 
-## 程式碼慣例
-- ESM、Node 24 以上。`node:` 前綴的內建模組。
-- 每個指令是 `src/commands/<name>.mjs`，匯出 `spec`、`help()`、`run(args)`。
-  `run` 回傳 process exit code。
-- 終端輸出一律走 `src/fmt.mjs`（表格要算東亞寬度，直接用 `padEnd` 中文會歪）。
-- 每個指令都要支援 `--json`，且 JSON 路徑不印任何人類文字。
-- 顏色透過 `src/fmt.mjs` 的 `c`，會自動偵測 `NO_COLOR` 與非 TTY。
-
-## 測試
 ```bash
-npm test      # node --test，測試檔是 test/*.test.mjs
-npm run lint  # node --check 全部檔案
+npm run lint   # node --check 全檔
+npm test       # 100 題，含 732 組 FSRS 黃金向量
 ```
-- 測試不得讀寫真實的 `~/.claude`。fixture 一律用 `test/helpers.mjs` 建在 `os.tmpdir()`。
-- `test/cli.test.mjs` 是 subprocess 煙霧測試，靠 `CCARCHIVE_ROOT` / `CCARCHIVE_OUT`
-  兩個環境變數把整個 CLI 指到假存檔。新增指令要在那裡補一條。
-- 改到 `reclaim` 或 `undo` 時，往返還原的逐位元組一致性測試必須維持綠燈。
 
-## 輸出目錄
-`.ccarchive/` 是產物（索引、報表、匯出、隔離區），已在 `.gitignore`，不要提交。
+兩個都綠才算完成。動到 `src/engine/fsrs.mjs` 時，黃金向量測試紅了代表移植跑掉了，不要改測試去配合實作。
+
+## 前端
+
+- 顏色只從 `web/css/tokens.css` 拿，其他檔案不寫十六進位色碼。改 token 之前先算對比度：內文與圖示文字要 4.5:1（WCAG 1.4.3），按鈕與輸入框的外框要 3:1（WCAG 1.4.11）。明暗兩套都要算。
+- 不用 `innerHTML`。`dom.mjs` 的 `h()` 沒有提供這個入口，繞過去等於自己開一個 XSS。
+- `icon()` 產出的 SVG 沒有 width/height，尺寸一律由 CSS 給。新增用到圖示的地方時記得配一條尺寸規則。
+- 手機版導覽是 `position: fixed` 的底部標籤列。改 `.main` 的 padding 或 `.toast` 的 bottom 時要一起考慮那條的高度。
+- 圖表手寫在 `web/js/charts.mjs`，不引圖表庫。
+
+## 資料來源
+
+`src/build/sources.mjs` 是唯一知道外部目錄長什麼樣的檔案。路徑要改就改那裡，或設環境變數 `CADENCE_FEXGEN`／`CADENCE_VERBISTE`／`CADENCE_VAULT`。其他模組不得自己拼路徑。
+
+三個來源都在這台機器上，**都不屬於本專案**：
+
+- `french-exam-generator` 有另一個 session 在改，不要動它的檔案。
+- `Ricky-KnowledgeBase` 是獨立的 git repo，未經使用者確認不得修改其中任何既有檔案。
+
+## 註解
+
+用繁體中文，寫「為什麼」不寫「做什麼」。既有註解裡有好幾條記著實測數字與踩過的坑（銀行家捨入、viewBox 字級縮放、gloss 覆蓋），那些是這個 repo 最容易在重構時被弄丟的東西，不要刪。

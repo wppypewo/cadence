@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>cadence</title>
+<link rel="stylesheet" href="/css/app.css">
+<link rel="stylesheet" href="/css/views.css">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+</head>
+<body>
+<a class="skip" href="#view">跳到主要內容</a>
+
+<div class="shell">
+  <header class="rail" id="rail">
+    <a class="brand" href="#review">
+      <b>cadence</b>
+      <span id="brand-sub"></span>
+    </a>
+    <!-- 導覽、篩選、設定、佈景由 app.mjs 建；這裡只留掛載點。 -->
+  </header>
+
+  <!-- tabindex="-1" 讓換頁時可以把焦點移進來，鍵盤使用者才不會停在側欄。 -->
+  <main class="main" id="view" tabindex="-1"></main>
+</div>
+
+<div class="toasts" id="toasts"></div>
+<!-- 批改結果、載入狀態的語音播報。視覺上不存在，但一定要在 DOM 裡。 -->
+<div class="sr" id="live" aria-live="polite" aria-atomic="true"></div>
+
+<noscript>
+  <p class="noscript">cadence 需要 JavaScript：批改、排程與圖表都在瀏覽器裡跑。</p>
+</noscript>
+
+<script type="module" src="/js/app.mjs"></script>
+</body>
+</html>

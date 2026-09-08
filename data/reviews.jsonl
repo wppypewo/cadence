@@ -1,0 +1,5 @@
+{"v":1,"card":"c:être|cond|0","at":"2026-09-08T16:37:56.138Z","day":"2026-09-09","rating":3,"elapsed":0,"answered":"serais","correct":true,"reason":"exact","ms":44157}
+{"v":1,"card":"c:être|cond|1","at":"2026-09-08T16:41:47.816Z","day":"2026-09-09","rating":3,"elapsed":0,"answered":"serais","correct":true,"reason":"exact","ms":181080}
+{"v":1,"card":"c:être|cond|2","at":"2026-09-08T16:43:55.851Z","day":"2026-09-09","rating":1,"elapsed":0,"answered":"serais","correct":false,"reason":"wrong","ms":12518}
+{"v":1,"card":"c:être|cond|3","at":"2026-09-08T16:44:48.204Z","day":"2026-09-09","rating":3,"elapsed":0,"answered":"serions","correct":true,"reason":"exact","ms":4882}
+{"v":1,"card":"c:être|cond|4","at":"2026-09-08T21:06:45.932Z","day":"2026-09-09","rating":1,"elapsed":0,"answered":"etes","correct":false,"reason":"wrong","ms":47311}

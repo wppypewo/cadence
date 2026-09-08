@@ -1,24 +1,20 @@
 {
-  "name": "ccarchive",
-  "version": "0.1.0",
-  "description": "Claude Code 對話存檔的索引、分岔分析、檢索與回收工具",
+  "name": "cadence",
+  "version": "1.0.0",
+  "description": "本地法文複習工作台：把已經存在的詞彙表、變位表與連接詞規則變成每天真的會打開的東西",
   "type": "module",
-  "license": "MIT",
   "private": true,
-  "bin": {
-    "ccarchive": "./bin/ccarchive.mjs"
-  },
-  "engines": {
-    "node": ">=24.0.0"
-  },
+  "engines": { "node": ">=24" },
+  "bin": { "cadence": "./bin/cadence.mjs" },
   "scripts": {
-    "test": "node --test --experimental-test-isolation=none \"test/*.test.mjs\"",
-    "test:watch": "node --test --watch \"test/*.test.mjs\"",
-    "lint": "for f in bin/*.mjs src/*.mjs src/*/*.mjs test/*.mjs; do node --check \"$f\" || exit 1; done && echo \"語法檢查通過\""
+    "start": "node bin/cadence.mjs serve",
+    "build": "node bin/cadence.mjs build",
+    "reindex": "node bin/cadence.mjs reindex",
+    "stats": "node bin/cadence.mjs stats",
+    "doctor": "node bin/cadence.mjs doctor",
+    "test": "node --test 'tests/*.test.mjs'",
+    "lint": "node --check bin/cadence.mjs && for f in src/*.mjs src/*/*.mjs web/js/*.mjs tests/*.mjs; do node --check \"$f\" || exit 1; done"
   },
-  "files": [
-    "bin",
-    "src",
-    "README.md"
-  ]
+  "dependencies": {},
+  "devDependencies": {}
 }

@@ -1,8 +1,18 @@
-# 索引、報表、匯出與隔離區，全部可重新產生
-.ccarchive/
+# 由 `npm run build` 從 vault 與 french-exam-generator 現算，隨時可重建。
+# 其中變位表衍生自 Verbiste（GPL-2.0），刻意不進本 repo，詳見 README「資料與授權」。
+data/bank/
+
+# SQLite 索引，由 data/reviews.jsonl 重建（npm run reindex）。
+data/cadence.db
+data/cadence.db-journal
+data/cadence.db-wal
+data/cadence.db-shm
 
 node_modules/
 npm-debug.log*
 
 .DS_Store
 *.swp
+
+# 前一個專案（ccarchive）留下的索引與報表，與 cadence 無關，可整個刪除。
+.ccarchive/
