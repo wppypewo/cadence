@@ -1,0 +1,24 @@
+{
+  "name": "ccarchive",
+  "version": "0.1.0",
+  "description": "Claude Code 對話存檔的索引、分岔分析、檢索與回收工具",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "bin": {
+    "ccarchive": "./bin/ccarchive.mjs"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "test": "node --test --experimental-test-isolation=none \"test/*.test.mjs\"",
+    "test:watch": "node --test --watch \"test/*.test.mjs\"",
+    "lint": "for f in bin/*.mjs src/*.mjs src/*/*.mjs test/*.mjs; do node --check \"$f\" || exit 1; done && echo \"語法檢查通過\""
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md"
+  ]
+}

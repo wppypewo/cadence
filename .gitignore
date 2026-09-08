@@ -1,0 +1,8 @@
+# 索引、報表、匯出與隔離區，全部可重新產生
+.ccarchive/
+
+node_modules/
+npm-debug.log*
+
+.DS_Store
+*.swp
