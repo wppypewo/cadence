@@ -36,5 +36,6 @@ export const api = {
   settings: () => call('GET', '/api/settings'),
   saveSettings: (body) => call('POST', '/api/settings', { body }),
   review: (body) => call('POST', '/api/review', { body }),
+  checkin: (body) => call('POST', '/api/checkin', { body }),
   verb: (name) => call('GET', `/api/verb/${encodeURIComponent(name)}`),
 };

@@ -1,10 +1,12 @@
 /**
  * 儲存層：一份不可重建的事實紀錄，加一份隨時可丟的索引。
  *
- *   data/reviews.jsonl  每次作答一行 JSON，只增不改。這是唯一的事實來源，
- *                       進版控，十年後用 cat 就讀得懂，不依賴本專案還活著。
+ *   data/reviews.jsonl  每次作答一行 JSON，只增不改。進版控，十年後用 cat 就讀得懂，
+ *                       不依賴本專案還活著。
+ *   data/checkins.jsonl CO／PO 兩科的手動打卡，同樣只增不改、同樣進版控。
+ *                       那兩科沒有卡片，「今天做了」除了自己按一下之外沒有別的來源。
  *   data/cadence.db     SQLite。題庫、FSRS 記憶狀態、統計都在這裡，
- *                       全部可由上面那個檔重算（cadence reindex），不進版控。
+ *                       全部可由上面兩個檔重算（cadence reindex），不進版控。
  *
  * 這樣切的理由：SQLite 檔壞掉、schema 改版、或這個專案被丟掉，
  * 使用者練了幾百天的紀錄都還在，而且是人看得懂的格式。
@@ -61,6 +63,17 @@ CREATE INDEX IF NOT EXISTS reviews_card ON reviews(card_id);
 CREATE INDEX IF NOT EXISTS reviews_at ON reviews(at);
 CREATE INDEX IF NOT EXISTS reviews_day ON reviews(day);
 
+-- data/checkins.jsonl 的鏡像。CO／PO 沒有卡片，只有「今天做過了」這一件事。
+-- 一科一天一列，(skill, day) 為主鍵；撤銷是追加一行 done=0，重放時後寫的蓋過先寫的。
+CREATE TABLE IF NOT EXISTS checkins (
+  skill TEXT NOT NULL,
+  day   TEXT NOT NULL,
+  done  INTEGER NOT NULL,
+  at    TEXT NOT NULL,
+  PRIMARY KEY (skill, day)
+);
+CREATE INDEX IF NOT EXISTS checkins_day ON checkins(day);
+
 CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -68,6 +81,9 @@ CREATE TABLE IF NOT EXISTS settings (
 `;
 
 const DAY_MS = 86_400_000;
+
+/** 可以手動打卡的科目。只有這兩科沒有卡片，其餘五種題型的進度是卡片自己記的。 */
+export const CHECKIN_SKILLS = ['CO', 'PO'];
 
 /** 以本地時區算「哪一天」。用 UTC 會讓深夜複習被算到隔天，統計就對不上感覺。 */
 export function localDay(date = new Date()) {
@@ -127,6 +143,7 @@ export class Store {
   constructor(dataDir) {
     this.dataDir = dataDir;
     this.jsonlPath = path.join(dataDir, 'reviews.jsonl');
+    this.checkinPath = path.join(dataDir, 'checkins.jsonl');
     this.dbPath = path.join(dataDir, 'cadence.db');
     this.bankDir = path.join(dataDir, 'bank');
     mkdirSync(dataDir, { recursive: true });
@@ -281,19 +298,107 @@ export class Store {
     return this.db.prepare('SELECT * FROM states WHERE card_id = ?').get(cardId) ?? null;
   }
 
+  // ---- CO／PO 的手動打卡 -------------------------------------------------
+  //
+  // 這兩科沒有卡片：題庫裡沒有音檔，也沒有東西能判斷一段口說講得好不好。
+  // 系統評量不了「做得如何」，但「今天做了沒有」是使用者自己知道的事，
+  // 而它不寫下來就會消失——隔天翻不出任何痕跡，等於昨天沒發生過。
+  //
+  // **為什麼另開一個檔，不塞進 reviews.jsonl**：那個檔的每一行都必須對應一張卡，
+  // reindex 會拿 rating 去跑 FSRS。塞一行沒有卡片的紀錄進去，不是重建時報錯，
+  // 就是憑空產生一份假的記憶狀態。
+  //
+  // **為什麼不存進 settings**：settings 在 cadence.db 裡，那個檔隨時可以刪掉重建。
+  // 打卡紀錄重建不出來，等級與 reviews.jsonl 相同，所以走同一套辦法：
+  // JSONL 是事實，SQLite 只是查得快的鏡像。
+  //
+  // **撤銷也是追加**：按錯了就再寫一行 done:false，同一科同一天以最後一行為準。
+  // 不回頭改既有的行，理由與 reviews.jsonl 一樣——事實檔只增不改。
+
   /**
-   * 從 reviews.jsonl 整個重算索引。
+   * 記一次打卡。與 review() 同樣是先寫 JSONL 再更新索引。
+   * @param {{skill:string, day?:string, done?:boolean, at?:Date}} input
+   */
+  checkin(input) {
+    if (!CHECKIN_SKILLS.includes(input.skill)) {
+      throw new Error(`不是可打卡的科目：${input.skill}`);
+    }
+    const at = input.at ?? new Date();
+    const entry = {
+      v: 1,
+      skill: input.skill,
+      day: input.day ?? localDay(at),
+      done: input.done !== false,
+      at: at.toISOString(),
+    };
+    appendFileSync(this.checkinPath, `${JSON.stringify(entry)}\n`, 'utf8');
+    this.applyCheckin(entry);
+    return entry;
+  }
+
+  /** 把一筆打卡套進索引。reindex 會照檔案順序重跑，所以後寫的自然蓋過先寫的。 */
+  applyCheckin(entry) {
+    this.db
+      .prepare(
+        `INSERT INTO checkins(skill, day, done, at) VALUES(?,?,?,?)
+         ON CONFLICT(skill, day) DO UPDATE SET done = excluded.done, at = excluded.at`,
+      )
+      .run(entry.skill, entry.day, entry.done ? 1 : 0, entry.at);
+  }
+
+  /**
+   * 一科的打卡狀況。
+   * recent 是「最近 window 天裡打了幾天」——它要回答的是隔天早上那個問題：
+   * 昨天到底做了沒有。單看今天有沒有打卡答不了這件事。
+   */
+  checkinSummary(skill, { window = 7, now = new Date() } = {}) {
+    const today = localDay(now);
+    const from = localDay(new Date(now.getTime() - (window - 1) * DAY_MS));
+    const recent = this.db
+      .prepare('SELECT COUNT(*) n FROM checkins WHERE skill = ? AND done = 1 AND day BETWEEN ? AND ?')
+      .get(skill, from, today).n;
+    const last = this.db
+      .prepare('SELECT day FROM checkins WHERE skill = ? AND done = 1 ORDER BY day DESC LIMIT 1')
+      .get(skill);
+    const row = this.db
+      .prepare('SELECT done FROM checkins WHERE skill = ? AND day = ?')
+      .get(skill, today);
+    return { done: row?.done === 1, lastDay: last?.day ?? null, recent, window };
+  }
+
+  /** 兩科各一份，給 /api/today 用。 */
+  checkinState(opts = {}) {
+    return Object.fromEntries(CHECKIN_SKILLS.map((s) => [s, this.checkinSummary(s, opts)]));
+  }
+
+  /**
+   * 從兩個 JSONL 整個重算索引。
    * 壞掉的行不會讓整個重建失敗，會被計數回報——寧可救回 99% 也不要全丟。
    */
   async reindex(onProgress = () => {}) {
     this.db.exec('DELETE FROM states');
     this.db.exec('DELETE FROM reviews');
-    if (!existsSync(this.jsonlPath)) return { applied: 0, skipped: 0, bad: [] };
-
-    const rl = createInterface({
-      input: createReadStream(this.jsonlPath, 'utf8'),
-      crlfDelay: Infinity,
+    this.db.exec('DELETE FROM checkins');
+    const reviews = await this.replayFile(this.jsonlPath, (entry) => {
+      if (!entry.card || !entry.at || !entry.rating) throw new Error('缺必要欄位');
+      this.applyReview(entry);
+    }, onProgress);
+    const checkins = await this.replayFile(this.checkinPath, (entry) => {
+      if (!entry.skill || !entry.day) throw new Error('缺必要欄位');
+      this.applyCheckin(entry);
     });
+    return {
+      applied: reviews.applied,
+      checkins: checkins.applied,
+      skipped: reviews.skipped + checkins.skipped,
+      bad: [...reviews.bad, ...checkins.bad.map((b) => ({ ...b, file: 'checkins.jsonl' }))],
+    };
+  }
+
+  /** 逐行重放一個 JSONL。檔案不存在視為零行，不是錯誤——打卡檔要等第一次打卡才出現。 */
+  async replayFile(file, apply, onProgress = () => {}) {
+    if (!existsSync(file)) return { applied: 0, skipped: 0, bad: [] };
+    const rl = createInterface({ input: createReadStream(file, 'utf8'), crlfDelay: Infinity });
     let applied = 0;
     let lineNo = 0;
     const bad = [];
@@ -303,9 +408,7 @@ export class Store {
         lineNo += 1;
         if (!line.trim()) continue;
         try {
-          const entry = JSON.parse(line);
-          if (!entry.card || !entry.at || !entry.rating) throw new Error('缺必要欄位');
-          this.applyReview(entry);
+          apply(JSON.parse(line));
           applied += 1;
           if (applied % 500 === 0) onProgress(applied);
         } catch (err) {
@@ -320,10 +423,15 @@ export class Store {
     return { applied, skipped: bad.length, bad };
   }
 
-  /** reviews.jsonl 的體積與行數，doctor 用。 */
+  /** 兩個事實檔的體積與行數，doctor 用。 */
   journalInfo() {
     if (!existsSync(this.jsonlPath)) return { exists: false, bytes: 0 };
     return { exists: true, bytes: statSync(this.jsonlPath).size };
+  }
+
+  checkinInfo() {
+    if (!existsSync(this.checkinPath)) return { exists: false, bytes: 0 };
+    return { exists: true, bytes: statSync(this.checkinPath).size };
   }
 }
 

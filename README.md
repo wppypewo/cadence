@@ -60,12 +60,13 @@ FSRS 為每張卡維護三個量：**S**（穩定度，記憶從剛複習完掉�
 ## 資料的存法
 
 ```
-data/reviews.jsonl   每次作答一行 JSON，只增不改。唯一的事實來源，進版控。
+data/reviews.jsonl   每次作答一行 JSON，只增不改。事實來源，進版控。
+data/checkins.jsonl  CO／PO 的手動打卡，一天一行，同樣只增不改、同樣進版控。
 data/cadence.db      SQLite 索引。題庫、記憶狀態、統計都在這，可整個重算，不進版控。
 data/bank/           建置產物，由 npm run build 現算，不進版控。
 ```
 
-這樣切的理由：SQLite 檔壞掉、schema 改版、或這個專案被丟掉，練了幾百天的紀錄都還在，而且是 `cat` 就讀得懂的格式。索引壞了跑 `npm run reindex` 從 JSONL 重建。
+這樣切的理由：SQLite 檔壞掉、schema 改版、或這個專案被丟掉，練了幾百天的紀錄都還在，而且是 `cat` 就讀得懂的格式。索引壞了跑 `npm run reindex` 從兩個 JSONL 重建。
 
 ## 資料與授權
 
@@ -82,7 +83,7 @@ Verbiste（Copyright 2003–2016 Pierre Sarrazin）是 GPL-2.0-or-later。本專
 
 四個來源的位置可用環境變數覆寫：`CADENCE_FEXGEN`、`CADENCE_VERBISTE`、`CADENCE_VAULT`、`CADENCE_PACKS`。
 
-另有 `CADENCE_DATA` 可以換掉題庫、索引與作答紀錄的落點（預設是 repo 內的 `data/`）。它的用途是測試與示範：`data/reviews.jsonl` 是這個 repo 唯一不可重建的檔案，隨手跑幾張卡就會寫進去。目錄要自己先備好（`bank/` 與 `reviews.jsonl`），不會自動建立。
+另有 `CADENCE_DATA` 可以換掉題庫、索引與作答紀錄的落點（預設是 repo 內的 `data/`）。它的用途是測試與示範：`data/reviews.jsonl` 與 `data/checkins.jsonl` 是這個 repo 唯二不可重建的檔案，隨手跑幾張卡就會寫進去。目錄要自己先備好（`bank/` 與 `reviews.jsonl`；打卡檔第一次打卡時自動建立），不會自動建立。
 
 ```bash
 CADENCE_DATA=/tmp/cadence-demo npm start
@@ -93,7 +94,7 @@ CADENCE_DATA=/tmp/cadence-demo npm start
 ```bash
 cadence serve     [--port 4173] [--no-open]   啟動本機伺服器
 cadence build     [--verbose]                 重建題庫
-cadence reindex                               從 reviews.jsonl 重建 SQLite 索引
+cadence reindex                               從兩個 JSONL 重建 SQLite 索引
 cadence stats     [--json]                    在終端機印出進度
 cadence forecast  --exam YYYY-MM-DD [--limit 60] [--new 15] [--target 0.85]
 cadence doctor    [--json]                    檢查資料來源、題庫、索引是否一致
@@ -102,7 +103,7 @@ cadence doctor    [--json]                    檢查資料來源、題庫、索�
 ## 開發
 
 ```bash
-npm test      # 193 題，含 732 組 FSRS 黃金向量
+npm test      # 206 題，含 732 組 FSRS 黃金向量
 npm run lint  # node --check 全檔語法檢查
 ```
 

@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { Store } from '../src/db.mjs';
+import { Store, localDay } from '../src/db.mjs';
 import { Api, HttpError } from '../src/api.mjs';
 
 const BANK = [
@@ -565,6 +565,56 @@ test('doc：只認白名單的兩個代號，路徑不可能被塞進來', async
       assert.ok(err instanceof HttpError, `${bad} 應該被擋下來`);
       assert.equal(err.status, 404);
     }
+  } finally {
+    cleanup(store, dir);
+  }
+});
+
+test('打卡回傳整份 today，前端不必自己猜新狀態', async () => {
+  const [api, store, dir] = await open();
+  try {
+    const before = api.today();
+    const co = (t) => t.tasks.find((x) => x.id === 'CO');
+    assert.equal(co(before).done, false);
+    assert.equal(before.pendingChecks, 2);
+
+    const after = api.checkin({ skill: 'CO' });
+    assert.equal(co(after).done, true);
+    assert.equal(co(after).recent, 1);
+    assert.equal(after.pendingChecks, 1);
+    // 再讀一次 today 要一樣：回傳的那份不是臨時湊出來的。
+    assert.equal(co(api.today()).done, true);
+
+    const undone = api.checkin({ skill: 'CO', done: false });
+    assert.equal(co(undone).done, false);
+    assert.equal(undone.pendingChecks, 2);
+  } finally {
+    cleanup(store, dir);
+  }
+});
+
+test('打卡只認 CO／PO，其餘一律 400', async () => {
+  const [api, store, dir] = await open();
+  try {
+    for (const bad of ['CE', 'PE', 'co', '', undefined, null]) {
+      const err = (() => { try { api.checkin({ skill: bad }); return null; } catch (e) { return e; } })();
+      assert.ok(err instanceof HttpError, `${bad} 應該被擋下來`);
+      assert.equal(err.status, 400);
+    }
+    // 擋下來就不該留下任何紀錄。
+    assert.equal(store.checkinState().CO.lastDay, null);
+  } finally {
+    cleanup(store, dir);
+  }
+});
+
+test('打卡不吃前端傳來的日期：事實檔只寫得進今天', async () => {
+  const [api, store, dir] = await open();
+  try {
+    api.checkin({ skill: 'PO', day: '2020-01-01' });
+    const po = api.today().tasks.find((x) => x.id === 'PO');
+    // 日期由伺服器決定，補打舊日期這件事沒有被順手開出來。
+    assert.equal(po.lastDay, localDay(new Date()));
   } finally {
     cleanup(store, dir);
   }

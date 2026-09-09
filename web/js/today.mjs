@@ -11,8 +11,10 @@
  * 兩件事刻意跟其他頁不一樣：
  *  1. **不受側欄的題型篩選影響。**這一頁問的是「今天整體該做什麼」，
  *     被篩選改掉就變成「今天在我挑剩的範圍裡該做什麼」，那是複習頁的工作。
- *  2. **CO／PO 不顯示進度。**題庫裡沒有音檔也沒有錄音評分，
- *     系統真的不知道你有沒有做。與其畫一條假的進度條，不如把當天該做的事寫出來。
+ *  2. **CO／PO 不顯示熟練度，只顯示做過沒做過。**題庫裡沒有音檔也沒有錄音評分，
+ *     系統判不了你講得好不好，畫一條進度條就是假的。但「今天做了」這件事
+ *     使用者自己知道，給一顆打卡鍵按下去就記得住——不記的話隔天完全翻不出痕跡，
+ *     昨天等於沒發生。分界線在這裡：熟練度不假裝，做過沒做過照實記。
  */
 
 import { h, clear, icon, num } from './dom.mjs';
@@ -43,9 +45,17 @@ export function todayView(root, ctx) {
     clear(box);
     box.append(header(data));
     const list = h('div.tasks');
-    for (const task of data.tasks) list.append(taskRow(task, ctx));
+    // 打卡之後只換掉那一列的狀態與頁尾，不整頁重畫：說明文件展開著的時候
+    // 重畫會把它收起來，而按打卡的那一刻通常正是照著文件做完的那一刻。
+    let foot = footer(data);
+    const refresh = (next) => {
+      const fresh = footer(next);
+      foot.replaceWith(fresh);
+      foot = fresh;
+    };
+    for (const task of data.tasks) list.append(taskRow(task, ctx, refresh));
     box.append(list);
-    box.append(footer(data));
+    box.append(foot);
   }
 }
 
@@ -79,7 +89,7 @@ function runLine(data) {
   return bits.join('・');
 }
 
-function taskRow(task, ctx) {
+function taskRow(task, ctx, refresh) {
   const row = h('article.task', { dataset: { skill: task.id, mode: task.mode } });
 
   row.append(h('div.task-code', {}, h('span', { text: task.id })));
@@ -114,18 +124,70 @@ function taskRow(task, ctx) {
   }
 
   // 文件型（CO／PO）
-  // 先寫「今天做什麼」，再寫「系統管不到」。倒過來的話，那句警告會比指示更搶眼，
-  // 但它只是個限制說明，不是要人處理的問題。
+  // 先寫「今天做什麼」，再寫打卡狀態。倒過來的話，狀態會比指示更搶眼，
+  // 但今天還沒做的時候，該讀的是「要做什麼」。
   main.append(h('p.task-do', { text: task.hint }));
-  main.append(h('p.task-untracked', { text: '這一科系統記不到進度，做完了只有你自己知道。' }));
+  const status = h('p.task-check');
+  main.append(status);
   const panel = h('div.doc', { hidden: true });
   main.append(panel);
   row.append(main);
 
   const openBtn = h('button.btn.btn-quiet', { type: 'button', text: '打開說明' });
   openBtn.addEventListener('click', () => toggleDoc(task, panel, openBtn));
-  row.append(h('div.task-act', {}, openBtn));
+
+  const checkBtn = h('button.btn', { type: 'button' });
+  checkBtn.addEventListener('click', () => toggleCheck(task, row, checkBtn, status, ctx, refresh));
+  paintCheck(task, row, checkBtn, status);
+
+  row.append(h('div.task-act', {}, checkBtn, openBtn));
   return row;
+}
+
+/**
+ * 打卡鍵與它上面那行狀態。
+ *
+ * 狀態行刻意分兩句：第一句講今天，第二句講最近七天。
+ * 只講今天的話，隔天早上打開仍然回答不了「昨天到底做了沒有」——
+ * 而那正是當初沒有打卡功能時最缺的一件事。
+ */
+function paintCheck(task, row, btn, status) {
+  row.dataset.done = task.done ? '1' : '0';
+  btn.className = task.done ? 'btn btn-quiet' : 'btn btn-primary';
+  btn.textContent = task.done ? '取消今天的打卡' : '今天做過了';
+
+  clear(status);
+  if (task.done) {
+    status.append(h('span.done', {}, icon('check'), h('span', { text: '今天已記錄' })));
+  } else {
+    status.append(h('span.dim', { text: '今天還沒記錄' }));
+  }
+  status.append(h('span.sep', { text: '・' }), h('span.part', { text: recentText(task) }));
+  // 這一句是整個功能的但書，任何時候都要在：打卡只證明「有坐下來做」，
+  // 不證明做得對。系統仍然沒有能力判斷這兩科的內容。
+  status.append(h('span.note', { text: '（系統只記得到你按了這一下，判不了對錯）' }));
+}
+
+function recentText(task) {
+  if (task.recent > 0) return `最近 ${task.window} 天做了 ${num(task.recent)} 天`;
+  if (task.lastDay) return `上次是 ${task.lastDay}`;
+  return '還沒有任何紀錄';
+}
+
+async function toggleCheck(task, row, btn, status, ctx, refresh) {
+  btn.disabled = true;
+  try {
+    const data = await api.checkin({ skill: task.id, done: !task.done });
+    // 用伺服器回來的那一份覆蓋手上的 task，不自己把 done 反過來寫：
+    // recent 與 lastDay 只有後端算得出來，猜的話畫面會跟事實檔分岔。
+    Object.assign(task, data.tasks.find((t) => t.id === task.id));
+    paintCheck(task, row, btn, status);
+    refresh(data);
+  } catch (err) {
+    ctx.toast(err.message, 'bad');
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 /** 到期與新卡分開寫。混成一個數字，就看不出「今天是在還債還是在借新的」。 */
@@ -225,6 +287,11 @@ function footer(data) {
   ];
   if (data.pendingCards === 0 && data.newBudget === 0) {
     bits.unshift('卡片的部分今天已經清空了。');
+  }
+  // 卡片做完不等於今天做完：CO／PO 兩科沒有卡片，只有打卡。
+  // 這句話放在頁尾，因為它問的是「今天還剩什麼」，那正是頁尾在回答的事。
+  if (data.pendingChecks > 0) {
+    bits.push(`另外還有 ${data.pendingChecks} 科等你打卡（CO／PO 沒有卡片，做完自己按一下）。`);
   }
   return h('p.today-foot', { text: bits.join('') });
 }

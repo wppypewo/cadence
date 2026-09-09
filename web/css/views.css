@@ -75,8 +75,27 @@
 .task-hint { font-size: var(--t-xs); color: var(--text-faint); max-width: 52ch; }
 /* CO／PO 那兩列的正文：它是今天真正要做的事，字級要跟上面兩列的數字同一層。 */
 .task-do { font-size: var(--t-sm); color: var(--text); max-width: 52ch; }
-/* 「記不到進度」只是限制說明，不是要人處理的問題，所以不給警示色。 */
-.task-untracked { font-size: var(--t-xs); color: var(--text-faint); }
+/*
+ * CO／PO 的打卡狀態行。字級與 .task-hint 同一層（比 .task-do 小）：
+ * 它是回頭看的紀錄，不是現在要做的事，搶到正文前面就本末倒置了。
+ * 括號裡那句但書用最淡的一階顏色壓下去——它必須一直在，但一直在的東西不能一直吵。
+ * 不再往下縮字級：--t-xs 已經是這套 token 的最小號，硬寫一個更小的數字
+ * 等於在 tokens.css 之外自己開一階。
+ */
+.task-check { display: flex; align-items: center; gap: var(--s1); flex-wrap: wrap; font-size: var(--t-xs); }
+.task-check .dim { color: var(--text-faint); }
+.task-check .sep { color: var(--text-faint); }
+.task-check .part { color: var(--text-muted); }
+.task-check .note { color: var(--text-faint); }
+.task-check .done { display: inline-flex; align-items: center; gap: var(--s1); color: var(--ok); }
+.task-check .done svg { width: 14px; height: 14px; }
+
+/*
+ * 打過卡的那一列左邊的代號框改成 ok 色。這是虛線框那條規則的例外理由：
+ * 虛線講的是「系統管不到內容」，那件事沒變；代號框講的是「今天這一科動過了」，
+ * 而那件事現在記得住。兩個訊號各自為政，所以只動顏色不動線型。
+ */
+.task[data-done="1"] .task-code { border-color: var(--ok); color: var(--ok); }
 
 .task-act { display: flex; flex-direction: column; gap: var(--s2); }
 

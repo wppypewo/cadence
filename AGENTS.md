@@ -14,7 +14,7 @@
 四條不可協商的，摘要在此，細節看 CLAUDE.md：
 
 1. **零第三方依賴**——`dependencies` 與 `devDependencies` 維持空的。要引套件先問使用者。
-2. **`data/reviews.jsonl` 只增不改**——唯一不可重建的資料。
+2. **`data/reviews.jsonl` 與 `data/checkins.jsonl` 只增不改**——唯二不可重建的資料。撤銷打卡也是追加，不回頭改行。
 3. **GPL-2.0 隔離**——Verbiste 衍生物只能落在 gitignore 的 `data/bank/`。
 4. **法文重音完整保留**——不得轉 ASCII。
 
@@ -22,7 +22,7 @@
 
 ```bash
 npm run lint   # node --check 全檔 ＋ bash -n cadence.command
-npm test       # 193 題，含 732 組 FSRS 黃金向量
+npm test       # 206 題，含 732 組 FSRS 黃金向量
 npm run doctor # 四個外部來源、題庫、索引三邊對帳
 ```
 
@@ -38,7 +38,7 @@ npm run doctor # 四個外部來源、題庫、索引三邊對帳
 - **不要重排、不要「順手整理」沒在做的檔案。** 格式化整檔會讓對方的 diff 無法閱讀。
 - **同一個檔案不要兩邊同時改。** 要動別人正在動的檔，先在對話裡講。
 - **`CLAUDE.md` 與 `AGENTS.md` 各自維護。** 改規則改 CLAUDE.md，這裡只跟著更新指標。
-- **`data/reviews.jsonl` 誰都不要碰。** 它只由跑起來的 App 追加。
+- **`data/reviews.jsonl` 與 `data/checkins.jsonl` 誰都不要碰。** 它們只由跑起來的 App 追加。
 
 待辦清單在 [docs/backlog.md](docs/backlog.md)，是兩邊共用的。認領一項就在那裡註記。
 

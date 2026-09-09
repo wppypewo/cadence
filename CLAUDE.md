@@ -5,7 +5,7 @@
 ## 不可協商的四條
 
 1. **零第三方依賴。** `dependencies` 與 `devDependencies` 都必須維持空的。要用的東西只能來自 Node 內建模組（含 `node:sqlite`）或自己寫。引一個套件之前先問使用者。
-2. **`data/reviews.jsonl` 只增不改。** 它是唯一不可重建的資料。任何操作都不得改寫或刪除既有的行。schema 要加欄位就加，舊行少欄位由讀取端處理。
+2. **`data/reviews.jsonl` 與 `data/checkins.jsonl` 只增不改。** 這兩個檔是唯一不可重建的資料。任何操作都不得改寫或刪除既有的行——包括撤銷打卡，那也是追加一行 `done:false`，同一科同一天以最後一行為準。schema 要加欄位就加，舊行少欄位由讀取端處理。
 3. **GPL-2.0 隔離。** Verbiste 的 XML 只在 `npm run build` 時讀取，產物一律寫進 `data/bank/`，而 `data/bank/` 在 `.gitignore` 裡。不得把任何變位衍生資料提交進版控，不得把 Verbiste 內容內嵌進 `src/`。
 4. **法文重音完整保留。** 程式碼、測試、資料、註解裡的 `é è ê ë à â ù û ü ï î ç œ æ` 一律原樣，不得轉成 ASCII 替代。
 
@@ -13,7 +13,7 @@
 
 ```bash
 npm run lint   # node --check 全檔
-npm test       # 193 題，含 732 組 FSRS 黃金向量
+npm test       # 206 題，含 732 組 FSRS 黃金向量
 ```
 
 兩個都綠才算完成。動到 `src/engine/fsrs.mjs` 時，黃金向量測試紅了代表移植跑掉了，不要改測試去配合實作。

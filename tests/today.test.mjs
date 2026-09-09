@@ -5,7 +5,10 @@
  *     而且會讓四科加起來超過上限。這裡釘死：兩科各自「最多」拿到共用額度，
  *     但額度本身只有一份。
  *  2. **CO／PO 不能假裝有進度**。題庫裡沒有音檔也沒有錄音評分，
- *     那兩科只能指向文件。任何時候它們冒出 count 或 done，都是有人在做假資料。
+ *     那兩科只能指向文件。任何時候它們冒出 count 或熟練度，都是有人在做假資料。
+ *     `done` 是這條界線的例外，而且只有這一個例外：它不是系統算出來的，
+ *     是使用者自己按下打卡鍵留的紀錄。系統照抄一份使用者說過的話不算造假，
+ *     系統自己猜一個分數才算。
  */
 
 import test from 'node:test';
@@ -113,6 +116,48 @@ test('CO 與 PO 指向文件，且明講系統追蹤不到', () => {
   assert.equal(po.doc, 'study/delf-b1-production-orale.md');
   assert.equal(po.tracked, false);
   assert.equal(po.count, undefined);
+});
+
+test('沒傳 checkins 時，兩科都是「還沒打卡」而不是 undefined', () => {
+  // 前端拿 done 去決定按鈕文字。undefined 在畫面上會變成一顆狀態不明的鍵，
+  // 所以這裡釘死預設值：沒有紀錄就是還沒做，不是不知道。
+  const t = buildToday({ ...BASE, now: new Date('2026-09-09T10:00:00') });
+  for (const task of t.tasks.slice(2)) {
+    assert.equal(task.checkable, true);
+    assert.equal(task.done, false);
+    assert.equal(task.lastDay, null);
+    assert.equal(task.recent, 0);
+  }
+  assert.equal(t.pendingChecks, 2);
+});
+
+test('打卡資料原樣帶進 task，且 tracked 不會因此變成 true', () => {
+  const t = buildToday({
+    ...BASE,
+    checkins: {
+      CO: { done: true, lastDay: '2026-09-09', recent: 3, window: 7 },
+      PO: { done: false, lastDay: '2026-09-05', recent: 1, window: 7 },
+    },
+    now: new Date('2026-09-09T10:00:00'),
+  });
+  const [co, po] = t.tasks.slice(2);
+  assert.equal(co.done, true);
+  assert.equal(co.recent, 3);
+  assert.equal(co.lastDay, '2026-09-09');
+  // 打了卡也不代表系統評量得了這一科。這兩件事永遠分開。
+  assert.equal(co.tracked, false);
+  assert.equal(co.count, undefined);
+  assert.equal(po.done, false);
+  // 今天沒打卡的只剩 PO 一科。
+  assert.equal(t.pendingChecks, 1);
+});
+
+test('CE／PE 不可打卡：那兩科的進度是卡片自己記的', () => {
+  const t = buildToday({ ...BASE, now: new Date('2026-09-09T10:00:00') });
+  for (const task of t.tasks.slice(0, 2)) {
+    assert.notEqual(task.checkable, true);
+    assert.equal(task.done, undefined);
+  }
 });
 
 test('pendingCards 只數還有卡要做的科目', () => {

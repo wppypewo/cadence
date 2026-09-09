@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { grade, gradePick, gradeRewrite, gradeNom } from './engine/grade.mjs';
 import { simulate, solveDailyNew, ratingDistribution } from './engine/forecast.mjs';
 import { buildToday } from './engine/today.mjs';
-import { localDay } from './db.mjs';
+import { localDay, CHECKIN_SKILLS } from './db.mjs';
 
 const KINDS = ['vocab-recall', 'vocab-produce', 'conj', 'connector', 'pick', 'rw', 'nom'];
 const LEVELS = ['A1', 'A2', 'B1'];
@@ -296,7 +296,25 @@ export class Api {
       examDate: this.store.get('examDate', null),
       reviewsToday: s.todayReviews,
       streakDays: s.streakDays,
+      checkins: this.store.checkinState(),
     });
+  }
+
+  /**
+   * CO／PO 的手動打卡。回傳整份 today，讓前端直接換掉畫面——
+   * 只回 {ok:true} 的話前端得自己猜新的狀態，猜錯就會與伺服器分岔。
+   *
+   * 只認 skill 與 done 兩個欄位。日期由伺服器決定，不吃前端傳來的 day：
+   * 那會讓「補打昨天的卡」變成一個沒人要求過、也沒有畫面的功能，
+   * 卻先開了一個可以往事實檔寫任意日期的口。
+   */
+  checkin(body) {
+    const skill = String(body?.skill ?? '');
+    if (!CHECKIN_SKILLS.includes(skill)) {
+      throw new HttpError(400, `只有 ${CHECKIN_SKILLS.join('／')} 可以打卡，收到 ${skill || '空值'}`);
+    }
+    this.store.checkin({ skill, done: body.done !== false });
+    return this.today();
   }
 
   /** 讀 study/ 底下的一份文件。純文字回傳，前端不做 Markdown 渲染。 */

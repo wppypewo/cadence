@@ -1,7 +1,7 @@
 /**
  * 儲存層測試。
  *
- * 這一層的核心承諾只有一句：**reviews.jsonl 是唯一的事實來源，SQLite 隨時可以丟掉重建**。
+ * 這一層的核心承諾只有一句：**兩個 JSONL 是唯一的事實來源，SQLite 隨時可以丟掉重建**。
  * 所以測試的重點放在「重建之後拿到的東西要跟原本一模一樣」，
  * 以及「一行壞掉不會賠掉整份紀錄」。其餘的統計查詢測的是 scope 有沒有真的吃進去——
  * 側欄說「只練 A2」，畫面上的每個數字就都得是 A2 的。
@@ -10,10 +10,10 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, existsSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { Store, localDay } from '../src/db.mjs';
+import { Store, localDay, CHECKIN_SKILLS } from '../src/db.mjs';
 
 const DAY_MS = 86_400_000;
 
@@ -380,6 +380,136 @@ test('設定寫得進去、讀得回來，改目標記憶率會換掉排程器',
     store.set('dailyNewLimit', 30);
     assert.equal(store.dailyNewLimit, 30);
     assert.equal(store.get('沒設過的鍵', '預設值'), '預設值');
+  } finally {
+    cleanup(store, dir);
+  }
+});
+
+// ---- CO／PO 的手動打卡 -------------------------------------------------
+//
+// 這幾題守的是打卡與 reviews.jsonl 同級：事實在 JSONL，SQLite 只是鏡像。
+// 特別要釘死「撤銷也是追加」——回頭改既有的行才是真正會壞掉的做法。
+
+test('打卡先寫 checkins.jsonl 再進索引，兩邊都要有', async () => {
+  const [store, dir] = await open();
+  try {
+    const at = new Date(2026, 8, 9, 21, 30);
+    const entry = store.checkin({ skill: 'CO', at });
+    assert.equal(entry.skill, 'CO');
+    assert.equal(entry.day, '2026-09-09');
+    assert.equal(entry.done, true);
+
+    const lines = readFileSync(path.join(dir, 'checkins.jsonl'), 'utf8').trim().split('\n');
+    assert.equal(lines.length, 1);
+    assert.deepEqual(JSON.parse(lines[0]), entry);
+
+    const s1 = store.checkinSummary('CO', { now: at });
+    assert.equal(s1.done, true);
+    assert.equal(s1.lastDay, '2026-09-09');
+    assert.equal(s1.recent, 1);
+    // 另一科不會被牽連。
+    assert.equal(store.checkinSummary('PO', { now: at }).done, false);
+  } finally {
+    cleanup(store, dir);
+  }
+});
+
+test('撤銷是追加一行，不回頭改既有的行', async () => {
+  const [store, dir] = await open();
+  try {
+    const at = new Date(2026, 8, 9, 21, 30);
+    store.checkin({ skill: 'PO', at });
+    store.checkin({ skill: 'PO', done: false, at: new Date(2026, 8, 9, 21, 31) });
+
+    const lines = readFileSync(path.join(dir, 'checkins.jsonl'), 'utf8').trim().split('\n');
+    // 兩行都在。第一行原封不動——這就是「只增不改」在檔案層的樣子。
+    assert.equal(lines.length, 2);
+    assert.equal(JSON.parse(lines[0]).done, true);
+    assert.equal(JSON.parse(lines[1]).done, false);
+    // 索引以最後一行為準。
+    assert.equal(store.checkinSummary('PO', { now: at }).done, false);
+    assert.equal(store.checkinSummary('PO', { now: at }).recent, 0);
+  } finally {
+    cleanup(store, dir);
+  }
+});
+
+test('recent 數的是最近 window 天裡打了幾天，不是總筆數', async () => {
+  const [store, dir] = await open();
+  try {
+    const now = new Date(2026, 8, 10, 9, 0);
+    for (const d of [10, 9, 8, 2]) store.checkin({ skill: 'CO', at: new Date(2026, 8, d, 20, 0) });
+    // 同一天按兩次只算一天。
+    store.checkin({ skill: 'CO', at: new Date(2026, 8, 9, 22, 0) });
+
+    const week = store.checkinSummary('CO', { window: 7, now });
+    assert.equal(week.recent, 3);
+    assert.equal(week.window, 7);
+    assert.equal(week.lastDay, '2026-09-10');
+    // 拉長視窗才看得到 9/2 那一天。
+    assert.equal(store.checkinSummary('CO', { window: 30, now }).recent, 4);
+  } finally {
+    cleanup(store, dir);
+  }
+});
+
+test('不是 CO／PO 的科目一律拒絕，也不會留下任何一行', async () => {
+  const [store, dir] = await open();
+  try {
+    assert.deepEqual(CHECKIN_SKILLS, ['CO', 'PO']);
+    assert.throws(() => store.checkin({ skill: 'CE' }), /不是可打卡的科目/);
+    assert.throws(() => store.checkin({ skill: '' }), /不是可打卡的科目/);
+    assert.equal(existsSync(path.join(dir, 'checkins.jsonl')), false);
+  } finally {
+    cleanup(store, dir);
+  }
+});
+
+test('reindex 連打卡一起重算，撤銷過的那天仍然是撤銷', async () => {
+  const [store, dir] = await open();
+  try {
+    const now = new Date(2026, 8, 10, 9, 0);
+    store.review({ cardId: 'a1-recall-1', rating: 3, correct: true, at: new Date(2026, 8, 9, 10) });
+    store.checkin({ skill: 'CO', at: new Date(2026, 8, 9, 20, 0) });
+    store.checkin({ skill: 'PO', at: new Date(2026, 8, 9, 20, 1) });
+    store.checkin({ skill: 'PO', done: false, at: new Date(2026, 8, 9, 20, 2) });
+    const before = store.checkinState({ now });
+
+    const result = await store.reindex();
+    assert.equal(result.applied, 1);
+    assert.equal(result.checkins, 3);
+    assert.equal(result.skipped, 0);
+    assert.deepEqual(store.checkinState({ now }), before);
+  } finally {
+    cleanup(store, dir);
+  }
+});
+
+test('沒有 checkins.jsonl 不是錯誤：第一次打卡之前那個檔本來就不存在', async () => {
+  const [store, dir] = await open();
+  try {
+    const result = await store.reindex();
+    assert.equal(result.checkins, 0);
+    assert.equal(result.bad.length, 0);
+    assert.equal(store.checkinInfo().exists, false);
+    // 查詢照樣要能回答，不能因為檔案不在就丟錯。
+    assert.equal(store.checkinState().CO.done, false);
+  } finally {
+    cleanup(store, dir);
+  }
+});
+
+test('打卡檔壞掉的行只跳過那一行，並標明是哪個檔', async () => {
+  const [store, dir] = await open();
+  try {
+    store.checkin({ skill: 'CO', at: new Date(2026, 8, 9, 20, 0) });
+    appendFileSync(path.join(dir, 'checkins.jsonl'), '{"v":1,"skill":"PO"\n', 'utf8');
+    appendFileSync(path.join(dir, 'checkins.jsonl'), '{"v":1,"skill":"PO"}\n', 'utf8');
+
+    const result = await store.reindex();
+    assert.equal(result.checkins, 1);
+    assert.equal(result.skipped, 2);
+    assert.deepEqual(result.bad.map((b) => b.file), ['checkins.jsonl', 'checkins.jsonl']);
   } finally {
     cleanup(store, dir);
   }

@@ -2,7 +2,7 @@
 
 ## 一句話
 
-一個 Node HTTP 伺服器把 `web/` 當靜態檔案發出去，另外開十一個 JSON 端點；瀏覽器端是原生 ESM，沒有打包器；資料在一個 append-only 的 JSONL 與一個隨時可重建的 SQLite 索引裡。
+一個 Node HTTP 伺服器把 `web/` 當靜態檔案發出去，另外開十二個 JSON 端點；瀏覽器端是原生 ESM，沒有打包器；資料在兩個 append-only 的 JSONL 與一個隨時可重建的 SQLite 索引裡。
 
 ## 目錄
 
@@ -10,7 +10,7 @@
 bin/cadence.mjs      CLI 入口，六個指令
 src/
   server.mjs         HTTP、路由、靜態檔案
-  api.mjs            十一個端點的實作，不碰 HTTP 細節
+  api.mjs            十二個端點的實作，不碰 HTTP 細節
   db.mjs             SQLite schema、JSONL 讀寫、reindex
   engine/
     fsrs.mjs         FSRS-6 排程（純函數）
@@ -50,8 +50,10 @@ web/
 執行期
   data/bank/*.json ──→ SQLite cards 表（首次啟動時載入）
   data/reviews.jsonl ─→ SQLite reviews + states 表（reindex 時重放）
+  data/checkins.jsonl ─→ SQLite checkins 表（同上）
   瀏覽器 ──fetch──→ /api/* ──→ src/api.mjs ──→ src/db.mjs
   作答 ──POST /api/review──→ 先寫 JSONL，再更新 SQLite
+  打卡 ──POST /api/checkin─→ 同一個順序，寫的是另一個 JSONL
 ```
 
 寫入順序是刻意的：**先落地不可重建的那一份**。JSONL 寫成功之後即使 SQLite 更新失敗，`reindex` 也能把狀態補回來；反過來則會永久少一筆。
@@ -62,6 +64,8 @@ web/
 只用 JSONL：查「哪些卡今天到期」要掃全檔，16,000 張卡撐不住。
 
 所以事實用 JSONL，查詢用 SQLite，後者隨時可以整個刪掉重建。`data/cadence.db` 在 `.gitignore` 裡就是這個意思。
+
+`data/checkins.jsonl` 走同一套。CO／PO 沒有卡片，「今天做了」除了使用者自己按一下之外沒有別的來源，重建不出來，所以它與 `reviews.jsonl` 同級。分成兩個檔而不是共用一個：`reviews.jsonl` 的每一行都得對應一張卡，`reindex` 會拿 `rating` 去跑 FSRS，混進沒有卡片的行不是重建時報錯就是憑空生出假的記憶狀態。
 
 ## 端點
 
@@ -77,6 +81,7 @@ web/
 | GET | `/api/verb/:word` | 完整變位表 |
 | GET | `/api/settings` | 讀設定 |
 | POST | `/api/review` | 記一次作答 |
+| POST | `/api/checkin` | CO／PO 的手動打卡。日期由伺服器決定，不吃前端傳來的 `day` |
 | POST | `/api/settings` | 寫設定 |
 
 伺服器只綁 `127.0.0.1`，不接受外部連線。

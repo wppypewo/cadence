@@ -5,7 +5,7 @@
  * 指令：
  *   serve     啟動本機伺服器（預設 http://127.0.0.1:4173）
  *   build     從 vault 與 french-exam-generator 重建題庫
- *   reindex   從 data/reviews.jsonl 重建 SQLite 索引
+ *   reindex   從 data/reviews.jsonl 與 data/checkins.jsonl 重建 SQLite 索引
  *   stats     在終端機印出目前進度
  *   forecast  考前推演
  *   doctor    檢查資料來源、題庫、索引是否一致
@@ -41,7 +41,7 @@ const HELP = `cadence — 本地法文複習工作台
 
   serve     [--port 4173] [--no-open]   啟動本機伺服器
   build     [--verbose]                 重建題庫（讀 vault 與 french-exam-generator）
-  reindex                               從 reviews.jsonl 重建 SQLite 索引
+  reindex                               從兩個 JSONL 重建 SQLite 索引
   stats     [--json]                    印出目前進度
   forecast  --exam YYYY-MM-DD [--limit 60] [--new 15] [--target 0.85]
   doctor    [--json]                    檢查資料來源與索引
@@ -135,7 +135,8 @@ async function reindex() {
   const t0 = Date.now();
   const result = await store.reindex();
   store.close();
-  process.stdout.write(`重建 ${result.applied} 筆紀錄，耗時 ${Date.now() - t0} ms。\n`);
+  const extra = result.checkins ? `，打卡 ${result.checkins} 筆` : '';
+  process.stdout.write(`重建 ${result.applied} 筆紀錄${extra}，耗時 ${Date.now() - t0} ms。\n`);
   if (result.skipped) {
     process.stdout.write(`跳過 ${result.skipped} 行壞掉的紀錄：\n`);
     for (const b of result.bad.slice(0, 10)) process.stdout.write(`  第 ${b.line} 行：${b.error}\n`);
@@ -217,7 +218,7 @@ async function forecast(flags) {
 
 async function doctor(flags) {
   const { checkSources } = await import('../src/build/sources.mjs');
-  const report = { sources: await checkSources(), bank: null, index: null, journal: null };
+  const report = { sources: await checkSources(), bank: null, index: null, journal: null, checkins: null };
 
   const bankFile = path.join(DATA, 'bank', 'cards.json');
   report.bank = existsSync(bankFile)
@@ -229,12 +230,21 @@ async function doctor(flags) {
     const store = new Store(DATA);
     const cards = store.cardCount();
     report.index = { cards, states: store.db.prepare('SELECT COUNT(*) n FROM states').get().n, reviews: store.db.prepare('SELECT COUNT(*) n FROM reviews').get().n };
+    report.index.checkins = store.db.prepare('SELECT COUNT(*) n FROM checkins').get().n;
     report.journal = store.journalInfo();
     // 索引裡的複習筆數必須等於 JSONL 的行數，否則索引落後了。
     if (report.journal.exists) {
       const lines = await countLines(store.jsonlPath);
       report.journal.lines = lines;
       report.journal.inSync = lines === report.index.reviews;
+    }
+    report.checkins = store.checkinInfo();
+    // 打卡檔的行數**不會**等於索引筆數：撤銷是追加一行 done:false，
+    // 同一科同一天多按幾次就是多幾行，索引只留最後一個狀態。
+    // 所以這裡對的是「索引筆數不可能超過行數」，超過就代表索引裡有檔案裡沒有的東西。
+    if (report.checkins.exists) {
+      report.checkins.lines = await countLines(store.checkinPath);
+      report.checkins.inSync = report.index.checkins <= report.checkins.lines;
     }
     store.close();
   }
@@ -244,6 +254,9 @@ async function doctor(flags) {
   if (!report.bank.exists) problems.push('題庫不存在，跑 npm run build');
   if (report.journal?.exists && report.journal.inSync === false) {
     problems.push(`索引落後：JSONL ${report.journal.lines} 行，索引 ${report.index.reviews} 筆。跑 npm run reindex`);
+  }
+  if (report.checkins?.exists && report.checkins.inSync === false) {
+    problems.push(`打卡索引比檔案還多：檔案 ${report.checkins.lines} 行，索引 ${report.index.checkins} 筆。跑 npm run reindex`);
   }
 
   if (flags.json) {
@@ -255,6 +268,7 @@ async function doctor(flags) {
     process.stdout.write(`${report.bank.exists ? '✓' : '✗'} 題庫       ${report.bank.exists ? `${report.bank.meta.counts.cards.toLocaleString()} 張，建於 ${report.bank.meta.builtAt.slice(0, 16).replace('T', ' ')}` : report.bank.hint}\n`);
     if (report.index) process.stdout.write(`  索引       卡 ${report.index.cards.toLocaleString()}　狀態 ${report.index.states.toLocaleString()}　紀錄 ${report.index.reviews.toLocaleString()}\n`);
     if (report.journal?.exists) process.stdout.write(`  複習紀錄   ${report.journal.lines} 行，${(report.journal.bytes / 1024).toFixed(1)} KB${report.journal.inSync ? '，與索引一致' : '，與索引不一致'}\n`);
+    if (report.checkins?.exists) process.stdout.write(`  打卡紀錄   ${report.checkins.lines} 行，索引 ${report.index.checkins} 天（撤銷也是一行，行數本來就會比天數多）\n`);
     if (problems.length) process.stdout.write(`\n要處理的事：\n${problems.map((p) => `  · ${p}`).join('\n')}\n`);
   }
   if (problems.length) process.exitCode = 1;

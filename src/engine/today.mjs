@@ -16,8 +16,11 @@
  *   CO 聽力　無卡片　　　　　　題庫裡沒有音檔，只能指向官方樣題。
  *   PO 口說　無卡片　　　　　　機器判不了發音與互動，指向 GPT 練習用的固定 prompt。
  *
- * CO／PO 兩科**做了沒有系統記不到**。這是誠實的限制，不是待辦——
- * 與其假裝有進度條，不如把當天該做的事寫死在那一列。
+ * CO／PO 兩科**系統評量不了做得如何**：沒有音檔可比對，也沒有東西聽得懂一段口說。
+ * 這是誠實的限制，不會因為多寫幾行程式就消失，所以不畫進度條。
+ * 但「今天做了沒有」不是評量，是使用者自己知道的一件事——那件事給一顆打卡鍵
+ * （見 db.mjs 的 checkins），因為不寫下來隔天就翻不出任何痕跡。
+ * 分界線在這裡：**分數與熟練度不假裝，做過沒做過照實記。**
  */
 
 const DAY_MS = 86_400_000;
@@ -74,11 +77,13 @@ export function daysToExam(examDate, now = new Date()) {
  * @param {string?}  input.examDate  'YYYY-MM-DD' 或 null
  * @param {number}   input.reviewsToday 今天已作答次數
  * @param {number}   input.streakDays   連續練習天數
+ * @param {Object}   [input.checkins]   store.checkinState() 的輸出，{CO:{...}, PO:{...}}
  * @param {Date}     [input.now]
  */
 export function buildToday(input) {
   const now = input.now ?? new Date();
   const stats = new Map((input.byKind ?? []).map((r) => [r.kind, r]));
+  const checkins = input.checkins ?? {};
 
   // 新卡上限是**全域共用**的一個數字，不是每科一份。
   // 這裡刻意不把它拆成四份：拆法沒有任何依據，而且拆了會騙人——
@@ -88,11 +93,19 @@ export function buildToday(input) {
   const tasks = SKILLS.map((s) => {
     const kinds = SKILL_KINDS[s.id];
     if (!kinds) {
+      const c = checkins[s.id] ?? {};
       return {
         id: s.id, zh: s.zh, fr: s.fr, hint: s.hint,
         mode: 'doc', doc: s.doc,
-        // 系統記不到 CO／PO 的完成狀態，所以不給 done，也不給假的數字。
+        // tracked 講的是「系統能不能評量這一科」，答案永遠是不能，所以不給 count、
+        // 不給熟練度、不給任何算出來的數字。下面那三個欄位是另一回事：
+        // 它們全部來自使用者自己按的那一下，是紀錄不是評量。
         tracked: false,
+        checkable: true,
+        done: c.done ?? false,
+        lastDay: c.lastDay ?? null,
+        recent: c.recent ?? 0,
+        window: c.window ?? 0,
       };
     }
     const rows = kinds.map((k) => stats.get(k)).filter(Boolean);
@@ -136,6 +149,9 @@ export function buildToday(input) {
     tasks,
     // 有卡可做的科目數。0 代表今天卡片的部分做完了，但 CO／PO 仍在等人。
     pendingCards: tasks.filter((t) => t.mode === 'cards' && t.count > 0).length,
+    // 今天還沒打卡的文件科目數。與 pendingCards 分開數，因為兩者的「做完」意思不同：
+    // 一個是系統算出來的，一個是使用者自己說的。
+    pendingChecks: tasks.filter((t) => t.checkable && !t.done).length,
   };
 }
 

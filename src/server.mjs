@@ -92,6 +92,8 @@ async function handleApi(api, req, res, url) {
       return send(res, 200, api.settings(null));
     case 'POST /api/review':
       return send(res, 200, api.review(await body(req)));
+    case 'POST /api/checkin':
+      return send(res, 200, api.checkin(await body(req)));
     case 'POST /api/settings':
       return send(res, 200, api.settings(await body(req)));
     default:
