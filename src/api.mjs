@@ -5,12 +5,34 @@
 
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { grade } from './engine/grade.mjs';
+import { fileURLToPath } from 'node:url';
+import { grade, gradePick, gradeRewrite, gradeNom } from './engine/grade.mjs';
 import { simulate, solveDailyNew, ratingDistribution } from './engine/forecast.mjs';
+import { buildToday } from './engine/today.mjs';
 import { localDay } from './db.mjs';
 
-const KINDS = ['vocab-recall', 'vocab-produce', 'conj', 'connector'];
+const KINDS = ['vocab-recall', 'vocab-produce', 'conj', 'connector', 'pick', 'rw', 'nom'];
 const LEVELS = ['A1', 'A2', 'B1'];
+
+/**
+ * 可以被 /api/doc 讀出去的檔案，白名單寫死。
+ *
+ * 這是唯一一支「把使用者給的字串變成檔名」的端點，所以不接受路徑、
+ * 不接受副檔名，只接受這兩個代號。給 id 以外的東西一律 404，
+ * 連 `..` 都沒有機會進到 path.join。
+ */
+/** 搜尋一次最多回傳幾「組」結果（變位卡以動詞為一組）。 */
+const SEARCH_GROUPS = 40;
+/** 為了湊滿那 40 組，最多從 SQL 撈幾張卡進來分組。 */
+const SEARCH_SCAN = 800;
+
+const DOCS = {
+  co: { file: 'delf-b1-comprehension-orale.md', title: 'DELF B1 聽力' },
+  po: { file: 'delf-b1-production-orale.md', title: 'DELF B1 口說' },
+};
+
+/** study/ 相對於本檔的位置。用 import.meta.url 而不是 dataDir，因為它不會被環境變數改掉。 */
+const STUDY_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'study');
 
 export class Api {
   constructor(store) {
@@ -61,9 +83,25 @@ export class Api {
 
   /**
    * 批改並記錄。評分規則：
-   *   打字題　答對 → Good；只差重音或大小寫 → Hard（算對，但排程要收緊）；答錯 → Again
+   *   打字題　完全一樣 → Good；只差大小寫 → Hard（算對，但排程收緊）；
+   *   　　　　少了重音 → Again（算錯）；其他答錯 → Again
    *   自評題　由前端直接給 1..4
-   * 這樣切的理由：重音錯不是「不會這個字」，但也絕對不是「記得很牢」。
+   *
+   * **重音算數**，這是 grade.mjs 定下的立場：écrire 打成 ecrire 在考卷上不給分，
+   * 這裡也不給。大小寫則放行——考卷上句首大寫不會扣分，但它代表記得不夠精確，
+   * 所以降成 Hard 讓下次早一點再問。
+   *
+   * 方框挑連接詞（pick）走另一支批改：它要分辨省音錯、性數錯、選錯格。
+   * 三種都算錯（考卷上也都不給分），分級只影響回饋文字與錯誤統計。
+   *
+   * 名詞化（nom）同理：冠詞算分，但「只錯冠詞」與「用錯名詞」分開報。
+   *
+   * 改寫題（rw）是唯一分兩趟的：整句沒有唯一解，只能自評，
+   * 但自評必須看得到解答，解答又不能在作答前送到前端。
+   *   第一趟 {cardId, answer}：要素有缺 → 當場記錯；要素齊全 → 回 phase:'self'
+   *                            附解答與理由，**這一趟不寫進紀錄**。
+   *   第二趟 {cardId, answer, rating}：帶著自評分數回來，這時才記。
+   * 沒寫進紀錄就代表沒發生：中途關掉視窗不會留下半筆。
    */
   review(body = {}) {
     if (!body.cardId) throw new HttpError(400, '缺少 cardId');
@@ -72,7 +110,35 @@ export class Api {
 
     let rating = body.rating;
     let result = null;
-    if (card.mode === 'typed' || card.mode === 'choice') {
+    let correct = null;
+    if (card.kind === 'rw') {
+      const graded = gradeRewrite(body.answer ?? '', card.must ?? []);
+      if (!graded.correct) {
+        // 指定的連接詞或語氣缺一 → 直接判錯，不必自評。
+        result = graded;
+        rating = 1;
+        correct = false;
+      } else if (!Number.isInteger(body.rating)) {
+        return {
+          phase: 'self',
+          grade: graded,
+          answer: card.answer ?? null,
+          note: card.note ?? null,
+          src: card.front?.src ?? null,
+        };
+      } else {
+        result = graded;
+        rating = body.rating;
+        // 要素齊全但整句自評「差很多」仍算錯，否則統計會把它當成答對。
+        correct = rating > 1;
+      }
+    } else if (card.kind === 'nom') {
+      result = gradeNom(body.answer ?? '', card.accept ?? [card.answer], card.noun ?? '');
+      rating = result.correct ? 3 : 1;
+    } else if (card.kind === 'pick') {
+      result = gradePick(body.answer ?? '', card.answer, card.front?.options ?? []);
+      rating = result.correct ? 3 : 1;
+    } else if (card.mode === 'typed' || card.mode === 'choice') {
       const accepted = card.accept ?? [card.answer];
       result = grade(body.answer ?? '', accepted);
       rating = result.correct
@@ -87,12 +153,13 @@ export class Api {
       cardId: body.cardId,
       rating,
       answered: body.answer ?? null,
-      correct: result ? result.correct : rating > 1,
+      correct: correct ?? (result ? result.correct : rating > 1),
       reason: result ? result.reason : null,
       ms: Number.isFinite(body.ms) ? Math.round(body.ms) : null,
     });
 
     return {
+      phase: 'done',
       rating,
       grade: result,
       answer: card.answer ?? null,
@@ -215,6 +282,36 @@ export class Api {
     return Math.round((row.ms / 1000) * 10) / 10;
   }
 
+  /**
+   * 今天四科各要做什麼。所有算術都在 engine/today.mjs，這裡只負責取數字。
+   * 刻意不吃 scope：這一頁問的是「今天整體該做什麼」，
+   * 被側欄的題型篩選改掉就失去意義了。
+   */
+  today() {
+    const s = this.store.summary();
+    return buildToday({
+      byKind: this.store.byKind(),
+      newLimit: this.store.dailyNewLimit,
+      newToday: this.store.newIntroducedToday(),
+      examDate: this.store.get('examDate', null),
+      reviewsToday: s.todayReviews,
+      streakDays: s.streakDays,
+    });
+  }
+
+  /** 讀 study/ 底下的一份文件。純文字回傳，前端不做 Markdown 渲染。 */
+  async doc(query = {}) {
+    const entry = DOCS[String(query.id ?? '')];
+    if (!entry) throw new HttpError(404, `沒有這份文件：${query.id}`);
+    let text;
+    try {
+      text = await readFile(path.join(STUDY_DIR, entry.file), 'utf8');
+    } catch {
+      throw new HttpError(404, `找不到 study/${entry.file}——這個檔跟著 repo 走，被刪掉就要從版控還原`);
+    }
+    return { id: query.id, title: entry.title, path: `study/${entry.file}`, text };
+  }
+
   settings(body) {
     if (body) {
       if (body.desiredRetention !== undefined) {
@@ -250,23 +347,61 @@ export class Api {
   }
 
   /** 找卡片。用於「這個字我想現在查一下」。 */
+  /**
+   * 題庫搜尋。
+   *
+   * 兩件事要一起處理，不然結果會騙人：
+   *
+   *  1. **中文查得到。** 除了 answer／tags／id，也比對 search 欄——那一欄在灌
+   *     題庫時把各題型的中文釋義攤平進去（見 db.mjs 的 searchText）。沒有它的話
+   *     「迎接」會回 0 筆，可是題庫裡有 40 張卡的釋義寫著迎接。
+   *  2. **上限套在收合後的組數上。** 同一個動詞的六個時態是 36 張卡，前端會收成
+   *     一列。上限若套在卡上，查 avoir 的 40 個名額會被 avoir 自己吃掉 36 個，
+   *     只剩 4 筆別的東西。所以先多撈一些、在這裡分好組，再數組數。
+   */
   search(query = {}) {
     const q = String(query.q ?? '').trim();
-    if (q.length < 1) return { hits: [] };
+    if (q.length < 1) return { hits: [], total: 0, groups: 0, truncated: false };
     const like = `%${q}%`;
+    const where = `WHERE c.answer LIKE ? OR c.tags LIKE ? OR c.id LIKE ? OR c.search LIKE ?`;
+    const args = [like, like, like, like];
+
+    const total = this.store.db
+      .prepare(`SELECT COUNT(*) n FROM cards c ${where}`)
+      .get(...args).n;
+
+    // 掃描上限。一個動詞最多 36 張變位卡，SCAN 要夠大才裝得下 40 組，
+    // 又不能大到把整個題庫撈進記憶體。
     const rows = this.store.db
       .prepare(
         `SELECT c.payload, s.stability, s.due, s.lapses
          FROM cards c LEFT JOIN states s ON s.card_id = c.id
-         WHERE c.answer LIKE ? OR c.tags LIKE ? OR c.id LIKE ?
-         ORDER BY c.freq DESC LIMIT 40`,
+         ${where}
+         ORDER BY c.freq DESC, c.id ASC LIMIT ?`,
       )
-      .all(like, like, like);
-    return {
-      hits: rows.map((r) => ({
-        card: JSON.parse(r.payload),
+      .all(...args, SEARCH_SCAN);
+
+    const hits = [];
+    const seenGroups = new Set();
+    for (const r of rows) {
+      const card = JSON.parse(r.payload);
+      // 變位卡以動詞為一組，其餘每張卡自成一組。
+      const key = card.kind === 'conj' && card.front?.verb ? `verb:${card.front.verb}` : `card:${card.id}`;
+      if (!seenGroups.has(key)) {
+        if (seenGroups.size >= SEARCH_GROUPS) continue;
+        seenGroups.add(key);
+      }
+      hits.push({
+        card,
         state: r.stability == null ? null : { stability: r.stability, due: r.due, lapses: r.lapses },
-      })),
+      });
+    }
+
+    return {
+      hits,
+      total,
+      groups: seenGroups.size,
+      truncated: total > rows.length || seenGroups.size >= SEARCH_GROUPS,
     };
   }
 }
@@ -289,7 +424,8 @@ export class HttpError extends Error {
 
 /** 出題時把答案拿掉，免得在 devtools 的 network 面板就看到解答。 */
 function stripAnswer(card, keepAnswer = false) {
-  const { answer, accept, note, ...rest } = card;
+  // must 是改寫題的必要要素、noun 是名詞化題的名詞本體，兩者都是答案片段，跟 answer 一起拿掉。
+  const { answer, accept, note, must, noun, ...rest } = card;
   return keepAnswer ? { ...rest, answer, note } : rest;
 }
 

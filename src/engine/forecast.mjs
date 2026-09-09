@@ -190,8 +190,14 @@ export function simulate(opts) {
  * 反推：在每天最多做 dailyLimit 張的前提下，
  * 每天要學幾張新卡才能讓考試當天的期望答對率達到目標。
  *
- * 二分搜尋。單調性不是嚴格保證的（新卡學太多會排擠複習，反而更差），
- * 所以最後補一輪線性掃描確認，並回報實際找到的最佳值而不是二分終點。
+ * **掃描，不做二分。** 新卡量與答對率不是單調關係——新卡學太多會排擠複習，
+ * 答對率反而往下掉。二分搜尋的前提在這裡不成立，舊版回報的「上限」其實只是
+ * 二分路徑上（0、1、3、7、15、30）的最大值。實測 16,401 張卡推到 233 天後的考試，
+ * 舊版說最好是每天 30 張、14.23%，實際掃過一遍是 49 張、14.45%。
+ *
+ * 一次 simulate 實測約 13ms，掃 0..60 共 61 格約 0.8 秒。使用者按一次「推演」
+ * 等這個時間，換一個不會騙人的數字，划算。maxNew 更大時改成等距粗掃再回頭補滿
+ * 最好的那一格附近，讓模擬次數維持在約 61 + 2×step。
  */
 export function solveDailyNew(opts) {
   const target = opts.target ?? 0.85;
@@ -214,14 +220,17 @@ export function solveDailyNew(opts) {
     return entry;
   };
 
-  let lo = 0;
-  let hi = maxNew;
-  while (lo < hi) {
-    const mid = Math.ceil((lo + hi) / 2);
-    if (run(mid).rate >= target) lo = mid;
-    else hi = mid - 1;
+  const step = Math.max(1, Math.ceil((maxNew + 1) / 61));
+  for (let n = 0; n <= maxNew; n += step) run(n);
+  run(maxNew);
+  if (step > 1) {
+    // 粗掃時最佳值可能落在兩格之間，回頭把那一段補滿。
+    const coarse = tried.reduce((a, b) => (b.rate > a.rate ? b : a));
+    const lo = Math.max(0, coarse.dailyNew - step);
+    const hi = Math.min(maxNew, coarse.dailyNew + step);
+    for (let n = lo; n <= hi; n += 1) run(n);
   }
-  run(lo);
+
   tried.sort((a, b) => a.dailyNew - b.dailyNew);
   const feasible = tried.filter((t) => t.rate >= target);
   const best = tried.reduce((a, b) => (b.rate > a.rate ? b : a));
@@ -231,6 +240,9 @@ export function solveDailyNew(opts) {
     // 達標的話取能達標的最大新卡量（學得多又達標）；達不到就給最接近的
     recommended: feasible.length ? feasible[feasible.length - 1] : best,
     ceiling: best,
+    // step === 1 代表 0..maxNew 每一格都真的跑過，ceiling 是確定的最大值。
+    // step > 1 時是粗掃加局部補滿，ceiling 有可能漏掉格與格之間的尖峰。
+    exhaustive: step === 1,
     tried: tried.map(({ result, ...rest }) => rest),
   };
 }

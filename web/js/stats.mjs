@@ -12,19 +12,40 @@ import { h, icon, clear, pct, num } from './dom.mjs';
 import { api } from './net.mjs';
 import { bars, heatmap, reasonBars } from './charts.mjs';
 
+/**
+ * 題型的中文名。**這個物件的鍵序就是各類別進度的顯示順序**，
+ * 與側欄篩選鈕（app.mjs 的 KINDS）排的是同一套：先詞彙、再變位、再句子層級。
+ *
+ * 不用 API 回來的順序，是因為 SQL 那邊是 `ORDER BY c.kind`，也就是英文代碼的
+ * 字母序——conj、connector、nom、pick、rw、vocab-produce、vocab-recall。
+ * 那個順序在畫面上讀起來沒有意義，而且跟旁邊側欄的排法對不起來。
+ */
 const KIND_ZH = {
   'vocab-recall': '看字回想',
   'vocab-produce': '中翻法',
   conj: '動詞變位',
   connector: '連接詞',
+  pick: '挑連接詞',
+  rw: '改寫整句',
+  nom: '名詞化',
 };
 
-const REASON_ZH = { wrong: '拼錯', accent: '漏重音', case: '大小寫', empty: '沒作答' };
+const REASON_ZH = {
+  wrong: '拼錯', accent: '漏重音', case: '大小寫', empty: '沒作答',
+  elision: '省音', family: '性數／形式', missing: '少要素', article: '冠詞錯',
+};
 const REASON_COLOR = {
   wrong: 'var(--bad)',
   accent: 'var(--warn)',
   case: 'var(--text-faint)',
   empty: 'var(--border-strong)',
+  // 挑連接詞的兩種「選對了但寫錯」。歸在警示色，與純粹選錯格分開看。
+  elision: 'var(--warn)',
+  family: 'var(--warn)',
+  // 改寫題缺了指定的連接詞或語氣。跟拼錯是同一級的錯，用同一個顏色。
+  missing: 'var(--bad)',
+  // 名詞化只錯冠詞：名詞本身挑對了，跟完全不會不是同一級，歸警示色。
+  article: 'var(--warn)',
 };
 
 export function statsView(root, ctx) {
@@ -52,7 +73,7 @@ export function statsView(root, ctx) {
     body.append(h('div.stat-grid', {},
       stat('已掌握', s.matureCards, `共 ${num(s.totalCards)} 張・穩定度 ≥ 21 天`),
       stat('學過', s.seenCards, `未學 ${num(s.newCards)} 張`),
-      stat('現在到期', s.dueNow, s.dueNow ? '去做掉它' : '沒有欠帳'),
+      stat('今天到期', s.dueNow, s.dueNow ? '去做掉它' : '沒有欠帳'),
       stat('連續天數', s.streakDays, s.streakDays ? '別斷' : '今天可以重新開始'),
       stat('今天', s.todayReviews, accuracy === null ? '還沒開始' : `正確率 ${pct(accuracy)}`),
       stat('累計作答', s.totalReviews, `紀錄檔 ${fmtBytes(d.journal.bytes)}`),
@@ -60,7 +81,15 @@ export function statsView(root, ctx) {
 
     // ---- 各類別進度 ----
     const kinds = h('div.body');
-    for (const k of d.byKind) {
+    // 照 KIND_ZH 的鍵序排；認不得的題型（將來新增而還沒補中文的）排在最後，
+    // 不丟掉也不假裝它不存在。
+    const order = Object.keys(KIND_ZH);
+    const sorted = [...d.byKind].sort((a, b) => {
+      const ia = order.indexOf(a.kind);
+      const ib = order.indexOf(b.kind);
+      return (ia < 0 ? order.length : ia) - (ib < 0 ? order.length : ib);
+    });
+    for (const k of sorted) {
       const mature = h('i.mature');
       mature.style.width = `${(k.mature / k.total) * 100}%`;
       const seen = h('i.seen');
@@ -139,7 +168,7 @@ export function statsView(root, ctx) {
       up.append(emptyLine('未來 30 天沒有排定的複習。'));
     } else {
       if (d.upcoming.backlog) {
-        up.append(h('p.verdict-note', { text: `另有 ${d.upcoming.backlog} 張已經到期還沒做，沒有算進下面的圖。` }));
+        up.append(h('p.verdict-note', { text: `今天到期的 ${d.upcoming.backlog} 張要另外做，下面的圖只畫之後的日子。` }));
       }
       up.append(bars(
         d.upcoming.days.map((x) => ({ x: x.day.slice(5), label: x.day, a: x.count })),

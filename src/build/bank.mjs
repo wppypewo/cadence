@@ -15,6 +15,9 @@ import path from 'node:path';
 import { SOURCES, exists, readJson, loadGlosses, resolveGloss } from './sources.mjs';
 import { loadVerbiste, conjugate, compound, PRONOUNS, IMPERATIVE_PRONOUNS, AUX_DUAL_NOTE } from './verbiste.mjs';
 import { loadConnectors, MOOD_LABELS } from './connectors.mjs';
+import { loadPicks } from './picks.mjs';
+import { loadRewrites } from './rewrites.mjs';
+import { buildNominals } from './nominals.mjs';
 
 /** 要出題的時態。passé simple 是書面語、口語考不到，先不進題庫。 */
 const TENSES = [
@@ -192,6 +195,103 @@ function makeConnectorCards(connectors) {
 }
 
 /**
+ * 方框挑連接詞（考卷第 II 大題）。
+ *
+ * 打字作答而不是點選項：考卷是填進句子裡的，該省的音要跟著寫，
+ * 性數也要配好。點按鈕會把這兩個考點整個抹掉。
+ * 方框仍然印在題面上，那是這一大題的形式——考的是在六個選項裡認出哪一個。
+ */
+function makePickCards(items) {
+  return items.map((it) => ({
+    id: it.id,
+    kind: 'pick',
+    mode: 'typed',
+    level: 'B1',
+    freq: 0,
+    tags: ['pick', `${it.sec}${it.group}`],
+    answer: it.answer,
+    // 省音與性數是考點，不收其他寫法當同義答案。
+    accept: [it.answer],
+    front: {
+      prompt: it.prompt,
+      options: it.options,
+      group: it.group,
+      sec: it.sec,
+      src: it.src,
+    },
+    note: it.why,
+  }));
+}
+
+/**
+ * 用指定連接詞改寫整句（考卷第 III 大題，18%）。
+ *
+ * 沒有 accept：整句沒有唯一解，`Si agréable qu'il soit` 與 `Si agréable soit-il`
+ * 都對。批改只查必要要素，其餘交給自評，所以不做字串比對。
+ * `must` 放在卡片頂層而非 front，因為它含答案片段，出題時要跟 answer 一起拿掉。
+ */
+function makeRewriteCards(items) {
+  return items.map((it) => ({
+    id: it.id,
+    kind: 'rw',
+    mode: 'rewrite',
+    level: 'B1',
+    freq: 0,
+    tags: ['rw', `rw${it.sec}`],
+    answer: it.answer,
+    accept: null,
+    must: it.must,
+    front: {
+      prompt: it.prompt,
+      tool: it.tool,
+      sec: it.sec,
+      num: it.num,
+      src: it.src,
+    },
+    note: it.why,
+  }));
+}
+
+/**
+ * 名詞化（考卷第 IV 大題，14%）。
+ *
+ * 只問「哪個名詞、配哪個冠詞」，不問整句框架——後者沒有唯一解，留在 rw 的自評。
+ * 打字作答而不是二選一點 le／la：考卷是寫出來的，名詞本身拼錯照樣沒分。
+ * `noun` 放在卡片頂層而非 front，因為它就是答案的一半，出題時要跟 answer 一起拿掉。
+ *
+ * 題面帶基詞的中文釋義：規則挖出來的配對不保證語意貼合（見 nominals.mjs 的排除清單），
+ * 釋義擺在眼前，配對有問題當場就看得出來，不必先相信建置腳本。
+ */
+function makeNomCards(items, entries, glossTables) {
+  const byKey = new Map();
+  for (const e of entries) byKey.set(`${e.word}|${e.pos}`, e);
+  return items.map((it) => {
+    const e = byKey.get(`${it.base}|${it.pos}`);
+    const gloss = e?.zh?.length ? e.zh.join(' / ') : resolveGloss(glossTables, it.base, it.pos);
+    return {
+      id: `n:${it.base}|${it.pos}`,
+      kind: 'nom',
+      mode: 'typed',
+      // 考卷組的基詞不一定在詞表裡（tomber en panne），沒查到就當 B1——這一大題本來就是 B1 的題。
+      level: e?.level ?? 'B1',
+      freq: e?.freq ?? 0,
+      tags: ['nom', it.src === '[推論]' ? 'nomRule' : 'nomIV'],
+      answer: it.answer,
+      accept: it.answers,
+      noun: it.noun,
+      // 不放 gender：陰陽性正是這題要考的，送到前端等於把一半答案印在題面上。
+      front: {
+        base: it.base,
+        pos: it.pos,
+        posZh: POS_ZH[it.pos] ?? it.pos,
+        gloss,
+        src: it.src,
+      },
+    };
+  });
+}
+
+/**
  * 跑一次完整建置。
  * @param {string} outDir data/bank 的絕對路徑
  * @param {(msg:string)=>void} log
@@ -230,7 +330,19 @@ export async function build(outDir, log = () => {}) {
   const connectors = await loadConnectors(SOURCES.vault);
   const connCards = makeConnectorCards(connectors);
 
-  const cards = [...vocabCards, ...conjCards, ...connCards];
+  log('讀取方框挑連接詞題庫…');
+  const picks = await loadPicks(SOURCES.packs);
+  const pickCards = makePickCards(picks);
+
+  log('讀取改寫題庫…');
+  const rewrites = await loadRewrites(SOURCES.packs);
+  const rwCards = makeRewriteCards(rewrites);
+
+  log('推導名詞化配對…');
+  const nominals = buildNominals(entries, genders);
+  const nomCards = makeNomCards(nominals, entries, glossTables);
+
+  const cards = [...vocabCards, ...conjCards, ...connCards, ...pickCards, ...rwCards, ...nomCards];
   const seen = new Set();
   for (const c of cards) {
     if (seen.has(c.id)) throw new Error(`卡片 id 重複：${c.id}`);
@@ -246,6 +358,9 @@ export async function build(outDir, log = () => {}) {
       vocabProduce: vocabCards.filter((c) => c.kind === 'vocab-produce').length,
       conj: conjCards.length,
       connector: connCards.length,
+      pick: pickCards.length,
+      rw: rwCards.length,
+      nom: nomCards.length,
       verbTables: Object.keys(tables).length,
       vocabEntries: entries.length,
     },
@@ -267,4 +382,4 @@ export async function build(outDir, log = () => {}) {
 }
 
 // make* 三支只在建置與測試中使用；匯出是為了讓卡片生成規則可以被單獨測。
-export { TENSES, POS_ZH, makeVocabCards, makeConjCards, makeConnectorCards };
+export { TENSES, POS_ZH, makeVocabCards, makeConjCards, makeConnectorCards, makePickCards, makeRewriteCards, makeNomCards };

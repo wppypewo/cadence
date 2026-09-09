@@ -6,6 +6,145 @@
  * 題目字級 40px、介面 15px，中間沒有其他層級來稀釋它。
  */
 
+/* ---- 今天 ------------------------------------------------------------- */
+
+/*
+ * 這一頁的層級只有兩層：倒數天數，然後四列任務。
+ * 中間不放任何裝飾——每多一個「看起來很認真」的區塊，
+ * 就多一個讓人停在這一頁而不去按「練 N 張」的理由。
+ */
+
+.today { display: flex; flex-direction: column; gap: var(--s5); }
+
+.today-head { display: flex; flex-direction: column; gap: var(--s1); }
+.today-date { font-size: var(--t-sm); color: var(--text-muted); }
+
+/* 倒數是全頁最大的字。日期記不住，「還有幾天」才會逼人動作。 */
+.today-count { display: flex; align-items: baseline; gap: var(--s2); }
+.today-count .n { font-size: var(--t-3xl); font-weight: 600; line-height: 1.05; }
+.today-count .u { font-size: var(--t-lg); color: var(--text-muted); }
+
+.today-sub { font-size: var(--t-sm); color: var(--text-muted); }
+.today-run { font-size: var(--t-xs); color: var(--text-faint); }
+
+.tasks { display: flex; flex-direction: column; gap: var(--s3); }
+
+.task {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--s4);
+  padding: var(--s4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-card);
+}
+
+/*
+ * CO／PO 用虛線框。它們沒有卡片、沒有進度，實線會讓人以為
+ * 跟上面兩列是同一種東西——差別是「系統管得到」與「只有你管得到」。
+ */
+.task[data-mode="doc"] { border-style: dashed; box-shadow: none; }
+
+.task-code {
+  display: grid; place-items: center;
+  width: 40px; height: 40px;
+  border: 1px solid var(--border-strong); border-radius: var(--r-control);
+  font-family: var(--font-num); font-size: var(--t-sm); font-weight: 600;
+  color: var(--text-muted);
+}
+.task[data-mode="cards"] .task-code { border-color: var(--accent); color: var(--accent); }
+
+.task-main { display: flex; flex-direction: column; gap: var(--s2); min-width: 0; }
+
+.task-name { display: flex; align-items: baseline; gap: var(--s2); flex-wrap: wrap; }
+.task-name .zh { font-size: var(--t-lg); font-weight: 600; }
+/* 考卷上印的是法文名稱，考場裡認得的必須是這一行。 */
+.task-name .fr { font-family: var(--font-fr); font-size: var(--t-sm); color: var(--text-muted); }
+
+.task-count { display: flex; align-items: baseline; gap: var(--s1); flex-wrap: wrap; font-size: var(--t-sm); }
+.task-count .n { font-family: var(--font-num); font-size: var(--t-xl); font-weight: 600; }
+.task-count .u { color: var(--text-muted); }
+.task-count .sep { color: var(--text-faint); }
+.task-count .part { color: var(--text-muted); }
+.task-count .dim { color: var(--text-faint); font-size: var(--t-xs); }
+.task-count .done { display: inline-flex; align-items: center; gap: var(--s1); color: var(--ok); }
+.task-count .done svg { width: 16px; height: 16px; }
+
+.task-hint { font-size: var(--t-xs); color: var(--text-faint); max-width: 52ch; }
+/* CO／PO 那兩列的正文：它是今天真正要做的事，字級要跟上面兩列的數字同一層。 */
+.task-do { font-size: var(--t-sm); color: var(--text); max-width: 52ch; }
+/* 「記不到進度」只是限制說明，不是要人處理的問題，所以不給警示色。 */
+.task-untracked { font-size: var(--t-xs); color: var(--text-faint); }
+
+.task-act { display: flex; flex-direction: column; gap: var(--s2); }
+
+/* 文件面板。展開後接在同一列的內文下方，不另開頁——換頁就會忘記自己本來要幹嘛。 */
+.doc { display: flex; flex-direction: column; gap: var(--s2); margin-top: var(--s2); }
+.doc-bar { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; }
+.doc-path { font-family: var(--font-num); font-size: var(--t-xs); color: var(--text-faint); }
+.doc-loading { font-size: var(--t-sm); color: var(--text-muted); }
+.doc-error { font-size: var(--t-sm); color: var(--bad); }
+
+/* 渲染後的說明文件。
+   舊版是 max-height: 46vh 的內捲區塊，理由是「免得七千字把四列任務推出畫面」。
+   實際用起來相反：一份要照著做的文件被關在半個螢幕高的框裡，兩層捲軸互相搶
+   滾輪，讀三行就得停下來對焦。展開說明本來就是「我現在要讀這個」的動作，
+   讓它把頁面撐長、整頁一起捲比較合理。 */
+.doc .md {
+  padding: var(--s4);
+  background: var(--sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--r-control);
+  /* 15px：這是拿來照著做的文件，不是註腳。舊版 12px 等寬字讀一頁就累。 */
+  font-size: var(--t-md); line-height: 1.75; color: var(--text);
+  word-break: break-word;
+}
+.md > * + * { margin-top: var(--s3); }
+.md-p { max-width: 74ch; }
+.md-h { line-height: 1.4; }
+.md-h[data-l="1"] { font-size: var(--t-xl); }
+.md-h[data-l="2"] { font-size: var(--t-lg); }
+.md-h[data-l="3"] { font-size: var(--t-md); color: var(--text-muted); }
+/* 標題與上一段之間要比段落間距大，跟下面自己的內文之間要小——
+   靠得近的東西才看得出是同一節。 */
+.md > .md-h { margin-top: var(--s5); }
+.md > .md-h + * { margin-top: var(--s2); }
+.md > .md-h:first-child { margin-top: 0; }
+.md-hr { height: 0; margin: var(--s5) 0; border: 0; border-top: 1px solid var(--border); }
+.md-list { padding-left: var(--s5); max-width: 74ch; }
+.md-list li + li { margin-top: var(--s2); }
+.md-list li[data-d="1"] { margin-left: var(--s4); }
+.md-list li[data-d="2"] { margin-left: var(--s6); }
+.md-quote {
+  padding-left: var(--s4); border-left: 2px solid var(--border-strong);
+  color: var(--text-muted); max-width: 74ch;
+}
+.md-code {
+  padding: var(--s3); border-radius: var(--r-control);
+  background: var(--surface); border: 1px solid var(--border);
+  font-family: var(--font-num); font-size: var(--t-sm); line-height: 1.6;
+  overflow-x: auto; white-space: pre;
+}
+.md code { font-family: var(--font-num); font-size: 0.92em; }
+/* 評分格那幾張表比容器寬，讓表格自己橫捲，不要把整頁撐寬。 */
+.md-tablewrap { overflow-x: auto; }
+.md-table { border-collapse: collapse; font-size: var(--t-sm); min-width: 100%; }
+.md-table th, .md-table td {
+  padding: var(--s2) var(--s3); border: 1px solid var(--border); vertical-align: top;
+}
+.md-table th { background: var(--surface); font-weight: 600; white-space: nowrap; }
+
+.today-foot { font-size: var(--t-xs); color: var(--text-faint); max-width: 60ch; }
+
+@media (max-width: 620px) {
+  /* 窄螢幕把按鈕放到整列底下拉滿：拇指構得到，也不會把中間的數字擠成兩行。 */
+  .task { grid-template-columns: auto minmax(0, 1fr); }
+  .task-act { grid-column: 1 / -1; }
+  .task-act .btn { width: 100%; }
+}
+
 /* ---- 複習 ------------------------------------------------------------- */
 
 .study { display: flex; flex-direction: column; gap: var(--s4); }
@@ -62,6 +201,45 @@
   display: inline-block; min-width: 6ch; border-bottom: 2px solid var(--border-strong);
 }
 
+/*
+ * 挑連接詞題：方框 + 挖空的句子。
+ * 方框裡的字是要讀的內容不是標籤，所以比一般 chip 大一級、用內文色，
+ * 並且沿用法文字體——選項本身就是法文。
+ */
+.pick-box { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.pick-box .chip {
+  padding: var(--s1) var(--s3);
+  font-family: var(--font-fr); font-size: var(--t-md); color: var(--text);
+}
+/*
+ * 改寫題：指定工具 + 原句（法文或中文）+ 多行作答框。
+ * 指定工具排在原句前面且做強調——整題的限制條件就是它，
+ * 看漏了會寫出一句「意思對但沒用到指定連接詞」的答案，那是零分。
+ */
+.rw-tool {
+  /* .prompt 是 stretch 的直向 flex，不 align-self 就會拉成整條橫幅。 */
+  align-self: flex-start;
+  display: inline-block; padding: var(--s1) var(--s3);
+  font-family: var(--font-fr); font-size: var(--t-lg); font-weight: 600;
+  color: var(--accent); background: var(--sunken);
+  border: 1px solid var(--accent); border-radius: var(--r-control);
+}
+.rw-source { font-size: var(--t-lg); line-height: 1.6; }
+.rw-source.fr { font-family: var(--font-fr); font-size: var(--t-xl); }
+.rw-self { display: flex; flex-direction: column; gap: var(--s3); }
+.rw-answer {
+  font-family: var(--font-fr); font-size: var(--t-lg); line-height: 1.6;
+  padding: var(--s3); border-radius: var(--r-control);
+  background: var(--sunken); border: 1px solid var(--border);
+}
+/* 自評只有三格，格數寫在 data-n 上，不另開一個 class。 */
+.ratings[data-n="3"] { grid-template-columns: repeat(3, 1fr); }
+
+.pick-sentence {
+  font-family: var(--font-fr); font-size: var(--t-xl); line-height: 1.5;
+  word-break: break-word;
+}
+
 .answer-row { display: flex; flex-direction: column; gap: var(--s3); }
 
 .answer-input {
@@ -73,6 +251,8 @@
 .answer-input::placeholder { color: var(--text-faint); font-family: var(--font-ui); font-size: var(--t-md); }
 .answer-input:focus-visible { background: var(--surface); border-color: var(--accent); }
 .answer-input:disabled { opacity: 1; color: var(--text-muted); }
+/* 作答框要多行：一整句寫在單行輸入框裡看不到自己寫了什麼。 */
+.answer-area { min-height: 96px; padding: var(--s3) var(--s4); line-height: 1.5; resize: vertical; }
 
 /*
  * 重音鍵盤。這排不是裝飾——沒有法文輸入法的鍵盤打不出 é ç œ，
@@ -172,10 +352,16 @@ kbd {
 
 /* ---- 統計 ------------------------------------------------------------- */
 
+/* 固定三欄，因為上面剛好是六塊磚（3×2 排得滿）。
+   舊版用 auto-fit minmax(150px, 1fr)，寬視窗會排成五欄，第六塊自己站一列——
+   一個孤零零的方塊看起來像沒載完，而不像刻意的版面。
+   欄數寫死代表它跟磚數綁在一起：stats.mjs 那六個 stat() 增減時，這裡要一起改。 */
 .stat-grid {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  display: grid; grid-template-columns: repeat(3, 1fr);
   gap: var(--s3); margin-bottom: var(--s5);
 }
+/* 視窗窄到三欄會把數字擠成兩行時退成兩欄，仍然排得滿（2×3）。 */
+@media (max-width: 860px) { .stat-grid { grid-template-columns: repeat(2, 1fr); } }
 .stat {
   display: flex; flex-direction: column; gap: 2px;
   padding: var(--s4); background: var(--surface);
@@ -203,8 +389,12 @@ kbd {
 .meter .mature { background: var(--accent); }
 .meter .seen { background: var(--accent-weak); }
 
+/* 長條封頂 360px，不讓它吃滿整列。剛開始練的時候每一條都是全空的，
+   如果條子有 500px 長，右邊那組數字就被推到離題型名稱半個螢幕遠，
+   讀一列要橫掃過去再掃回來。封頂之後名稱、長條、數字擠成一組，一眼看完。 */
 .kind-row {
-  display: grid; grid-template-columns: 108px 1fr auto; align-items: center;
+  display: grid; grid-template-columns: 108px minmax(0, 360px) auto;
+  justify-content: start; align-items: center;
   gap: var(--s3); padding: var(--s3) 0;
 }
 .kind-row + .kind-row { border-top: 1px solid var(--border); }
@@ -260,12 +450,48 @@ kbd {
 
 /* ---- 推演 ------------------------------------------------------------- */
 
+/* 三列 grid：標籤一列、控制項一列、說明一列，每個 .field 用 subgrid 掛進去。
+   舊版是 flex + align-items:flex-end，有說明的欄位比較高，靠底部對齊的結果是
+   「考試日期」的標籤比「每天最多做」低了一整行——四個標籤站在四個高度上。
+   改成三列之後，標籤對標籤、輸入框對輸入框，說明有沒有都不影響上面兩列。 */
 .fc-form {
-  display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--s3);
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(128px, max-content);
+  grid-template-rows: auto auto auto;
+  justify-content: start; align-items: start;
+  gap: var(--s1) var(--s3);
   padding: var(--s4); margin-bottom: var(--s5);
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card);
 }
-.fc-form .field { min-width: 128px; }
+.fc-form .field { display: grid; grid-row: 1 / -1; grid-template-rows: subgrid; min-width: 0; }
+/* 按鈕跟輸入框同一列，不跟標籤也不跟說明。 */
+.fc-form > .btn { grid-row: 2; }
+
+/* 還沒推演過的空狀態。.empty 是置中的，但這裡有一份三步驟清單，
+   置中的清單每一行起點都不一樣，讀起來像散開的字。整塊改成靠左。 */
+.fc-empty { align-items: flex-start; text-align: left; padding: var(--s6) var(--s5); }
+/* .empty p 的 42ch 是為了置中的一兩句短文；這裡的句子比較長，
+   42ch 會讓最後一行只剩一兩個字，看起來像斷掉。 */
+.fc-empty p { max-width: 64ch; text-wrap: pretty; }
+/* 加上 .fc-empty 前綴不是為了好看，是為了贏過 `.empty p` 的字級與顏色。 */
+.fc-empty p.fc-empty-lead { font-size: var(--t-md); color: var(--text); font-weight: 600; }
+.fc-empty-list {
+  display: flex; flex-direction: column; gap: var(--s2);
+  margin: 0; padding: 0; list-style: none; counter-reset: fc;
+}
+.fc-empty-list li {
+  display: flex; gap: var(--s3); align-items: baseline;
+  font-size: var(--t-sm); color: var(--text-muted); counter-increment: fc;
+}
+/* 用 counter 而不是 <ol> 的預設編號：預設編號的數字對齊由瀏覽器決定，
+   在這個字級下會跟內文差半個字身。 */
+.fc-empty-list li::before {
+  content: counter(fc);
+  flex: none; width: 1.4em; text-align: right;
+  font-family: var(--font-num); color: var(--text-faint);
+}
+.fc-empty p.fc-empty-note { font-size: var(--t-xs); color: var(--text-faint); }
 
 /* 推演結論。這是整個 App 最該被讀到的一句話，所以給它最大的字。 */
 .fc-verdict {
@@ -390,6 +616,7 @@ table.grid tr[data-hit="1"] td { background: var(--accent-weak); color: var(--ac
   .accents { display: grid; grid-template-columns: repeat(5, 1fr); }
   .accents button { min-height: 44px; }
   .prompt-word { font-size: var(--t-2xl); }
+  .pick-sentence { font-size: var(--t-lg); }
   .ratings { grid-template-columns: repeat(2, 1fr); }
   .kind-row { grid-template-columns: 88px 1fr; }
   .kind-row .n { grid-column: 1 / -1; }

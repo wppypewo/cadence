@@ -27,6 +27,8 @@ async function call(method, path, { query, body } = {}) {
 
 export const api = {
   summary: () => call('GET', '/api/summary'),
+  today: () => call('GET', '/api/today'),
+  doc: (id) => call('GET', '/api/doc', { query: { id } }),
   queue: (q) => call('GET', '/api/queue', { query: q }),
   stats: (q) => call('GET', '/api/stats', { query: q }),
   forecast: (q) => call('GET', '/api/forecast', { query: q }),

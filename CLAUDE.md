@@ -13,7 +13,7 @@
 
 ```bash
 npm run lint   # node --check 全檔
-npm test       # 100 題，含 732 組 FSRS 黃金向量
+npm test       # 193 題，含 732 組 FSRS 黃金向量
 ```
 
 兩個都綠才算完成。動到 `src/engine/fsrs.mjs` 時，黃金向量測試紅了代表移植跑掉了，不要改測試去配合實作。
@@ -25,12 +25,13 @@ npm test       # 100 題，含 732 組 FSRS 黃金向量
 - `icon()` 產出的 SVG 沒有 width/height，尺寸一律由 CSS 給。新增用到圖示的地方時記得配一條尺寸規則。
 - 手機版導覽是 `position: fixed` 的底部標籤列。改 `.main` 的 padding 或 `.toast` 的 bottom 時要一起考慮那條的高度。
 - 圖表手寫在 `web/js/charts.mjs`，不引圖表庫。
+- Markdown 也手寫在 `web/js/markdown.mjs`，只支援 `study/` 那兩份文件真的用到的語法。要加語法就加，但不引 Markdown 套件——那會把零依賴推翻，而且解析結果最後要進 DOM，套件回傳的 HTML 字串沒有地方可以塞（`h()` 不收 `innerHTML`）。
 
 ## 資料來源
 
-`src/build/sources.mjs` 是唯一知道外部目錄長什麼樣的檔案。路徑要改就改那裡，或設環境變數 `CADENCE_FEXGEN`／`CADENCE_VERBISTE`／`CADENCE_VAULT`。其他模組不得自己拼路徑。
+`src/build/sources.mjs` 是唯一知道外部目錄長什麼樣的檔案。路徑要改就改那裡，或設環境變數 `CADENCE_FEXGEN`／`CADENCE_VERBISTE`／`CADENCE_VAULT`／`CADENCE_PACKS`。其他模組不得自己拼路徑。
 
-三個來源都在這台機器上，**都不屬於本專案**：
+四個來源都在這台機器上，**都不屬於本專案**：
 
 - `french-exam-generator` 有另一個 session 在改，不要動它的檔案。
 - `Ricky-KnowledgeBase` 是獨立的 git repo，未經使用者確認不得修改其中任何既有檔案。

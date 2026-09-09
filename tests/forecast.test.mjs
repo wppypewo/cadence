@@ -88,6 +88,31 @@ test('額度不夠時到期卡會遞延，並記錄最高積壓量', () => {
   assert.ok(roomy.days.every((d) => d.deferred === 0));
 });
 
+test('solveDailyNew 掃過每一格，ceiling 不會漏掉二分搜尋跳過的尖峰', () => {
+  const opts = baseOpts({ maxNew: 30, target: 0.99, dailyNew: undefined });
+  const r = solveDailyNew(opts);
+
+  // 0..maxNew 每一格都要真的跑過。舊版二分只跑 6 格，回報的「上限」是假的。
+  assert.equal(r.exhaustive, true);
+  assert.equal(r.tried.length, 31);
+  assert.deepEqual(r.tried.map((t) => t.dailyNew), Array.from({ length: 31 }, (_, i) => i));
+
+  // ceiling 必須是所有跑過的格子裡最高的答對率，不是搜尋路徑終點。
+  const max = Math.max(...r.tried.map((t) => t.rate));
+  assert.equal(r.ceiling.rate, max);
+  for (const t of r.tried) assert.ok(t.rate <= r.ceiling.rate);
+});
+
+test('maxNew 很大時改成粗掃加局部補滿，模擬次數不隨 maxNew 線性膨脹', () => {
+  const r = solveDailyNew(baseOpts({ maxNew: 600, target: 0.99, dailyNew: undefined }));
+  assert.equal(r.exhaustive, false);
+  // 61 格粗掃 + 最佳格附近補滿，遠少於 601 次。
+  assert.ok(r.tried.length < 100, `跑了 ${r.tried.length} 次`);
+  assert.ok(r.tried.some((t) => t.dailyNew === 600));
+  const max = Math.max(...r.tried.map((t) => t.rate));
+  assert.equal(r.ceiling.rate, max);
+});
+
 test('不修改呼叫端傳進來的卡片物件', () => {
   // 同一份 cards 陣列在 solveDailyNew 裡會被跑很多次，被改到就會互相污染。
   const cards = makeCards(20, 20, FROM);

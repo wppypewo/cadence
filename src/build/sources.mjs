@@ -21,6 +21,9 @@ export const SOURCES = {
   /** 個人筆記：連接詞後接語氣等文法規則 */
   vault: process.env.CADENCE_VAULT
     ?? path.join(HOME, 'ClaudeCode/KnowledgeBase/Ricky-KnowledgeBase/wiki/concepts/french'),
+  /** 個人筆記：考卷與講義整理出來的現成題目 */
+  packs: process.env.CADENCE_PACKS
+    ?? path.join(HOME, 'ClaudeCode/KnowledgeBase/Ricky-KnowledgeBase/wiki/outputs/study-packs'),
 };
 
 export async function exists(p) {
@@ -79,7 +82,12 @@ export function resolveGloss({ plain, bypos, override }, word, pos) {
 const REQUIRED = {
   fexgen: ['vocab_a1a2.json', 'vocab_b1.json', 'en_defs.json', 'genders.json'],
   verbiste: ['verbs-fr.xml', 'conjugation-fr.xml'],
-  vault: ['french-connectors.md'],
+  vault: ['final-exam-grammar-core.md', 'french-connectors.md'],
+  packs: [
+    'french-111-2-grammar-exam-pack.md',
+    'french-connector-pick-bank.md',
+    'french-rewrite-drill-bank.md',
+  ],
 };
 
 /**

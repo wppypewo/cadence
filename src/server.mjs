@@ -76,6 +76,10 @@ async function handleApi(api, req, res, url) {
   switch (route) {
     case 'GET /api/summary':
       return send(res, 200, api.summary());
+    case 'GET /api/today':
+      return send(res, 200, api.today());
+    case 'GET /api/doc':
+      return send(res, 200, await api.doc(q));
     case 'GET /api/queue':
       return send(res, 200, api.queue(q));
     case 'GET /api/stats':

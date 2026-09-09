@@ -327,6 +327,27 @@ test('upcoming 把已經到期的算成 backlog，不混進未來幾天的圖', 
   }
 });
 
+test('dueCount 與 upcoming.backlog 用同一條界線：當天稍晚到期的卡算今天', async () => {
+  const [store, dir] = await open();
+  try {
+    // 早上 08:00 答錯一張，FSRS 會把它排到當天稍晚或隔天。
+    const morning = new Date(2026, 8, 9, 8, 0);
+    store.review({ cardId: 'a1-recall-1', rating: 1, correct: false, at: morning });
+
+    // 同一天的 23:00 來看：兩個統計必須說一樣的話。
+    // 舊版 dueCount 比瞬間、upcoming 比本地日，這裡會得到 0 與 1。
+    const night = new Date(2026, 8, 9, 23, 0);
+    assert.equal(store.dueCount({}, night), store.upcoming(30, {}, night).backlog);
+
+    // byKind 的 due 欄也吃同一條界線。
+    const byKind = store.byKind({}, night);
+    const sum = byKind.reduce((a, k) => a + k.due, 0);
+    assert.equal(sum, store.dueCount({}, night));
+  } finally {
+    cleanup(store, dir);
+  }
+});
+
 test('weakest 只收錯過的卡，並附上最近一次的錯法', async () => {
   const [store, dir] = await open();
   try {

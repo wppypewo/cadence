@@ -15,7 +15,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { makeVocabCards, makeConjCards, makeConnectorCards, TENSES, POS_ZH } from '../src/build/bank.mjs';
-import { parseConnectors, MOOD_LABELS } from '../src/build/connectors.mjs';
+import { parseConnectors, parseMoodTable, mergeConnectors, MOOD_LABELS } from '../src/build/connectors.mjs';
 import { parseVerbs, parseTemplates, AUX_DUAL_NOTE } from '../src/build/verbiste.mjs';
 
 // ---- 詞彙卡 ----
@@ -293,7 +293,7 @@ test('連接詞：找不到判斷表時回空陣列，不猜', () => {
   assert.deepEqual(parseConnectors('# 筆記\n\n沒有那張表。'), []);
 });
 
-test('連接詞卡：多解的不出題，選項是五種語氣', () => {
+test('連接詞卡：多解的不出題，選項是全部語氣', () => {
   const cards = makeConnectorCards(parsed);
   assert.equal(cards.length, parsed.filter((c) => !c.ambiguous).length);
   assert.equal(cards.some((c) => c.id === 'k:sinon'), false);
@@ -305,8 +305,95 @@ test('連接詞卡：多解的不出題，選項是五種語氣', () => {
   assert.equal(card.answer, 'indicatif');
   assert.deepEqual(card.accept, ['indicatif']);
   assert.deepEqual(card.options, Object.keys(MOOD_LABELS));
-  assert.equal(card.options.length, 5);
+  // 2026-09-09 起多一個 imparfait：comme si 接的不是 conditionnel，
+  // 那一步答「indicatif」等於沒答到，所以獨立成選項。
+  assert.equal(card.options.length, 6);
   assert.equal(card.front.sense, '對立');
   // 每個選項都要有中文標籤，否則畫面上只有法文術語。
   for (const o of card.options) assert.ok(MOOD_LABELS[o]);
+});
+
+// ---------------------------------------------------------------------------
+// 權威表（final-exam-grammar-core.md）：依語氣分列
+// ---------------------------------------------------------------------------
+
+const MOOD_MD = `# 期末文法核心
+
+## 快速判斷表（考前 30 秒語氣總表，PDF §5）
+
+| 語氣 | 連接詞 / 結構 |
+| --- | --- |
+| **Indicatif** | quand, après que, si(讓步), selon que…ou |
+| **Subjonctif** | bien que, soit que…, si/quelque/pour + adj + que, quel(le)(s) que |
+| **Conditionnel** | au cas où |
+| **Imparfait / plus-que-parfait** | comme si |
+| **Indicatif 或 subjonctif** | tout + adj + que |
+| 這一列只有一欄 |
+
+## 別的章節
+
+| **Subjonctif** | 這張表不該被讀進來 |
+`;
+
+const core = parseMoodTable(MOOD_MD);
+const coreBy = (name) => core.find((c) => c.connector === name);
+
+test('權威表：連接詞欄只用逗號拆，帶斜線的結構不能被拆開', () => {
+  // `si/quelque/pour + adj + que` 是一個條目，不是三個。
+  assert.ok(coreBy('si/quelque/pour + adj + que'));
+  assert.equal(coreBy('si/quelque/pour + adj + que').mood, 'subjonctif');
+  assert.equal(coreBy('si').mood, 'indicatif');
+  assert.equal(coreBy('si').sense, '讓步');
+});
+
+test('權威表：après que 接 indicatif（2026-09-09 使用者裁定，與權威表一致）', () => {
+  assert.equal(coreBy('après que').mood, 'indicatif');
+  assert.equal(coreBy('après que').ambiguous, false);
+});
+
+test('權威表：comme si 獨立成 imparfait，不併進 indicatif', () => {
+  assert.equal(coreBy('comme si').mood, 'imparfait');
+  assert.ok(MOOD_LABELS.imparfait);
+});
+
+test('權威表：詞尾省略號不算詞的一部分，句中的省略號要留著', () => {
+  assert.ok(coreBy('soit que'));
+  // selon que…ou 的省略號在中間，代表「兩個選項之間」，拆掉就不成句。
+  assert.ok(coreBy('selon que…ou'));
+});
+
+test('權威表：多解記成 ambiguous，欄位不足的列跳過，讀到下一個 ## 就停', () => {
+  assert.equal(coreBy('tout + adj + que').ambiguous, true);
+  assert.deepEqual(coreBy('tout + adj + que').moods, ['subjonctif', 'indicatif']);
+  assert.equal(coreBy('這一列只有一欄'), undefined);
+  assert.equal(coreBy('這張表不該被讀進來'), undefined);
+  assert.equal(core.length, 11);
+});
+
+test('權威表：找不到判斷表時回空陣列，不猜', () => {
+  assert.deepEqual(parseMoodTable('# 筆記\n\n沒有那張表。'), []);
+});
+
+test('合併：語氣採權威表，中文與功能由輔助表補', () => {
+  const merged = mergeConnectors(core, parsed);
+  const byName2 = (n) => merged.find((c) => c.connector === n);
+  // 輔助表把 tout + adj + que 記成「可接 indicatif」的單解，權威表記成兩種都行。
+  // 語氣以權威表為準。
+  assert.deepEqual(byName2('tout + adj + que').moods, ['subjonctif', 'indicatif']);
+  assert.equal(byName2('quand').zh, '當 / 在…的時候');
+  // 詞形標記寫法不同的同一個詞要對得上。
+  assert.equal(byName2('quel(le)(s) que').mood, 'subjonctif');
+});
+
+test('合併：權威表沒收的條目從輔助表整條帶進來，不憑空補語氣', () => {
+  const merged = mergeConnectors(core, parsed);
+  const beau = merged.find((c) => c.connector === 'avoir beau');
+  assert.equal(beau.mood, 'infinitif');
+  assert.equal(beau.fromAux, true);
+  assert.ok(merged.find((c) => c.connector === 'en cas de').fromAux);
+});
+
+test('合併：權威表解析失敗就整個回空，不退回只用輔助表', () => {
+  // 半套資料比沒有資料更難發現，寧可讓 build 報「連接詞 0 筆」。
+  assert.deepEqual(mergeConnectors([], parsed), []);
 });

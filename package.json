@@ -13,7 +13,7 @@
     "stats": "node bin/cadence.mjs stats",
     "doctor": "node bin/cadence.mjs doctor",
     "test": "node --test 'tests/*.test.mjs'",
-    "lint": "node --check bin/cadence.mjs && for f in src/*.mjs src/*/*.mjs web/js/*.mjs tests/*.mjs; do node --check \"$f\" || exit 1; done"
+    "lint": "node --check bin/cadence.mjs && for f in src/*.mjs src/*/*.mjs web/js/*.mjs tests/*.mjs; do node --check \"$f\" || exit 1; done && bash -n cadence.command"
   },
   "dependencies": {},
   "devDependencies": {}

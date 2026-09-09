@@ -16,7 +16,20 @@ import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
-const DATA = path.join(ROOT, 'data');
+
+/**
+ * 題庫、索引與作答紀錄放哪裡。預設是 repo 內的 `data/`。
+ *
+ * 開放覆寫的理由只有一個：`data/reviews.jsonl` 是這個 repo 唯一不可重建的檔案，
+ * 而測試、示範、抓畫面都會寫進去。沒有這個開關的話，想跑一次不留痕跡的伺服器
+ * 只能整包複製 repo 再改程式，那比較容易出錯，也容易忘記改回來。
+ *
+ * 覆寫時目錄要自己準備好（`bank/` 與 `reviews.jsonl`），這裡不代建——
+ * 打錯一個字就默默開一份空題庫，比直接報錯難查得多。
+ */
+const DATA = process.env.CADENCE_DATA
+  ? path.resolve(process.env.CADENCE_DATA)
+  : path.join(ROOT, 'data');
 
 const COMMANDS = {
   serve, build, reindex, stats, forecast, doctor,
@@ -39,7 +52,21 @@ const HELP = `cadence — 本地法文複習工作台
   CADENCE_VAULT     Obsidian vault 根目錄
   CADENCE_FEXGEN    french-exam-generator 根目錄
   CADENCE_VERBISTE  Verbiste XML 目錄
+
+資料落點可用環境變數覆寫（目錄要先自己備好，不會自動建立）：
+  CADENCE_DATA      題庫、索引與作答紀錄的所在目錄，預設為 repo 內的 data/
 `;
+
+/**
+ * 錯誤類型的中文。**必須宣告在下面那段 dispatch 之前**——
+ * const 有 TDZ，擺在檔尾時 stats 會在它初始化前就被呼叫，
+ * 一有錯誤紀錄就丟 Cannot access 'LABEL' before initialization。
+ * 內容與 web/js/stats.mjs 的 REASON_ZH 對齊，兩邊要一起改。
+ */
+const LABEL = {
+  wrong: '拼錯', accent: '漏重音', case: '大小寫', empty: '沒作答',
+  elision: '省音', family: '性數／形式', missing: '少要素', article: '冠詞錯',
+};
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
@@ -81,10 +108,25 @@ async function serve(flags) {
 }
 
 async function build(flags) {
-  const { buildBank } = await import('../src/build/bank.mjs');
-  const result = await buildBank({ verbose: Boolean(flags.verbose) });
+  const { build: buildBank } = await import('../src/build/bank.mjs');
+  const log = flags.verbose ? (m) => process.stdout.write(`${m}\n`) : undefined;
+  const result = await buildBank(path.join(DATA, 'bank'), log);
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-  if (!result.ok) process.exitCode = 1;
+  if (!result.ok) {
+    process.exitCode = 1;
+    return;
+  }
+  // 建完要把新題庫灌進索引，否則 App 還在用上一次的卡片集。
+  // `openStore()` 只在索引是空的時候才載入，題型新增時那個條件永遠不成立——
+  // 實測加了 75 張挑連接詞卡之後，複習頁一張都看不到。
+  const { Store } = await import('../src/db.mjs');
+  const store = new Store(DATA);
+  try {
+    const n = await store.loadBank();
+    process.stdout.write(`索引已更新：${n.toLocaleString()} 張卡。\n`);
+  } finally {
+    store.close();
+  }
 }
 
 async function reindex() {
@@ -220,8 +262,6 @@ async function doctor(flags) {
 
 // ---- 工具 ---------------------------------------------------------------
 
-const LABEL = { wrong: '拼錯', accent: '漏重音', case: '大小寫', empty: '沒作答' };
-
 async function openStore() {
   await ensureBank();
   const { Store } = await import('../src/db.mjs');
@@ -233,9 +273,10 @@ async function openStore() {
 async function ensureBank() {
   if (existsSync(path.join(DATA, 'bank', 'cards.json'))) return;
   process.stdout.write('題庫還沒建過，現在建……\n');
-  const { buildBank } = await import('../src/build/bank.mjs');
-  const result = await buildBank({});
-  if (!result.ok) throw new Error(`題庫建不起來：${result.missing.join('、')}`);
+  const { build: buildBank } = await import('../src/build/bank.mjs');
+  const result = await buildBank(path.join(DATA, 'bank'));
+  // missing 是 {name, dir} 陣列，直接 join 會印出 [object Object]。
+  if (!result.ok) throw new Error(`題庫建不起來：${result.missing.map((m) => m.name).join('、')}`);
   process.stdout.write(`建好了：${result.counts.cards.toLocaleString()} 張卡。\n`);
 }
 

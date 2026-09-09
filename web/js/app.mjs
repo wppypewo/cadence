@@ -1,12 +1,13 @@
 /**
  * 外殼與路由。
  *
- * 沒有路由函式庫，就是一個 hashchange 監聽器加一張表。四個頁面、
+ * 沒有路由函式庫，就是一個 hashchange 監聽器加一張表。五個頁面、
  * 沒有巢狀路由、沒有參數——這種規模引框架，維護成本會比省下的多。
  *
  * 這一層負責三件跨頁面的事：
- *   範圍篩選　選了哪些題型與程度。四個頁面都吃這組條件，所以它屬於外殼，
- *             不屬於任何一頁；存在 localStorage，關掉再開還在。
+ *   範圍篩選　選了哪些題型與程度。複習／統計／推演三頁吃這組條件，所以它屬於外殼，
+ *   　　　　　不屬於任何一頁；存在 localStorage，關掉再開還在。「今天」與「查詢」
+ *   　　　　　刻意不吃，那兩頁的面板會收起來（見 PAGES.scoped）。
  *   到期數量　側欄那顆數字。作答後由 review 頁呼叫 refreshBadge() 更新，
  *             因為只有它知道自己剛剛改了什麼。
  *   設定　　　目標記憶率、每天新卡量與考試日期。三個都會改變往後所有卡的排程，
@@ -15,16 +16,23 @@
 
 import { h, clear, icon } from './dom.mjs';
 import { api } from './net.mjs';
+import { todayView } from './today.mjs';
 import { reviewView } from './review.mjs';
 import { statsView } from './stats.mjs';
 import { forecastView } from './forecast.mjs';
 import { browseView } from './browse.mjs';
 
+// scoped 標的是「這一頁的內容真的會跟著側欄的題型／程度變」。
+// 沒標的兩頁各有理由：「今天」問的是今天整體該做什麼，本來就要看全部四科；
+// 「查詢」查的是整個題庫，把它限制在勾選範圍內只會讓人以為題庫裡沒有那個字。
+// 標了才有意義——面板一直亮著卻不生效，比沒有面板還糟。
 const PAGES = [
-  { id: 'review', label: '複習', icon: 'cards', view: reviewView, badge: true },
-  { id: 'stats', label: '統計', icon: 'chart', view: statsView },
-  { id: 'forecast', label: '推演', icon: 'route', view: forecastView },
-  { id: 'browse', label: '查詢', icon: 'find', view: browseView },
+  // 「今天」排第一也是預設頁：這個 App 最常見的失敗不是練錯，是根本沒打開來練。
+  { id: 'today', label: '今天', icon: 'today', view: todayView, scoped: false },
+  { id: 'review', label: '複習', icon: 'cards', view: reviewView, badge: true, scoped: true },
+  { id: 'stats', label: '統計', icon: 'chart', view: statsView, scoped: true },
+  { id: 'forecast', label: '推演', icon: 'route', view: forecastView, scoped: true },
+  { id: 'browse', label: '查詢', icon: 'find', view: browseView, scoped: false },
 ];
 
 const KINDS = [
@@ -32,6 +40,9 @@ const KINDS = [
   { id: 'vocab-produce', label: '中翻法' },
   { id: 'conj', label: '動詞變位' },
   { id: 'connector', label: '連接詞' },
+  { id: 'pick', label: '挑連接詞' },
+  { id: 'rw', label: '改寫整句' },
+  { id: 'nom', label: '名詞化' },
 ];
 const LEVELS = ['A1', 'A2', 'B1'];
 
@@ -51,6 +62,7 @@ const els = {};
 const ctx = {
   get settings() { return state.settings; },
   scopeQuery,
+  setScope,
   refreshBadge,
   toast,
   go,
@@ -102,7 +114,8 @@ function buildShell() {
     nav.append(a);
   }
   rail.append(nav);
-  rail.append(scopePanel());
+  els.scope = scopePanel();
+  rail.append(els.scope);
 
   const foot = h('div.rail-foot', {},
     h('div.rail-actions', {},
@@ -125,6 +138,8 @@ function buildShell() {
  */
 function scopePanel() {
   const box = h('div.scope');
+  // 「今天」頁按下去會直接改題型範圍，勾選框得跟著動，不然側欄會跟實際範圍說兩套話。
+  els.toggles = new Map();
   box.append(h('h2.scope-h', { text: '題型' }));
   const kinds = h('div.toggles');
   for (const k of KINDS) kinds.append(toggle(k.label, 'kinds', k.id));
@@ -156,7 +171,23 @@ function toggle(label, group, value) {
       refreshBadge();
     },
   });
+  els.toggles.set(`${group}:${value}`, input);
   return h('label.toggle', {}, input, h('span', { text: label }));
+}
+
+/**
+ * 由「今天」頁指定要練哪些題型。只動題型，不動程度——
+ * 使用者可能刻意只練 B1，那個選擇不該被一顆「開始練」按鈕吃掉。
+ */
+function setScope(kinds) {
+  state.scope.kinds = KINDS.map((k) => k.id).filter((id) => kinds.includes(id));
+  for (const k of KINDS) {
+    const input = els.toggles.get(`kinds:${k.id}`);
+    if (input) input.checked = state.scope.kinds.includes(k.id);
+  }
+  saveScope();
+  updateScopeNote();
+  refreshBadge();
 }
 
 function updateScopeNote() {
@@ -195,7 +226,7 @@ function saveScope() {
 
 function hashPage() {
   const id = location.hash.replace(/^#/, '');
-  return PAGES.some((p) => p.id === id) ? id : 'review';
+  return PAGES.some((p) => p.id === id) ? id : PAGES[0].id;
 }
 
 function go(id, { force = false } = {}) {
@@ -212,11 +243,24 @@ function go(id, { force = false } = {}) {
     else a.removeAttribute('aria-current');
   }
   document.title = `${page.label} · cadence`;
+  setScopeVisible(page);
 
   clear(els.main);
   state.cleanup = page.view(els.main, ctx) ?? null;
   els.main.focus({ preventScroll: true });
   window.scrollTo(0, 0);
+}
+
+/**
+ * 篩選面板只在真的吃 scope 的頁面出現。
+ *
+ * 用 hidden 而不是每次重建：勾選狀態要留著，切回「複習」時側欄得跟切走之前一樣。
+ * inert 一起下，免得面板收起來之後 Tab 還跳得進去。
+ */
+function setScopeVisible(page) {
+  if (!els.scope) return;
+  els.scope.hidden = !page.scoped;
+  els.scope.inert = !page.scoped;
 }
 
 /* ── 到期數量 ─────────────────────────────────────────────────── */

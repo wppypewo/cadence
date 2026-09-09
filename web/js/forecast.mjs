@@ -34,6 +34,10 @@ export function forecastView(root, ctx) {
   box.append(form);
 
   const out = h('div');
+  // 這一頁進來是空的，而且是刻意的：一次推演要把範圍內每一張卡逐日模擬到考試當天，
+  // 反推目標答對率還要跑六十幾次，開頁就自動算會讓人以為 App 當掉了。
+  // 但「空白＋一顆按鈕」看起來也像壞掉，所以先寫清楚按下去會發生什麼事。
+  out.append(emptyState());
   box.append(out);
 
   async function run() {
@@ -167,6 +171,25 @@ function solvedPanel(sv) {
     }));
   }
 
+  // 掃過的每一格畫成曲線。這條線的形狀就是「新卡學太多反而更差」的證據，
+  // 只看一個推薦數字是看不出來的。答對率用百分比進 chart，否則 0.14 會被
+  // niceMax 壓成貼著底線的一條平線。
+  const win = sv.achievable ? sv.recommended.dailyNew : sv.ceiling.dailyNew;
+  const winAt = sv.tried.findIndex((t) => t.dailyNew === win);
+  body.append(line(
+    sv.tried.map((t) => ({ x: String(t.dailyNew), label: `每天 ${t.dailyNew} 張新卡`, a: t.rate * 100 })),
+    {
+      height: 170,
+      title: '每天新卡量對考試當天記憶率的影響（%）',
+      marks: winAt >= 0 ? [{ at: winAt, label: `${win} 張` }] : [],
+      cap: sv.exhaustive
+        ? `0 到 ${sv.tried[sv.tried.length - 1].dailyNew} 張每一格都跑過一次完整模擬。`
+        : `範圍太大，改成等距抽樣 ${sv.tried.length} 格再補滿最好的那一段；格與格之間可能還有更高點。`,
+    },
+  ));
+
+  // 表格只留關鍵幾列。61 列全倒出來沒有人會讀，而且會把整頁推得很長。
+  const rows = pickRows(sv.tried, win);
   const table = h('table.grid', {},
     h('thead', {}, h('tr', {},
       h('th', { text: '每天新卡' }), h('th', { text: '預期記憶率' }),
@@ -174,10 +197,8 @@ function solvedPanel(sv) {
     )),
   );
   const tb = h('tbody');
-  for (const t of sv.tried) {
-    tb.append(h('tr', {
-      dataset: { hit: t.dailyNew === (sv.achievable ? sv.recommended.dailyNew : sv.ceiling.dailyNew) ? '1' : '0' },
-    },
+  for (const t of rows) {
+    tb.append(h('tr', { dataset: { hit: t.dailyNew === win ? '1' : '0' } },
       h('td', { text: String(t.dailyNew) }),
       h('td', { text: pct(t.rate, 1) }),
       h('td', { text: num(t.studied) }),
@@ -186,10 +207,29 @@ function solvedPanel(sv) {
   }
   table.append(tb);
   body.append(h('div.scroll-x', {}, table));
-  return panel('要達標得學多少新卡', '二分搜尋，每個候選值都跑一次完整模擬', body);
+  return panel('要達標得學多少新卡', `掃過 ${sv.tried.length} 種新卡量，每一種都跑一次完整模擬`, body);
+
 }
 
 // ---- 小工具 --------------------------------------------------------------
+
+/** 還沒推演過時的畫面。說明按鈕會做什麼、要等多久、哪些設定會影響結果。 */
+function emptyState() {
+  const list = h('ul.fc-empty-list');
+  for (const t of [
+    '拿你目前每一張卡的記憶狀態，逐日模擬到考試當天。',
+    '算出那天的期望答對率，以及需要每天做幾張才追得上。',
+    '再反推「要達到目標答對率，每天得學幾張新卡」。',
+  ]) list.append(h('li', { text: t }));
+
+  return h('div.card.empty.fc-empty', {},
+    h('p.fc-empty-lead', { text: '填好上面四格，按「推演」。' }),
+    list,
+    h('p.fc-empty-note', {
+      text: '整輪大約一秒，因為反推那一步要跑六十幾次完整模擬。側欄的題型篩選會一起算進去。',
+    }),
+  );
+}
 
 function panel(title, why, bodyNode) {
   return h('section.panel', {}, h('h2', {}, title, why ? h('span.why', { text: why }) : null), bodyNode);
@@ -220,6 +260,20 @@ function bucketLabel(b) {
 }
 
 /** 沒設考試日期時，預設兩個月後——夠遠到看得出排程效果，夠近到還有壓力。 */
+/**
+ * 從掃描結果挑出值得列表的幾列：頭、尾、勝出的那一格，中間等距補到約 10 列。
+ * 全部列出來的話一次會有 61 列，讀的人只會往下捲過去。
+ */
+function pickRows(tried, win) {
+  if (tried.length <= 12) return tried;
+  const keep = new Set([0, tried.length - 1]);
+  const winAt = tried.findIndex((t) => t.dailyNew === win);
+  if (winAt >= 0) keep.add(winAt);
+  const step = Math.max(1, Math.round(tried.length / 9));
+  for (let i = 0; i < tried.length; i += step) keep.add(i);
+  return [...keep].sort((a, b) => a - b).map((i) => tried[i]);
+}
+
 function defaultExam() {
   const d = new Date(Date.now() + 60 * 86400000);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;

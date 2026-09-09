@@ -17,6 +17,9 @@ const KIND_ZH = {
   'vocab-produce': '中翻法',
   conj: '動詞變位',
   connector: '連接詞',
+  pick: '挑連接詞',
+  rw: '改寫整句',
+  nom: '名詞化',
 };
 
 const PRONOUNS = ['je', 'tu', 'il', 'nous', 'vous', 'ils'];
@@ -83,22 +86,25 @@ export function browseView(root) {
     const mine = ++seq;
     out.setAttribute('aria-busy', 'true');
     try {
-      const { hits } = await api.search(q);
+      const res = await api.search(q);
+      const { hits } = res;
       if (mine !== seq) return; // 已經有更新的查詢，這一份丟掉
       clear(out);
       if (!hits.length) {
         out.append(h('div.card.empty', {}, icon('find'),
           h('p', {}, '題庫裡沒有 ', h('span.fr', { text: q }), ' 。'),
-          h('p.sub', { text: '題庫只收 A1–B1 的高頻詞與 784 個不規則動詞，不是完整字典。' })));
+          h('p.sub', { text: '題庫只收 A1–B1 的高頻詞與 784 個不規則動詞，不是完整字典。中文釋義也在搜尋範圍內。' })));
         return;
       }
       const rows = group(hits);
       const list = h('div.hits');
       const back = () => run(q);
       for (const row of rows) {
-        list.append(row.verb ? verbRow(row, out, back) : hitRow(row.hit, out, back));
+        if (row.verb) list.append(verbRow(row, out, back));
+        else if (row.kinds) list.append(vocabRow(row, out, back));
+        else list.append(hitRow(row.hit, out, back));
       }
-      out.append(h('p.hits-count', { text: countText(hits, rows) }), list);
+      out.append(countLine(res, rows), list);
     } catch (err) {
       if (mine !== seq) return;
       clear(out).append(h('div.card.errorbox', {}, h('p', { text: err.message })));
@@ -108,38 +114,81 @@ export function browseView(root) {
   }
 }
 
+/** 同一個詞的兩個方向。收成一列時的標籤順序照這個陣列，不照命中順序。 */
+const VOCAB_KINDS = ['vocab-recall', 'vocab-produce'];
+
 /**
- * 同一個動詞的變位卡會塞滿整個結果——accueillir 一次就是 36 張。
- * 收成一列，點開就是完整變位表；那張表本來就比 36 行「答案是什麼」好讀。
+ * 兩種收合，理由不同：
+ *
+ *  1. 同一個動詞的變位卡會塞滿整個結果——accueillir 一次就是 36 張。
+ *     收成一列，點開就是完整變位表；那張表本來就比 36 行「答案是什麼」好讀。
+ *  2. 「看字回想」與「中翻法」是同一個詞的兩個方向，front 一模一樣，
+ *     分兩列印出來就是連續兩行看起來完全相同的東西（être／être、fenêtre／fenêtre）。
+ *     收成一列、兩個題型標籤並排，一個字只佔一行。
+ *
+ * 詞性要進 key：`être|VER`（動詞）與 `être|NOM`（名詞「生物」）是兩個不同的詞條，
+ * 釋義與級數都不一樣，併在一起會讓其中一個的釋義消失。
  */
 function group(hits) {
   const rows = [];
   const byVerb = new Map();
+  const byWord = new Map();
   for (const hit of hits) {
-    const verb = hit.card.kind === 'conj' ? hit.card.front?.verb : null;
-    if (!verb) {
-      rows.push({ hit });
+    const { card } = hit;
+    const f = card.front ?? {};
+
+    if (card.kind === 'conj' && f.verb) {
+      let entry = byVerb.get(f.verb);
+      if (!entry) {
+        entry = { verb: f.verb, hit, count: 0, seen: 0, tenses: new Set() };
+        byVerb.set(f.verb, entry);
+        rows.push(entry);
+      }
+      entry.count += 1;
+      if (hit.state) entry.seen += 1;
+      if (f.tenseZh) entry.tenses.add(f.tenseZh);
       continue;
     }
-    let entry = byVerb.get(verb);
-    if (!entry) {
-      entry = { verb, hit, count: 0, seen: 0, tenses: new Set() };
-      byVerb.set(verb, entry);
-      rows.push(entry);
+
+    if (VOCAB_KINDS.includes(card.kind) && f.word) {
+      const key = `${f.word}|${f.pos}`;
+      let entry = byWord.get(key);
+      if (!entry) {
+        entry = { word: f.word, hit, count: 0, seen: 0, kinds: new Set() };
+        byWord.set(key, entry);
+        rows.push(entry);
+      }
+      entry.count += 1;
+      if (hit.state) entry.seen += 1;
+      entry.kinds.add(card.kind);
+      continue;
     }
-    entry.count += 1;
-    if (hit.state) entry.seen += 1;
-    if (hit.card.front?.tenseZh) entry.tenses.add(hit.card.front.tenseZh);
+
+    rows.push({ hit });
   }
   return rows;
 }
 
-function countText(hits, rows) {
+/**
+ * 結果列數說明。要講清楚三件事：一共命中幾張卡、畫面上顯示幾組、
+ * 變位卡收掉了多少。只寫「40 筆（已達顯示上限）」等於什麼都沒說——
+ * 使用者不知道被截掉的是什麼，也沒有任何辦法看到剩下的。
+ */
+function countLine(res, rows) {
   const verbs = rows.filter((r) => r.verb);
-  const capped = hits.length === 40 ? '（已達顯示上限）' : '';
-  if (verbs.length === 0) return `${hits.length} 筆${capped}`;
   const cards = verbs.reduce((a, r) => a + r.count, 0);
-  return `${hits.length} 筆${capped}，其中 ${cards} 張變位卡收成 ${verbs.length} 個動詞`;
+  // 兩個方向都命中的詞才算「收掉一列」；只命中一個方向的收合前後都是一列。
+  const merged = rows.filter((r) => r.kinds && r.count > 1);
+  const parts = [`共 ${res.total} 張卡命中`];
+  if (verbs.length) parts.push(`其中 ${cards} 張變位卡收成 ${verbs.length} 個動詞`);
+  if (merged.length) parts.push(`${merged.length} 個詞的兩個方向各併成一列`);
+  parts.push(`顯示 ${rows.length} 組`);
+  const line = h('p.hits-count', { text: `${parts.join('，')}。` });
+  if (!res.truncated) return line;
+  return h('p.hits-count', {},
+    `${parts.join('，')}。`,
+    h('span.more', { text: ' 還有更多——把關鍵字寫長一點可以縮小範圍。' }),
+  );
 }
 
 /** 收合後的動詞列。右邊給的是「這個動詞練到哪」，不是單張卡的排程。 */
@@ -160,10 +209,41 @@ function verbRow(entry, out, back) {
   return openable(h('div.hit', {}, left, right), entry.verb, out, back);
 }
 
+/**
+ * 收合後的詞彙列。右邊給的是「這個詞練到哪」——分母是這次命中的方向數，
+ * 不是固定的 2：只搜到其中一個方向時（例如中文釋義只在其中一張裡）分母就是 1。
+ */
+function vocabRow(entry, out, back) {
+  const f = entry.hit.card.front ?? {};
+  const left = h('div.hit-main', {},
+    h('div.w.fr', { lang: 'fr', text: f.word }),
+    h('div.m', { text: [f.posZh, f.gloss].filter(Boolean).join('・') }),
+  );
+  const right = h('div.hit-state', {},
+    ...VOCAB_KINDS.filter((k) => entry.kinds.has(k)).map((k) => h('span.tag', { text: KIND_ZH[k] })),
+    f.level ? h('span.tag', { text: f.level }) : null,
+    entry.seen
+      ? h('span.s.num', { text: `已學 ${entry.seen}/${entry.count} 個方向` })
+      : h('span.s.dim', { text: '未學過' }),
+  );
+
+  const row = h('div.hit', {}, left, right);
+  // 詞彙卡查到動詞時一樣可以攤開變位表，這個入口不能因為收合而消失。
+  if (f.pos !== 'VER') return row;
+  left.append(h('div.m.open-hint', { text: '按一下看完整變位表' }));
+  return openable(row, f.word, out, back);
+}
+
 function hitRow({ card, state }, out, back) {
   const f = card.front ?? {};
   const head = f.word || f.connector || f.verb || card.answer || card.id;
-  const sub = [f.posZh, f.gloss || f.zh || f.tenseZh].filter(Boolean).join('・');
+  // 名詞化卡的 front.pos／posZh 講的是**基詞**的詞性（changer 是動詞），
+  // 但這一列的標題是答案（le changement，名詞）。照通用格式印會變成
+  // 「l'obligation　動詞・obliger・…」——那個「動詞」看起來像在說標題那個字。
+  // 所以這一種卡自己寫一句，把基詞的位置講明白。
+  const sub = card.kind === 'nom'
+    ? [f.base ? `由${f.posZh ?? ''} ${f.base} 變來` : null, f.gloss].filter(Boolean).join('・')
+    : [f.posZh, f.base, f.gloss || f.zh || f.tenseZh].filter(Boolean).join('・');
 
   const left = h('div.hit-main',
     {},
@@ -278,11 +358,17 @@ function tenseTable(tense, forms, impersonal) {
   return box;
 }
 
+/**
+ * 三句話拆成兩段，不是排版潔癖：`.empty p` 的 42ch 與置中是為了「一兩句短文」設計的，
+ * 三句擠成一段就變成四行置中的字，每一行起點都不一樣，掃過去像散開的。
+ * 拆開之後每段各佔一到兩行，置中才讀得順。
+ */
 function hint() {
   return h('div.card.empty', {}, icon('find'),
     h('h2', { text: '查一個字' }),
     h('p', { text: '查詢不會改動任何卡片的排程，也不會被記成一次作答。' }),
-    h('p.sub', { text: '搜尋範圍是題庫本身：A1–B1 詞彙、784 個不規則動詞、25 個連接詞。查到動詞時可以展開完整變位表。' }),
+    h('p.sub', { text: '搜尋範圍是題庫本身：A1–B1 詞彙、784 個不規則動詞、50 個連接詞。' }),
+    h('p.sub', { text: '中文釋義也搜得到。查到動詞時可以展開完整變位表。' }),
   );
 }
 

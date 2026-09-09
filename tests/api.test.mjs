@@ -33,6 +33,30 @@ const BANK = [
     id: 'c:etre:present:1', kind: 'conj', mode: 'typed', level: 'A2', freq: 7,
     tags: ['conj', 'être'], answer: 'es', accept: ['es'], front: { verb: 'être', pronoun: 'tu' },
   },
+  {
+    id: 'p:IIA|1', kind: 'pick', mode: 'typed', level: 'B1', freq: 0,
+    tags: ['pick', 'IIA'], answer: "à moins qu'", accept: ["à moins qu'"],
+    front: {
+      prompt: "J'ai du jus ___ vous préfériez de l'eau",
+      options: ['sans que', 'à moins que', 'à moins de', 'sinon'],
+      group: 'A', sec: 'II', src: '教材 111-2 II',
+    },
+  },
+  {
+    id: 'rw:III|2', kind: 'rw', mode: 'rewrite', level: 'B1', freq: 0,
+    tags: ['rw', 'rwIII'], answer: "Si agréable qu'il soit, je ne le supporte pas.",
+    accept: null, must: [['si agréable'], ['soit']], note: 'si + adj + que + subj',
+    front: {
+      prompt: 'Il est très agréable, mais…', tool: 'si … que + subj',
+      sec: 'III', num: '2', src: '教材 111-2 III',
+    },
+  },
+  {
+    id: 'n:absent|ADJ', kind: 'nom', mode: 'typed', level: 'B1', freq: 0,
+    tags: ['nom', 'nomIV'], answer: 'son absence',
+    accept: ['son absence', "l'absence"], noun: 'absence',
+    front: { base: 'absent', pos: 'ADJ', posZh: '形容詞', gloss: '缺席的', src: '[教材 111-2 IV]' },
+  },
 ];
 
 async function open() {
@@ -90,7 +114,7 @@ test('出題不帶答案，統計裡的弱點卡才帶', async () => {
     }
     // 選擇題的選項要留著，否則畫面畫不出來。
     assert.deepEqual(q.cards.find((c) => c.id === 'k:bien-que').options, ['indicatif', 'subjonctif']);
-    assert.equal(q.remaining.due + q.remaining.new, 4);
+    assert.equal(q.remaining.due + q.remaining.new, BANK.length);
     assert.equal(q.newLimit, 15);
 
     api.review({ cardId: 'v:ecole', answer: 'ecole' });
@@ -133,6 +157,167 @@ test('打字題：答對 Good、只差重音 Again、只差大小寫 Hard', asyn
     assert.equal(empty.grade.reason, 'empty');
   } finally {
     cleanup(store, dir);
+  }
+});
+
+test('挑連接詞題走三級批改，三種錯都是 Again', async () => {
+  // 這題型的錯法要分得出來，但分級只影響回饋，不影響「對或錯」。
+  // 省音沒寫在考卷上照樣不給分，這裡也就不能給 Hard。
+  const [api, store, dir] = await open();
+  try {
+    const ok = api.review({ cardId: 'p:IIA|1', answer: "à moins qu'" });
+    assert.equal(ok.grade.reason, 'exact');
+    assert.equal(ok.rating, 3);
+
+    const el = api.review({ cardId: 'p:IIA|1', answer: 'à moins que' });
+    assert.equal(el.grade.reason, 'elision');
+    assert.equal(el.grade.correct, false);
+    assert.equal(el.rating, 1);
+
+    // 同一個方框裡的另一格是選錯格，不是形式錯。
+    const wrong = api.review({ cardId: 'p:IIA|1', answer: 'à moins de' });
+    assert.equal(wrong.grade.reason, 'wrong');
+    assert.equal(wrong.rating, 1);
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('改寫題要素齊全時先回自評，這一趟不記錄', async () => {
+  // 整句沒有唯一解，只能自評；自評又必須看得到解答，
+  // 而解答不能在作答前送到前端。兩趟就是為了同時滿足這兩件事。
+  const [api, store, dir] = await open();
+  try {
+    const first = api.review({
+      cardId: 'rw:III|2',
+      answer: 'Si agréable soit-il, je ne le supporte pas.',
+    });
+    assert.equal(first.phase, 'self');
+    assert.equal(first.answer, "Si agréable qu'il soit, je ne le supporte pas.");
+    assert.equal(first.state, undefined);
+    // 沒按自評就關掉視窗，不該留下半筆紀錄。
+    assert.equal(store.db.prepare('SELECT COUNT(*) n FROM reviews').get().n, 0);
+
+    const second = api.review({
+      cardId: 'rw:III|2',
+      answer: 'Si agréable soit-il, je ne le supporte pas.',
+      rating: 3,
+    });
+    assert.equal(second.phase, 'done');
+    assert.equal(second.rating, 3);
+    assert.equal(store.db.prepare('SELECT COUNT(*) n FROM reviews').get().n, 1);
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('改寫題缺了必要要素就當場判錯，不進自評', async () => {
+  // 指定的連接詞或它要求的語氣缺一，意思再接近也不算改對。
+  const [api, store, dir] = await open();
+  try {
+    const res = api.review({
+      cardId: 'rw:III|2',
+      answer: 'Il est très agréable mais je ne le supporte pas.',
+    });
+    assert.equal(res.phase, 'done');
+    assert.equal(res.grade.reason, 'missing');
+    assert.equal(res.rating, 1);
+    assert.deepEqual(res.grade.miss, [['si agréable'], ['soit']]);
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('改寫題自評「差很多」要記成答錯', async () => {
+  // 要素齊全只代表連接詞用對了，不代表整句寫得出來。
+  // 記成答對的話，統計會把一句自己都看不下去的答案算進正確率。
+  const [api, store, dir] = await open();
+  try {
+    const res = api.review({
+      cardId: 'rw:III|2',
+      answer: 'Si agréable soit-il, blah blah.',
+      rating: 1,
+    });
+    assert.equal(res.rating, 1);
+    const row = store.db.prepare('SELECT correct FROM reviews WHERE card_id = ?').get('rw:III|2');
+    assert.equal(row.correct, 0);
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('名詞化：冠詞算分，但「只錯冠詞」跟「用錯名詞」分開報', async () => {
+  // 考卷第 IV 大題寫錯 le／la 就沒分，所以 correct 一律 false。
+  // 但這兩種錯的補救方式完全不同，統計上必須分得開。
+  const [api, store, dir] = await open();
+  try {
+    const ok = api.review({ cardId: 'n:absent|ADJ', answer: "l'absence" });
+    assert.equal(ok.grade.correct, true);
+    assert.equal(ok.rating, 3);
+
+    const art = api.review({ cardId: 'n:absent|ADJ', answer: 'la absence' });
+    assert.equal(art.grade.correct, false);
+    assert.equal(art.grade.reason, 'article');
+    assert.equal(art.rating, 1);
+
+    const bad = api.review({ cardId: 'n:absent|ADJ', answer: "l'absent" });
+    assert.equal(bad.grade.reason, 'wrong');
+  } finally {
+    cleanup(store, dir);
+  }
+});
+
+test('名詞化出題時 noun 不能跟著送出去', async () => {
+  // noun 是名詞本體，等於答案去掉冠詞。留在回應裡只剩冠詞要猜。
+  const [api, store, dir] = await open();
+  try {
+    const q = api.queue({ kinds: 'nom', limit: 5 });
+    assert.equal(q.cards.length, 1);
+    const [card] = q.cards;
+    assert.equal(card.noun, undefined);
+    assert.equal(card.answer, undefined);
+    assert.equal(card.accept, undefined);
+    // 性別在建置階段就沒放進 front，這裡再確認一次它沒有從別條路徑漏回來。
+    assert.equal(card.front.gender, undefined);
+    assert.equal(card.front.base, 'absent');
+  } finally {
+    cleanup(store, dir);
+  }
+});
+
+test('改寫題出題時必要要素不能跟著送出去', async () => {
+  // must 的內容就是答案片段，留在回應裡等於把答案印在 network 面板上。
+  const [api, store, dir] = await open();
+  try {
+    const q = api.queue({ kinds: 'rw', limit: 5 });
+    assert.equal(q.cards.length, 1);
+    const [card] = q.cards;
+    assert.equal(card.must, undefined);
+    assert.equal(card.answer, undefined);
+    assert.equal(card.front.tool, 'si … que + subj');
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('挑連接詞題出題時方框留著，答案不留', async () => {
+  // 方框是題目的一部分——藏起來就換成了另一種題目。
+  const [api, store, dir] = await open();
+  try {
+    const q = api.queue({ kinds: 'pick', limit: 5 });
+    assert.equal(q.cards.length, 1);
+    const [card] = q.cards;
+    assert.equal(card.front.options.length, 4);
+    assert.equal(card.answer, undefined);
+    assert.equal(card.accept, undefined);
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -189,7 +374,7 @@ test('stats 的每個數字都吃 scope，紀錄檔資訊不吃', async () => {
     api.review({ cardId: 'c:etre:present:1', answer: 'est' });
 
     const all = api.stats();
-    assert.equal(all.summary.totalCards, 4);
+    assert.equal(all.summary.totalCards, BANK.length);
     assert.equal(all.errorProfile.length, 1);
 
     const conj = api.stats({ kinds: 'conj' });
@@ -228,7 +413,7 @@ test('forecast 回傳計畫，並且不把整份模擬結果塞進候選方案',
 
     const f = api.forecast({ exam: iso, target: 0.8 });
     assert.equal(f.plan.examDate, iso);
-    assert.equal(f.plan.cardsInScope, 4);
+    assert.equal(f.plan.cardsInScope, BANK.length);
     assert.equal(f.plan.days.length, f.plan.daysUntilExam + 1);
     // 沒有足夠歷史時要老實標成 assumed-good，不要假裝觀察到了分布。
     assert.equal(f.plan.ratingModel, 'assumed-good');
@@ -285,6 +470,30 @@ test('search：空查詢回空陣列，查得到的帶上學習狀態', async ()
   }
 });
 
+test('search：中文釋義查得到，變位卡以動詞計為一組', async () => {
+  const [api, store, dir] = await open();
+  try {
+    // 中文只存在 payload 的 front 裡，answer／tags／id 都沒有。
+    // 沒有 search 欄的話這一查會是 0 筆——中翻法那批卡的題面就是中文。
+    const zh = api.search({ q: '學校' });
+    assert.equal(zh.hits.length, 1);
+    assert.equal(zh.hits[0].card.id, 'v:ecole');
+
+    // nom 卡的釋義在 front.gloss。
+    assert.equal(api.search({ q: '缺席' }).hits[0].card.id, 'n:absent|ADJ');
+    // connector 的中文若沒寫就不該硬湊，但法文本身要查得到。
+    assert.equal(api.search({ q: 'bien que' }).hits.length, 1);
+
+    // 上限套在「組」上：變位卡整個動詞算一組。
+    const verb = api.search({ q: 'être' });
+    assert.equal(verb.groups, 1);
+    assert.equal(verb.total, verb.hits.length);
+    assert.equal(verb.truncated, false);
+  } finally {
+    cleanup(store, dir);
+  }
+});
+
 test('verb：查得到就回全表，查不到是 404', async () => {
   const [api, store, dir] = await open();
   try {
@@ -300,10 +509,62 @@ test('summary 給的是整份題庫的數字，不隨側欄勾選變', async () 
   const [api, store, dir] = await open();
   try {
     const s = api.summary();
-    assert.equal(s.totalCards, 4);
-    assert.equal(s.byKind.length, 4);
+    assert.equal(s.totalCards, BANK.length);
+    assert.equal(s.byKind.length, 7);
     assert.equal(s.settings.dailyNewLimit, 15);
     assert.equal(s.meta, null);
+  } finally {
+    cleanup(store, dir);
+  }
+});
+
+test('today：四科都在，題型全部歸了科，且不隨側欄勾選變', async () => {
+  const [api, store, dir] = await open();
+  try {
+    store.set('examDate', '2027-05-01');
+    const t = api.today();
+    assert.deepEqual(t.tasks.map((x) => x.id), ['CE', 'PE', 'CO', 'PO']);
+    assert.equal(t.examDate, '2027-05-01');
+    // BANK 裡七種題型各一張：CE 拿 vocab-recall 那張，其餘六張都是 PE。
+    assert.equal(t.tasks[0].total, 1);
+    assert.equal(t.tasks[1].total, 6);
+    // today() 不吃參數，所以沒有「被篩選改掉」這回事——這一行是防止有人日後加上去。
+    assert.equal(api.today.length, 0);
+  } finally {
+    cleanup(store, dir);
+  }
+});
+
+test('today：新卡額度扣掉今天已引入的量', async () => {
+  const [api, store, dir] = await open();
+  try {
+    store.set('dailyNewLimit', 3);
+    assert.equal(api.today().newBudget, 3);
+    const card = api.queue({ limit: 1, kinds: 'vocab-recall' }).cards[0];
+    api.review({ cardId: card.id, rating: 3 });
+    const t = api.today();
+    assert.equal(t.newToday, 1);
+    assert.equal(t.newBudget, 2);
+    assert.equal(t.reviewsToday, 1);
+  } finally {
+    cleanup(store, dir);
+  }
+});
+
+test('doc：只認白名單的兩個代號，路徑不可能被塞進來', async () => {
+  const [api, store, dir] = await open();
+  try {
+    const po = await api.doc({ id: 'po' });
+    assert.equal(po.path, 'study/delf-b1-production-orale.md');
+    assert.match(po.text, /production orale/i);
+    const co = await api.doc({ id: 'co' });
+    assert.equal(co.path, 'study/delf-b1-comprehension-orale.md');
+
+    for (const bad of ['', 'PO', '../package.json', 'study/delf-b1-production-orale.md', undefined]) {
+      const err = await api.doc({ id: bad }).then(() => null, (e) => e);
+      assert.ok(err instanceof HttpError, `${bad} 應該被擋下來`);
+      assert.equal(err.status, 404);
+    }
   } finally {
     cleanup(store, dir);
   }

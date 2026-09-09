@@ -185,7 +185,13 @@ button, input, select { font: inherit; color: inherit; }
 /* icon() 產出的 svg 沒有 width/height 屬性，尺寸一律由 CSS 給。
    漏掉這一條的話它會撐成容器寬（實測 570px），空狀態變成一顆巨大的放大鏡。 */
 .empty svg, .errorbox svg { flex: none; width: 28px; height: 28px; color: var(--text-faint); }
-.empty p, .errorbox p { color: var(--text-muted); max-width: 42ch; font-size: var(--t-sm); }
+/* balance 是給置中段落用的：置中的多行段落兩端都不齊，最後一行常常只剩兩三個字，
+   看起來像句子斷掉。讓瀏覽器把各行長度拉平之後才讀得順。
+   左對齊的 .fc-empty 段落不適用——那邊左緣本來就齊，balance 只會把行壓短。 */
+.empty p, .errorbox p {
+  color: var(--text-muted); max-width: 42ch; font-size: var(--t-sm);
+  text-wrap: balance;
+}
 .errorbox { color: var(--bad); }
 .errorbox p { color: var(--text-muted); }
 .empty .sub { font-size: var(--t-xs); color: var(--text-faint); }
@@ -218,6 +224,9 @@ button, input, select { font: inherit; color: inherit; }
  * 「我現在只練動詞變位」是每天都會改的東西，藏兩層就不會有人用。
  */
 .scope { padding: var(--s5) var(--s2) 0; }
+/* 「今天」與「查詢」不吃篩選，面板整個收起來。窄螢幕那邊 .scope 被改成
+   display:flex，會蓋掉瀏覽器預設的 [hidden]{display:none}，所以明寫一條。 */
+.scope[hidden] { display: none; }
 .scope-h {
   font-size: var(--t-xs); font-weight: 500; color: var(--text-faint);
   letter-spacing: 0.04em; margin-bottom: var(--s2);
@@ -275,8 +284,9 @@ button, input, select { font: inherit; color: inherit; }
   .brand { padding: 0; }
   .brand span { display: none; }
   /* 導覽移到畫面底部。留在置頂列裡的話，品牌與設定會把它擠到剩約 105px
-     （四個項目實測要 207px），後兩個分頁就只能靠一個沒有任何提示的橫向捲軸才點得到。
-     底部列是拇指最好按的位置，也讓四個標籤都能寫出來。 */
+     （當時還是四個分頁，實測要 207px；現在是五個，只會更擠），
+     後面的分頁就只能靠一個沒有任何提示的橫向捲軸才點得到。
+     底部列是拇指最好按的位置，也讓五個標籤都能寫出來。 */
   .nav {
     position: fixed; inset: auto 0 0 0; z-index: var(--z-sticky);
     flex-direction: row; gap: 0;

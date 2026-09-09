@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS cards (
   tags     TEXT NOT NULL,
   answer   TEXT,
   accept   TEXT,
+  search   TEXT,
   payload  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS cards_kind ON cards(kind, level);
@@ -75,6 +76,50 @@ export function localDay(date = new Date()) {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * 本地時區「今天結束」的那一瞬間，也就是明天 00:00。
+ *
+ * 「到期」在這個專案裡一律是天為單位的概念：排程只排到日，使用者問的也是
+ * 「今天該做幾張」。之前 dueCount 用 `due <= now` 比瞬間、upcoming 用 localDay
+ * 比日，同一份資料會得出兩個數字——統計頁曾同時顯示「現在到期 0／沒有欠帳」
+ * 跟「另有 9 張已經到期還沒做」。所有到期查詢都改成跟這個界線比。
+ */
+export function endOfLocalDay(now = new Date()) {
+  const d = new Date(now);
+  d.setHours(24, 0, 0, 0);
+  return d.toISOString();
+}
+
+/**
+ * 小幅 schema 演進。cards 整張表都是可重建資料（來源是 data/bank/cards.json），
+ * 所以加欄位時直接清空，交給下一次 loadBank 重灌，不需要回填腳本。
+ * states 與 reviews 不能這樣處理，那兩張表若要改結構得另外寫遷移。
+ */
+function migrate(db) {
+  const cols = db.prepare('PRAGMA table_info(cards)').all().map((c) => c.name);
+  if (!cols.includes('search')) {
+    db.exec('ALTER TABLE cards ADD COLUMN search TEXT');
+    db.exec('DELETE FROM cards');
+  }
+}
+
+/**
+ * 一張卡在搜尋時該被哪些字命中。
+ *
+ * answer 是法文答案、tags 是分類，兩者都不含中文——但中翻法那 3,474 張卡的
+ * 題面本身就是中文，使用者查「迎接」會一筆都找不到。中文釋義只存在 payload
+ * 的 front 裡，而且各題型放的欄位不一樣（gloss／zh／prompt），所以在灌題庫時
+ * 攤平成一欄，讓 SQL 直接 LIKE 得到，不必掃 payload。
+ *
+ * 刻意不收 posZh、tenseZh 這類分類詞：搜「動詞」會命中九千多張，等於沒搜。
+ */
+function searchText(card) {
+  const f = card.front ?? {};
+  return [f.gloss, f.zh, f.prompt, f.verb, f.base, f.connector, f.word]
+    .filter((x) => typeof x === 'string' && x.trim())
+    .join(' ');
+}
+
 export class Store {
   /**
    * @param {string} dataDir 專案的 data/ 目錄
@@ -89,6 +134,7 @@ export class Store {
     this.db.exec('PRAGMA journal_mode = WAL');
     this.db.exec('PRAGMA synchronous = NORMAL');
     this.db.exec(SCHEMA);
+    migrate(this.db);
     this.scheduler = createScheduler({ desiredRetention: this.desiredRetention });
   }
 
@@ -130,7 +176,7 @@ export class Store {
     }
     const cards = JSON.parse(await readFile(file, 'utf8'));
     const insert = this.db.prepare(
-      'INSERT INTO cards(id, kind, mode, level, freq, tags, answer, accept, payload) VALUES(?,?,?,?,?,?,?,?,?)',
+      'INSERT INTO cards(id, kind, mode, level, freq, tags, answer, accept, search, payload) VALUES(?,?,?,?,?,?,?,?,?,?)',
     );
     this.db.exec('BEGIN');
     try {
@@ -140,6 +186,7 @@ export class Store {
           c.id, c.kind, c.mode, c.level, c.freq ?? 0,
           c.tags.join(','), c.answer ?? null,
           c.accept ? JSON.stringify(c.accept) : null,
+          searchText(c),
           JSON.stringify(c),
         );
       }
@@ -282,7 +329,7 @@ export class Store {
 
 // ---- 出題佇列 -----------------------------------------------------------
 //
-// 排序邏輯刻意寫在 SQL 裡：16,121 張卡若先撈進 JS 再篩，每次出題都要動到幾 MB
+// 排序邏輯刻意寫在 SQL 裡：16,401 張卡若先撈進 JS 再篩，每次出題都要動到幾 MB
 // 的物件；交給 SQLite 走索引，記憶體佔用與題庫大小無關。
 
 /** 建立 kind / level 的 WHERE 片段。回傳 [sql, params]。 */
@@ -312,12 +359,12 @@ Object.assign(Store.prototype, {
       .get(day).n;
   },
 
-  /** 到期卡數量（不含新卡）。 */
+  /** 今天（含今天以前）到期的卡數量，不含新卡。界線見 endOfLocalDay。 */
   dueCount(scope = {}, now = new Date()) {
     const [clause, params] = scopeClause(scope);
     return this.db
-      .prepare(`SELECT COUNT(*) n FROM states s JOIN cards c ON c.id = s.card_id WHERE s.due <= ?${clause}`)
-      .get(now.toISOString(), ...params).n;
+      .prepare(`SELECT COUNT(*) n FROM states s JOIN cards c ON c.id = s.card_id WHERE s.due < ?${clause}`)
+      .get(endOfLocalDay(now), ...params).n;
   },
 
   /** 還沒複習過的卡數量。 */
@@ -345,10 +392,10 @@ Object.assign(Store.prototype, {
       .prepare(
         `SELECT c.payload, s.due, s.stability, s.difficulty, s.reps, s.lapses
          FROM states s JOIN cards c ON c.id = s.card_id
-         WHERE s.due <= ?${clause}
+         WHERE s.due < ?${clause}
          ORDER BY s.due ASC LIMIT ?`,
       )
-      .all(now.toISOString(), ...params, limit)
+      .all(endOfLocalDay(now), ...params, limit)
       .map((r) => ({ ...JSON.parse(r.payload), state: { due: r.due, stability: r.stability, difficulty: r.difficulty, reps: r.reps, lapses: r.lapses } }));
 
     const room = limit - due.length;
@@ -375,7 +422,7 @@ Object.assign(Store.prototype, {
   /**
    * 首頁用的一組數字。全部走索引，不掃全表。
    * 吃 scope——側欄勾了「只練 A2 動詞變位」，這些數字就要是那個範圍內的，
-   * 否則畫面會同時聲稱「只練 1 種題型」跟「共 16,121 張」。
+   * 否則畫面會同時聲稱「只練 1 種題型」跟「共 16,401 張」。
    */
   summary(scope = {}, now = new Date()) {
     const [clause, params] = scopeClause(scope);
@@ -508,12 +555,12 @@ Object.assign(Store.prototype, {
                 COUNT(*) total,
                 SUM(CASE WHEN s.card_id IS NOT NULL THEN 1 ELSE 0 END) seen,
                 SUM(CASE WHEN s.stability >= 21 THEN 1 ELSE 0 END) mature,
-                SUM(CASE WHEN s.due <= ? THEN 1 ELSE 0 END) due
+                SUM(CASE WHEN s.due < ? THEN 1 ELSE 0 END) due
          FROM cards c LEFT JOIN states s ON s.card_id = c.id
          WHERE 1 = 1${clause}
          GROUP BY c.kind ORDER BY c.kind`,
       )
-      .all(now.toISOString(), ...params)
+      .all(endOfLocalDay(now), ...params)
       .map((r) => ({ kind: r.kind, total: r.total, seen: r.seen, mature: r.mature, due: r.due }));
   },
 
