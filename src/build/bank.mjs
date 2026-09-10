@@ -14,7 +14,8 @@ import { mkdir, writeFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { SOURCES, exists, readJson, loadGlosses, resolveGloss } from './sources.mjs';
 import { loadVerbiste, conjugate, compound, PRONOUNS, IMPERATIVE_PRONOUNS, AUX_DUAL_NOTE } from './verbiste.mjs';
-import { loadConnectors, MOOD_LABELS } from './connectors.mjs';
+import { loadConnectors, MOOD_LABELS, MOOD_ZH } from './connectors.mjs';
+import { CONNECTOR_GLOSS } from './connector-gloss.mjs';
 import { loadPicks } from './picks.mjs';
 import { loadRewrites } from './rewrites.mjs';
 import { buildNominals } from './nominals.mjs';
@@ -183,13 +184,20 @@ function makeConnectorCards(connectors) {
       tags: ['connector', c.mood],
       answer: c.mood,
       accept: [c.mood],
-      options,
       front: {
         connector: c.connector,
         zh: c.zh,
         fn: c.fn,
         sense: c.sense,
         moodRaw: c.moodRaw,
+        // 選項一定要放在 front 裡。前端的 choiceAnswer() 只讀 `card.front.options`，
+        // 挑連接詞卡也是這樣放。2026-09-10 實測：這裡原本放在卡片頂層，
+        // 結果 50 張連接詞卡在複習頁只有題面、一顆選項按鈕都沒有，等於不能作答。
+        // 兩個位置各放一份不是解法——那只是把下一次分岔藏起來。
+        options,
+        // 選項的中文。按鈕上只有法文術語時，`imparfait` 與 `conditionnel`
+        // 對還沒背熟術語的人是兩個看不懂的字，等於在考術語不是考語感。
+        optionZh: MOOD_ZH,
       },
     }));
 }
@@ -329,6 +337,15 @@ export async function build(outDir, log = () => {}) {
   log('讀取連接詞判斷表…');
   const connectors = await loadConnectors(SOURCES.vault);
   const connCards = makeConnectorCards(connectors);
+  // 兩件事各報一次。缺中文的張數應該是 0；補釋義表用到的列數少於它收的列數，
+  // 代表 vault 那張表已經補了同一個連接詞——那一列在 connector-gloss.mjs 裡
+  // 就是死的，該刪。這裡只講，不自動刪：刪哪一列是人的判斷。
+  const noZh = connCards.filter((c) => !c.front.zh);
+  if (noZh.length) log(`  ⚠ 連接詞缺中文 ${noZh.length} 張：${noZh.map((c) => c.front.connector).join('、')}`);
+  const deadGloss = Object.keys(CONNECTOR_GLOSS).filter(
+    (k) => !connectors.some((c) => c.connector === k && c.glossedHere),
+  );
+  if (deadGloss.length) log(`  ⚠ connector-gloss.mjs 有 ${deadGloss.length} 列沒被用到，可以刪：${deadGloss.join('、')}`);
 
   log('讀取方框挑連接詞題庫…');
   const picks = await loadPicks(SOURCES.packs);

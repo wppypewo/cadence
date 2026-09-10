@@ -243,7 +243,9 @@ function hitRow({ card, state }, out, back) {
   // 所以這一種卡自己寫一句，把基詞的位置講明白。
   const sub = card.kind === 'nom'
     ? [f.base ? `由${f.posZh ?? ''} ${f.base} 變來` : null, f.gloss].filter(Boolean).join('・')
-    : [f.posZh, f.base, f.gloss || f.zh || f.tenseZh].filter(Boolean).join('・');
+    // f.fn 只有連接詞卡有（功能分類）。查詢是查資料的地方不是考場，
+    // 這裡不必像複習那樣把它藏到作答之後。
+    : [f.posZh, f.base, f.fn, f.gloss || f.zh || f.tenseZh].filter(Boolean).join('・');
 
   const left = h('div.hit-main',
     {},

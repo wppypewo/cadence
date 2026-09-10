@@ -293,12 +293,22 @@
 /* 選擇題（連接詞後接什麼語氣）。 */
 .choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--s2); }
 .choices button {
-  min-height: 52px; padding: 0 var(--s4);
+  display: flex; flex-direction: column; justify-content: center; gap: 2px;
+  min-height: 52px; padding: var(--s2) var(--s4);
   font-family: var(--font-fr); font-size: var(--t-lg); text-align: left;
   background: var(--surface); color: var(--text);
   border: 1px solid var(--border-strong); border-radius: var(--r-control); cursor: pointer;
   transition: background var(--dur-out) var(--ease), border-color var(--dur-out) var(--ease);
 }
+/* 語氣的中文。字級與顏色都降一階，法文術語仍然是按鈕的主體——
+   考卷上印的是法文，中文只是幫忙認出那是什麼。 */
+.choices button small {
+  font-family: var(--font-ui); font-size: var(--t-sm); color: var(--text-muted);
+}
+/* 標對／標錯之後小字跟著換色。不再壓 opacity——實測壓到 0.8 之後
+   淺色模式只剩 3.63:1，低於內文要求的 4.5:1。 */
+.choices button[data-mark="ok"] small,
+.choices button[data-mark="bad"] small { color: inherit; }
 .choices button:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-weak); }
 .choices button:disabled { cursor: default; opacity: 0.5; }
 .choices button[data-mark="ok"] { border-color: var(--ok); background: var(--ok-weak); color: var(--ok); opacity: 1; }

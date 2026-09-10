@@ -20,6 +20,7 @@
 
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { CONNECTOR_GLOSS } from './connector-gloss.mjs';
 
 /** 表格「後接」欄的文字 → 語氣代碼。認不出來的整列跳過。 */
 const MOOD_PATTERNS = [
@@ -30,17 +31,27 @@ const MOOD_PATTERNS = [
   [/indicatif/i, 'indicatif'],
 ];
 
-export const MOOD_LABELS = {
-  subjonctif: '虛擬式 subjonctif',
-  indicatif: '直陳式 indicatif',
-  conditionnel: '條件式 conditionnel',
-  infinitif: '不定式 infinitif',
-  nom: '名詞 nom',
+/**
+ * 語氣代碼 → 中文。單獨存一份是因為選項按鈕上要中法並列：
+ * 按鈕本身是法文術語（考卷上看到的就是那個字），中文只是底下的小字。
+ * 併成一個字串的話，前端只能靠切空白拆回來，`imparfait` 那條有兩個空白就會拆錯。
+ */
+export const MOOD_ZH = {
+  subjonctif: '虛擬式',
+  indicatif: '直陳式',
+  conditionnel: '條件式',
+  infinitif: '不定式',
+  nom: '名詞',
   // comme si 只有這一個。它接的是直陳式的 imparfait／plus-que-parfait，
   // 但考的重點是「不能接 conditionnel」，答「indicatif」等於沒答到那一步，
   // 所以獨立成一個選項。
-  imparfait: '未完成／愈過去 imparfait・plus-que-parfait',
+  imparfait: '未完成／愈過去',
 };
+
+/** 給人讀的完整標籤（中文＋法文）。選項的順序也由這裡的鍵決定。 */
+export const MOOD_LABELS = Object.fromEntries(
+  Object.entries(MOOD_ZH).map(([k, zh]) => [k, k === 'imparfait' ? `${zh} imparfait・plus-que-parfait` : `${zh} ${k}`]),
+);
 
 const stripMarkdown = (s) => s.replace(/\*\*/g, '').replace(/`/g, '').trim();
 
@@ -169,9 +180,17 @@ export function parseConnectors(markdown) {
   return [...merged.values()];
 }
 
+/** 補釋義表的查詢鍵：與 normKey 同一套正規化，免得撇號寫法不同就對不上。 */
+const GLOSS = new Map(Object.entries(CONNECTOR_GLOSS).map(([k, v]) => [normKey(k), v]));
+
 /**
  * 合併兩份表：語氣一律採權威表，功能與中文由輔助表補；
  * 權威表沒收的條目（avoir beau、en cas de、sinon）從輔助表整條帶進來。
+ * 輔助表也沒有中文的（權威表獨有的那 25 個），從 connector-gloss.mjs 補上，
+ * 理由寫在那個檔的檔頭：那些中文在 vault 裡不存在，不是抄來的。
+ *
+ * 補的順序是刻意的：**輔助表優先，補釋義表只填空**。
+ * 反過來的話，vault 那張表以後改了中文，這邊會靜靜地把它蓋掉。
  *
  * 權威表解析不出東西就整個回空陣列。半套資料比沒有資料更難發現。
  */
@@ -192,7 +211,16 @@ export function mergeConnectors(authoritative, aux) {
     // `quel(le)(s) que` 與輔助表的 `quel que` 是同一個詞，只是詞形標記寫法不同。
     const extra = byKey.get(key) ?? byVariant.get(variantKey(c.connector));
     if (extra) used.add(normKey(extra.connector));
-    return { ...c, fn: extra?.fn ?? '', zh: extra?.zh ?? '' };
+    const gloss = GLOSS.get(key) ?? GLOSS.get(variantKey(c.connector));
+    // glossedHere 記的是「這一條的中文來自補釋義表」。build 拿它反查哪些列已經死了
+    // ——vault 補了同一個連接詞之後，補釋義表那一列就不再被用到，該刪。
+    const glossedHere = Boolean(gloss && !extra?.zh);
+    return {
+      ...c,
+      fn: extra?.fn || gloss?.fn || '',
+      zh: extra?.zh || gloss?.zh || '',
+      glossedHere,
+    };
   });
 
   for (const a of aux) {

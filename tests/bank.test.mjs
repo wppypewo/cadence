@@ -15,7 +15,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { makeVocabCards, makeConjCards, makeConnectorCards, TENSES, POS_ZH } from '../src/build/bank.mjs';
-import { parseConnectors, parseMoodTable, mergeConnectors, MOOD_LABELS } from '../src/build/connectors.mjs';
+import { parseConnectors, parseMoodTable, mergeConnectors, MOOD_LABELS, MOOD_ZH } from '../src/build/connectors.mjs';
+import { CONNECTOR_GLOSS } from '../src/build/connector-gloss.mjs';
 import { parseVerbs, parseTemplates, AUX_DUAL_NOTE } from '../src/build/verbiste.mjs';
 
 // ---- 詞彙卡 ----
@@ -304,13 +305,18 @@ test('連接詞卡：多解的不出題，選項是全部語氣', () => {
   assert.equal(card.level, 'B1');
   assert.equal(card.answer, 'indicatif');
   assert.deepEqual(card.accept, ['indicatif']);
-  assert.deepEqual(card.options, Object.keys(MOOD_LABELS));
+  // 選項放在 front 裡，與挑連接詞卡同一個位置——前端只從那裡讀。
+  assert.deepEqual(card.front.options, Object.keys(MOOD_LABELS));
+  assert.equal(card.options, undefined);
   // 2026-09-09 起多一個 imparfait：comme si 接的不是 conditionnel，
   // 那一步答「indicatif」等於沒答到，所以獨立成選項。
-  assert.equal(card.options.length, 6);
+  assert.equal(card.front.options.length, 6);
   assert.equal(card.front.sense, '對立');
   // 每個選項都要有中文標籤，否則畫面上只有法文術語。
-  for (const o of card.options) assert.ok(MOOD_LABELS[o]);
+  for (const o of card.front.options) assert.ok(MOOD_LABELS[o]);
+  // 中文標籤要跟著卡片走。只留在 build 端的話，畫面上就只剩法文術語，
+  // 2026-09-10 之前正是這樣——那等於在考術語，不是考語感。
+  for (const o of card.front.options) assert.ok(card.front.optionZh[o], `${o} 沒有中文`);
 });
 
 // ---------------------------------------------------------------------------
@@ -396,4 +402,67 @@ test('合併：權威表沒收的條目從輔助表整條帶進來，不憑空�
 test('合併：權威表解析失敗就整個回空，不退回只用輔助表', () => {
   // 半套資料比沒有資料更難發現，寧可讓 build 報「連接詞 0 筆」。
   assert.deepEqual(mergeConnectors([], parsed), []);
+});
+
+// ---------------------------------------------------------------------------
+// 補釋義表（connector-gloss.mjs）：權威表獨有的那些條目，中文在 vault 裡不存在
+// ---------------------------------------------------------------------------
+
+test('補釋義：權威表獨有的條目補得到功能與中文，並標記來源', () => {
+  const merged = mergeConnectors(core, parsed);
+  const by = (n) => merged.find((c) => c.connector === n);
+  // 這幾個只在權威表上，輔助表沒收，中文只能來自 connector-gloss.mjs。
+  assert.equal(by('comme si').zh, '好像／彷彿');
+  assert.equal(by('comme si').fn, '比較');
+  assert.equal(by('comme si').glossedHere, true);
+  assert.equal(by('après que').zh, '在…之後');
+  assert.equal(by('si').fn, '對立讓步');
+  // 權威表的 si 是讓步的那個，補的中文必須講明不是「如果」，
+  // 否則這張卡等於在教錯的東西。
+  assert.match(by('si').zh, /讓步/);
+});
+
+test('補釋義：輔助表有中文時不被蓋掉，只填空', () => {
+  // 模擬「vault 之後補收了 comme si」：輔助表一旦有中文，補釋義表就該讓位。
+  // 反過來的話，vault 改了中文這邊會靜靜地蓋回舊的。
+  const auxMd = CONNECTOR_MD.replace(
+    '| au cas où | 條件 | **conditionnel** | 萬一 |',
+    // 這裡刻意寫 indicatif：輔助表的解析器沒有 imparfait 這個 pattern
+    // （vault 那張表沒有這種列），而且語氣本來就該由權威表決定，正好一起驗。
+    '| au cas où | 條件 | **conditionnel** | 萬一 |\n| comme si | 比較 | **indicatif** | 輔助表寫的中文 |',
+  );
+  const merged = mergeConnectors(core, parseConnectors(auxMd));
+  const comme = merged.find((c) => c.connector === 'comme si');
+  assert.equal(comme.zh, '輔助表寫的中文');
+  assert.equal(comme.glossedHere, false);
+  // 語氣仍然採權威表，不因為輔助表也收了就改。
+  assert.equal(comme.mood, 'imparfait');
+});
+
+test('補釋義：每一列的功能與中文都不得是空的', () => {
+  const rows = Object.entries(CONNECTOR_GLOSS);
+  assert.ok(rows.length > 0);
+  for (const [k, v] of rows) {
+    assert.ok(v.fn && v.fn.trim(), `${k} 沒有功能`);
+    assert.ok(v.zh && v.zh.trim(), `${k} 沒有中文`);
+    assert.equal(k, k.trim(), `${k} 前後有空白，正規化之後會對不上`);
+  }
+});
+
+test('補釋義：功能欄沿用輔助表那一套用詞，不自立新分類', () => {
+  // 同一副牌裡一半寫「條件」一半寫「假設」會讀成兩回事。
+  const known = new Set(['時間', '對立', '對立讓步', '條件', '條件·原因', '比較']);
+  for (const [k, v] of Object.entries(CONNECTOR_GLOSS)) {
+    assert.ok(known.has(v.fn), `${k} 的功能「${v.fn}」不在既有分類裡`);
+  }
+});
+
+test('語氣標籤：中文與完整標籤同一份來源，不會各改一邊', () => {
+  // MOOD_LABELS 由 MOOD_ZH 生成。兩份各寫一次的話，改了中文只有按鈕會變，
+  // 別的地方仍是舊的。
+  for (const [k, zh] of Object.entries(MOOD_ZH)) {
+    assert.ok(MOOD_LABELS[k].startsWith(zh), `${k} 的標籤沒有以中文開頭`);
+    assert.match(MOOD_LABELS[k], /[a-z]/, `${k} 的標籤沒有法文術語`);
+  }
+  assert.deepEqual(Object.keys(MOOD_ZH), Object.keys(MOOD_LABELS));
 });

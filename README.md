@@ -83,6 +83,8 @@ Verbiste（Copyright 2003–2016 Pierre Sarrazin）是 GPL-2.0-or-later。本專
 
 四個來源的位置可用環境變數覆寫：`CADENCE_FEXGEN`、`CADENCE_VERBISTE`、`CADENCE_VAULT`、`CADENCE_PACKS`。
 
+有一份資料不在上表：`src/build/connector-gloss.mjs`。權威表依語氣分列、沒有中文欄，輔助表有中文但只收常用的，兩張表交集之外那 25 個連接詞的中文在 vault 裡不存在，所以由本專案自己寫。合併時輔助表一律優先、這份只填空；vault 哪天補了同一個連接詞，`npm run build` 會把那一列點出來要人刪掉。
+
 另有 `CADENCE_DATA` 可以換掉題庫、索引與作答紀錄的落點（預設是 repo 內的 `data/`）。它的用途是測試與示範：`data/reviews.jsonl` 與 `data/checkins.jsonl` 是這個 repo 唯二不可重建的檔案，隨手跑幾張卡就會寫進去。目錄要自己先備好（`bank/` 與 `reviews.jsonl`；打卡檔第一次打卡時自動建立），不會自動建立。
 
 ```bash
@@ -103,7 +105,7 @@ cadence doctor    [--json]                    檢查資料來源、題庫、索�
 ## 開發
 
 ```bash
-npm test      # 206 題，含 732 組 FSRS 黃金向量
+npm test      # 211 題，含 732 組 FSRS 黃金向量
 npm run lint  # node --check 全檔語法檢查
 ```
 

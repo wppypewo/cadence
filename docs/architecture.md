@@ -21,7 +21,8 @@ src/
     bank.mjs         題庫組裝
     sources.mjs      唯一知道外部目錄長什麼樣的檔案
     verbiste.mjs     Verbiste XML 解析
-    connectors.mjs   連接詞規則解析
+    connectors.mjs   連接詞規則解析（權威表與輔助表合併）
+    connector-gloss.mjs  權威表獨有那 25 個條目的中文與功能，vault 裡沒有
     picks.mjs        挑連接詞（四選一）
     rewrites.mjs     改寫整句
     nominals.mjs     名詞化配對

@@ -410,18 +410,24 @@ function rwSelfRating(self, submit) {
 function choiceAnswer(card, state, submit) {
   const box = h('div.choices', { role: 'group', 'aria-label': '選一個答案' });
   const picked = state.verdict?.answered ?? null;
+  // 連接詞卡帶 optionZh（語氣的中文），挑連接詞卡的選項本身就是法文詞、沒有這一欄。
+  const zh = card.front?.optionZh ?? {};
   for (const opt of card.front?.options ?? []) {
     let mark = null;
     if (state.verdict) {
       if (opt === state.verdict.answer) mark = 'ok';
       else if (opt === picked) mark = 'bad';
     }
-    box.append(h('button', {
-      type: 'button', lang: 'fr', text: opt,
+    const btn = h('button', {
+      type: 'button',
       disabled: Boolean(state.verdict),
       dataset: mark ? { mark } : {},
       onclick: () => submit({ answer: opt }),
-    }));
+    }, h('span.fr', { lang: 'fr', text: opt }));
+    // 中文放在法文底下，不取代它：考卷上印的是 subjonctif，
+    // 只認得「虛擬式」的人到了考場一樣認不出來。
+    if (zh[opt]) btn.append(h('small', { text: zh[opt] }));
+    box.append(btn);
   }
   return box;
 }
@@ -556,6 +562,13 @@ function verdictPanel(card, res, next) {
   if (res.accept && res.accept.length > 1) {
     box.append(h('p.verdict-note', { lang: 'fr', text: `也接受：${res.accept.slice(1).join('、')}` }));
   }
+  // 連接詞的功能分類（時間／對立讓步／條件…）只在作答之後給。
+  // 放進題面等於先講一半答案——「對立讓步」那一組幾乎全接 subjonctif。
+  // 作答完才出現，它是幫忙歸類記憶的線索，不是提示。
+  if (card.kind === 'connector' && card.front?.fn) {
+    box.append(h('p.verdict-note', { text: `功能：${card.front.fn}` }));
+  }
+
   if (res.note) box.append(h('p.verdict-note', { text: res.note }));
 
   box.append(h('div.verdict-sched', {},
