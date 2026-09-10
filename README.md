@@ -65,6 +65,7 @@ FSRS 為每張卡維護三個量：**S**（穩定度，記憶從剛複習完掉�
 ```
 data/reviews.jsonl   每次作答一行 JSON，只增不改。事實來源，進版控。
 data/checkins.jsonl  CO／PE／PO 的手動打卡，一天一行，同樣只增不改、同樣進版控。
+data/settings.json   考試日期、每日新卡量與目標記憶率，本機保存，不進版控。
 data/cadence.db      SQLite 索引。題庫、記憶狀態、統計都在這，可整個重算，不進版控。
 data/bank/           建置產物，由 npm run build 現算，不進版控。
 ```
@@ -108,7 +109,7 @@ cadence doctor    [--json]                    檢查資料來源、題庫、索�
 ## 開發
 
 ```bash
-npm test      # 221 題，含 732 組 FSRS 黃金向量
+npm test      # 229 題，含 732 組 FSRS 黃金向量
 npm run lint  # node --check 全檔語法檢查
 ```
 

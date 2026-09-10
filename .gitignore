@@ -8,6 +8,10 @@ data/cadence.db-journal
 data/cadence.db-wal
 data/cadence.db-shm
 
+# 本機偏好設定；可讀的 JSON 是事實來源，但屬於使用者個人資料，不跟 repo 散布。
+data/settings.json
+data/settings.json.tmp
+
 node_modules/
 npm-debug.log*
 

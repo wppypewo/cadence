@@ -14,7 +14,10 @@
  */
 
 import { DatabaseSync } from 'node:sqlite';
-import { appendFileSync, createReadStream, existsSync, mkdirSync, statSync } from 'node:fs';
+import {
+  appendFileSync, createReadStream, existsSync, mkdirSync, statSync,
+  readFileSync, renameSync, writeFileSync,
+} from 'node:fs';
 import { createInterface } from 'node:readline';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -32,6 +35,7 @@ CREATE TABLE IF NOT EXISTS cards (
   answer   TEXT,
   accept   TEXT,
   search   TEXT,
+  headword TEXT,
   payload  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS cards_kind ON cards(kind, level);
@@ -124,10 +128,17 @@ export function endOfLocalDay(now = new Date()) {
  */
 function migrate(db) {
   const cols = db.prepare('PRAGMA table_info(cards)').all().map((c) => c.name);
+  let reload = false;
   if (!cols.includes('search')) {
     db.exec('ALTER TABLE cards ADD COLUMN search TEXT');
-    db.exec('DELETE FROM cards');
+    reload = true;
   }
+  if (!cols.includes('headword')) {
+    db.exec('ALTER TABLE cards ADD COLUMN headword TEXT');
+    reload = true;
+  }
+  if (reload) db.exec('DELETE FROM cards');
+  db.exec('CREATE INDEX IF NOT EXISTS cards_headword ON cards(headword)');
 }
 
 /**
@@ -147,6 +158,14 @@ function searchText(card) {
     .join(' ');
 }
 
+/** 精確查詢排序用。跟全文 search 分開，才不會把中文釋義或整句題幹誤當詞頭。 */
+function searchHeadword(card) {
+  const f = card.front ?? {};
+  return f.word ?? f.verb ?? f.connector ?? f.base ?? card.answer ?? '';
+}
+
+const USER_SETTINGS = ['desiredRetention', 'dailyNewLimit', 'examDate'];
+
 export class Store {
   /**
    * @param {string} dataDir 專案的 data/ 目錄
@@ -156,6 +175,7 @@ export class Store {
     this.jsonlPath = path.join(dataDir, 'reviews.jsonl');
     this.checkinPath = path.join(dataDir, 'checkins.jsonl');
     this.dbPath = path.join(dataDir, 'cadence.db');
+    this.settingsPath = path.join(dataDir, 'settings.json');
     this.bankDir = path.join(dataDir, 'bank');
     mkdirSync(dataDir, { recursive: true });
     this.db = new DatabaseSync(this.dbPath);
@@ -163,6 +183,7 @@ export class Store {
     this.db.exec('PRAGMA synchronous = NORMAL');
     this.db.exec(SCHEMA);
     migrate(this.db);
+    this.restoreUserSettings();
     this.scheduler = createScheduler({ desiredRetention: this.desiredRetention });
   }
 
@@ -171,6 +192,42 @@ export class Store {
   }
 
   // ---- 設定 -------------------------------------------------------------
+
+  /**
+   * cadence.db 可以整個刪掉重建，所以使用者設定另存成一份小 JSON。
+   * 舊版只有 DB 時先匯出一次；已有檔案時則以檔案為準把索引補回來。
+   */
+  restoreUserSettings() {
+    const upsert = this.db.prepare(
+      'INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+    );
+    if (existsSync(this.settingsPath)) {
+      let saved;
+      try {
+        saved = JSON.parse(readFileSync(this.settingsPath, 'utf8'));
+      } catch (err) {
+        throw new Error(`讀不到 ${this.settingsPath}：${err.message}`);
+      }
+      for (const key of USER_SETTINGS) {
+        if (Object.hasOwn(saved, key)) upsert.run(key, JSON.stringify(saved[key]));
+      }
+      return;
+    }
+
+    const hasOldSettings = USER_SETTINGS.some((key) => this.db.prepare('SELECT 1 FROM settings WHERE key = ?').get(key));
+    if (hasOldSettings) this.writeUserSettings();
+  }
+
+  writeUserSettings() {
+    const saved = {
+      desiredRetention: this.get('desiredRetention', 0.9),
+      dailyNewLimit: this.get('dailyNewLimit', 15),
+      examDate: this.get('examDate', null),
+    };
+    const temp = `${this.settingsPath}.tmp`;
+    writeFileSync(temp, `${JSON.stringify(saved, null, 2)}\n`, 'utf8');
+    renameSync(temp, this.settingsPath);
+  }
 
   get(key, fallback = null) {
     const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
@@ -181,6 +238,7 @@ export class Store {
     this.db
       .prepare('INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
       .run(key, JSON.stringify(value));
+    if (USER_SETTINGS.includes(key)) this.writeUserSettings();
     if (key === 'desiredRetention') {
       this.scheduler = createScheduler({ desiredRetention: value });
     }
@@ -204,7 +262,7 @@ export class Store {
     }
     const cards = JSON.parse(await readFile(file, 'utf8'));
     const insert = this.db.prepare(
-      'INSERT INTO cards(id, kind, mode, level, freq, tags, answer, accept, search, payload) VALUES(?,?,?,?,?,?,?,?,?,?)',
+      'INSERT INTO cards(id, kind, mode, level, freq, tags, answer, accept, search, headword, payload) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
     );
     this.db.exec('BEGIN');
     try {
@@ -215,6 +273,7 @@ export class Store {
           c.tags.join(','), c.answer ?? null,
           c.accept ? JSON.stringify(c.accept) : null,
           searchText(c),
+          searchHeadword(c),
           JSON.stringify(c),
         );
       }
@@ -281,27 +340,37 @@ export class Store {
     );
     const at = new Date(entry.at);
     const due = new Date(at.getTime() + next.intervalDays * DAY_MS);
-    this.db
-      .prepare(
-        `INSERT INTO states(card_id, stability, difficulty, due, last_review, reps, lapses)
-         VALUES(?,?,?,?,?,1,?)
-         ON CONFLICT(card_id) DO UPDATE SET
-           stability = excluded.stability, difficulty = excluded.difficulty,
-           due = excluded.due, last_review = excluded.last_review,
-           reps = states.reps + 1, lapses = states.lapses + excluded.lapses`,
-      )
-      .run(
-        entry.card, next.stability, next.difficulty,
-        due.toISOString(), entry.at, entry.rating === 1 ? 1 : 0,
-      );
-    this.db
-      .prepare('INSERT INTO reviews(card_id, at, day, rating, elapsed, answered, correct, reason, ms) VALUES(?,?,?,?,?,?,?,?,?)')
-      .run(
-        entry.card, entry.at, entry.day ?? localDay(new Date(entry.at)), entry.rating, entry.elapsed,
-        entry.answered ?? null,
-        entry.correct === null || entry.correct === undefined ? null : Number(entry.correct),
-        entry.reason ?? null, entry.ms ?? null,
-      );
+    // reindex 外面已經有一層交易，SAVEPOINT 在兩種情況都能用；其中一張表寫失敗時，
+    // 另一張也必須退回，否則即時畫面會拿到一份 JSONL 與兩張索引彼此矛盾的狀態。
+    this.db.exec('SAVEPOINT apply_review');
+    try {
+      this.db
+        .prepare(
+          `INSERT INTO states(card_id, stability, difficulty, due, last_review, reps, lapses)
+           VALUES(?,?,?,?,?,1,?)
+           ON CONFLICT(card_id) DO UPDATE SET
+             stability = excluded.stability, difficulty = excluded.difficulty,
+             due = excluded.due, last_review = excluded.last_review,
+             reps = states.reps + 1, lapses = states.lapses + excluded.lapses`,
+        )
+        .run(
+          entry.card, next.stability, next.difficulty,
+          due.toISOString(), entry.at, entry.rating === 1 ? 1 : 0,
+        );
+      this.db
+        .prepare('INSERT INTO reviews(card_id, at, day, rating, elapsed, answered, correct, reason, ms) VALUES(?,?,?,?,?,?,?,?,?)')
+        .run(
+          entry.card, entry.at, entry.day ?? localDay(new Date(entry.at)), entry.rating, entry.elapsed,
+          entry.answered ?? null,
+          entry.correct === null || entry.correct === undefined ? null : Number(entry.correct),
+          entry.reason ?? null, entry.ms ?? null,
+        );
+      this.db.exec('RELEASE apply_review');
+    } catch (err) {
+      this.db.exec('ROLLBACK TO apply_review');
+      this.db.exec('RELEASE apply_review');
+      throw err;
+    }
     return next;
   }
 
@@ -446,6 +515,137 @@ export class Store {
     if (!existsSync(this.checkinPath)) return { exists: false, bytes: 0 };
     return { exists: true, bytes: statSync(this.checkinPath).size };
   }
+
+  /**
+   * 逐筆核對 reviews.jsonl 與 SQLite 鏡像。只比行數抓不到「少一筆又多一筆」的等量錯列，
+   * 所以連欄位與順序一起比；bad 保留原始行號，讓 doctor 能直接指出修復位置。
+   */
+  async auditJournal() {
+    const info = this.journalInfo();
+    const indexed = this.db
+      .prepare('SELECT card_id, at, day, rating, elapsed, answered, correct, reason, ms FROM reviews ORDER BY seq')
+      .all();
+    const expected = [];
+    const bad = [];
+    let lines = 0;
+
+    if (info.exists) {
+      const rl = createInterface({ input: createReadStream(this.jsonlPath, 'utf8'), crlfDelay: Infinity });
+      let lineNo = 0;
+      for await (const line of rl) {
+        lineNo += 1;
+        if (!line.trim()) continue;
+        lines += 1;
+        try {
+          const entry = JSON.parse(line);
+          if (!entry.card || !entry.at || !entry.rating || !Number.isFinite(Number(entry.elapsed))) {
+            throw new Error('缺必要欄位');
+          }
+          expected.push({
+            line: lineNo,
+            row: {
+              card_id: String(entry.card),
+              at: String(entry.at),
+              day: String(entry.day ?? localDay(new Date(entry.at))),
+              rating: Number(entry.rating),
+              elapsed: Number(entry.elapsed),
+              answered: entry.answered ?? null,
+              correct: entry.correct === null || entry.correct === undefined ? null : Number(entry.correct),
+              reason: entry.reason ?? null,
+              ms: entry.ms ?? null,
+            },
+          });
+        } catch (err) {
+          bad.push({ line: lineNo, error: err.message });
+        }
+      }
+    }
+
+    const at = firstRowDifference(expected.map((x) => x.row), indexed);
+    return {
+      ...info,
+      lines,
+      valid: expected.length,
+      indexed: indexed.length,
+      bad,
+      mismatchAt: at === null ? null : (expected[at]?.line ?? at + 1),
+      inSync: bad.length === 0 && at === null,
+    };
+  }
+
+  /** checkins.jsonl 是事件流，先按最後一筆折疊，再與 SQLite 的當日狀態逐列比對。 */
+  async auditCheckins() {
+    const info = this.checkinInfo();
+    const folded = new Map();
+    const bad = [];
+    let lines = 0;
+
+    if (info.exists) {
+      const rl = createInterface({ input: createReadStream(this.checkinPath, 'utf8'), crlfDelay: Infinity });
+      let lineNo = 0;
+      for await (const line of rl) {
+        lineNo += 1;
+        if (!line.trim()) continue;
+        lines += 1;
+        try {
+          const entry = JSON.parse(line);
+          if (!entry.skill || !entry.day || !entry.at) throw new Error('缺必要欄位');
+          const row = {
+            skill: String(entry.skill), day: String(entry.day),
+            done: entry.done === false ? 0 : 1, at: String(entry.at),
+          };
+          folded.set(`${row.skill}\0${row.day}`, row);
+        } catch (err) {
+          bad.push({ line: lineNo, error: err.message });
+        }
+      }
+    }
+
+    const expected = [...folded.values()].sort((a, b) => binaryCompare(a.skill, b.skill) || binaryCompare(a.day, b.day));
+    const indexed = this.db.prepare('SELECT skill, day, done, at FROM checkins ORDER BY skill, day').all();
+    const at = firstRowDifference(expected, indexed);
+    return {
+      ...info,
+      lines,
+      valid: lines - bad.length,
+      states: expected.length,
+      indexed: indexed.length,
+      bad,
+      mismatchAt: at === null ? null : at + 1,
+      inSync: bad.length === 0 && at === null,
+    };
+  }
+
+  /** 題庫檔、meta 計數與 SQLite payload 三邊對帳，筆數相同但卡片被換掉也會被抓到。 */
+  async auditBank(meta = null) {
+    const cards = JSON.parse(await readFile(path.join(this.bankDir, 'cards.json'), 'utf8'));
+    const expected = cards
+      .map((card) => ({ id: String(card.id), payload: JSON.stringify(card) }))
+      .sort((a, b) => binaryCompare(a.id, b.id));
+    const indexed = this.db.prepare('SELECT id, payload FROM cards ORDER BY id').all();
+    const at = firstRowDifference(expected, indexed);
+    const metaCards = meta?.counts?.cards ?? null;
+    return {
+      cards: cards.length,
+      metaCards,
+      indexed: indexed.length,
+      mismatchAt: at === null ? null : at + 1,
+      inSync: at === null && (metaCards === null || metaCards === cards.length),
+    };
+  }
+}
+
+function firstRowDifference(expected, actual) {
+  const n = Math.max(expected.length, actual.length);
+  for (let i = 0; i < n; i += 1) {
+    if (JSON.stringify(expected[i] ?? null) !== JSON.stringify(actual[i] ?? null)) return i;
+  }
+  return null;
+}
+
+/** SQLite 預設 BINARY collation；localeCompare 會把 accéder 排到 accueillir 前面，不能拿來對帳。 */
+function binaryCompare(a, b) {
+  return a < b ? -1 : (a > b ? 1 : 0);
 }
 
 // ---- 出題佇列 -----------------------------------------------------------
@@ -466,6 +666,39 @@ function scopeClause(scope = {}) {
     params.push(...scope.levels);
   }
   return [where.length ? ` AND ${where.join(' AND ')}` : '', params];
+}
+
+/**
+ * 仍以到期時間／頻率為主序，只在同題型已連續兩張時往後找最近的其他題型。
+ * 這樣不會把新卡插到到期卡前面，也不會讓二十張一輪被九千張變位卡整批佔滿。
+ */
+function limitKindRuns(candidates, limit, seed = []) {
+  const pool = [...candidates];
+  const out = [];
+  let lastKind = null;
+  let run = 0;
+  for (let i = seed.length - 1; i >= 0 && seed[i].kind === seed.at(-1)?.kind; i -= 1) run += 1;
+  if (seed.length) lastKind = seed.at(-1).kind;
+
+  while (out.length < limit && pool.length) {
+    let at = 0;
+    if (run >= 2) {
+      const alternate = pool.findIndex((card) => card.kind !== lastKind);
+      if (alternate >= 0) at = alternate;
+    }
+    const [card] = pool.splice(at, 1);
+    if (card.kind === lastKind) run += 1;
+    else {
+      lastKind = card.kind;
+      run = 1;
+    }
+    out.push(card);
+  }
+  return out;
+}
+
+function queueScan(limit) {
+  return Math.min(2_000, Math.max(limit, limit * 8));
 }
 
 Object.assign(Store.prototype, {
@@ -509,15 +742,16 @@ Object.assign(Store.prototype, {
     const limit = opts.limit ?? 20;
     const [clause, params] = scopeClause(opts);
 
-    const due = this.db
+    const dueCandidates = this.db
       .prepare(
         `SELECT c.payload, s.due, s.stability, s.difficulty, s.reps, s.lapses
          FROM states s JOIN cards c ON c.id = s.card_id
          WHERE s.due < ?${clause}
          ORDER BY s.due ASC LIMIT ?`,
       )
-      .all(endOfLocalDay(now), ...params, limit)
+      .all(endOfLocalDay(now), ...params, queueScan(limit))
       .map((r) => ({ ...JSON.parse(r.payload), state: { due: r.due, stability: r.stability, difficulty: r.difficulty, reps: r.reps, lapses: r.lapses } }));
+    const due = limitKindRuns(dueCandidates, limit);
 
     const room = limit - due.length;
     if (room <= 0) return due;
@@ -526,14 +760,15 @@ Object.assign(Store.prototype, {
     if (budget <= 0) return due;
 
     // 新卡按 FLELex 頻率由高到低——先學常見詞，投報率最高。
-    const fresh = this.db
+    const freshCandidates = this.db
       .prepare(
         `SELECT c.payload FROM cards c LEFT JOIN states s ON s.card_id = c.id
          WHERE s.card_id IS NULL${clause}
          ORDER BY c.freq DESC, c.id ASC LIMIT ?`,
       )
-      .all(...params, Math.min(room, budget))
+      .all(...params, queueScan(Math.min(room, budget)))
       .map((r) => ({ ...JSON.parse(r.payload), state: null }));
+    const fresh = limitKindRuns(freshCandidates, Math.min(room, budget), due);
 
     return [...due, ...fresh];
   },

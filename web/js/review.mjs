@@ -216,7 +216,7 @@ function face(card, state, submit) {
   if (card.mode === 'typed') box.append(typedAnswer(card, state, submit));
   else if (card.mode === 'rewrite') box.append(rewriteAnswer(card, state, submit));
   else if (card.mode === 'choice') box.append(choiceAnswer(card, state, submit));
-  else box.append(selfAnswer(card, f, state, submit));
+  else box.append(selfAnswer(card, state, submit));
 
   return box;
 }
@@ -437,20 +437,31 @@ function choiceAnswer(card, state, submit) {
  * 不做自動批改是因為「這個字的意思」沒有唯一字串答案，
  * 硬要比對只會製造假錯誤。
  */
-function selfAnswer(card, f, state, submit) {
+function selfAnswer(card, state, submit) {
   const box = h('div.answer-row');
   const back = h('div.prompt', { hidden: true });
-  back.append(h('div.prompt-zh', { text: f.gloss || '（題庫沒有中文釋義）' }));
-  if (f.en) back.append(h('div.prompt-en', { lang: 'en', text: f.en }));
-  if (f.glossSource) back.append(h('div.prompt-note', { text: `釋義來源：${f.glossSource}` }));
+  const err = h('p.field-error', { hidden: true });
 
   const reveal = h('button.btn.btn-primary.reveal-btn', {
     type: 'button', text: '看答案',
-    onclick: () => {
-      back.hidden = false;
-      reveal.hidden = true;
-      rate.hidden = false;
-      rate.querySelector('button')?.focus();
+    onclick: async () => {
+      reveal.disabled = true;
+      try {
+        const answer = await api.reveal(card.id);
+        back.append(h('div.prompt-zh', { text: answer.gloss || '（題庫沒有中文釋義）' }));
+        if (answer.en) back.append(h('div.prompt-en', {
+          lang: 'en', text: Array.isArray(answer.en) ? answer.en.join('；') : answer.en,
+        }));
+        if (answer.glossSource) back.append(h('div.prompt-note', { text: `釋義來源：${answer.glossSource}` }));
+        back.hidden = false;
+        reveal.hidden = true;
+        rate.hidden = false;
+        rate.querySelector('button')?.focus();
+      } catch (e) {
+        err.textContent = `讀不到答案：${e.message}`;
+        err.hidden = false;
+        reveal.disabled = false;
+      }
     },
   });
 
@@ -462,7 +473,7 @@ function selfAnswer(card, f, state, submit) {
     }, h('b', { text: RATING_ZH[r] }), h('small', { text: String(r) })));
   }
 
-  box.append(back, reveal, rate);
+  box.append(back, reveal, err, rate);
   if (!state.verdict) {
     box.append(h('span.kbd-hint', {}, h('kbd', { text: 'Space' }), ' 看答案，', h('kbd', { text: '1' }), '–', h('kbd', { text: '4' }), ' 給分'));
   }
@@ -508,7 +519,13 @@ function verdictPanel(card, res, next) {
   ));
 
   // 改寫題不做逐字比對：整句有好幾種寫法都對，拿解答當骨架比一遍會整片標紅。
-  if (card.kind === 'rw') {
+  if (card.mode === 'self') {
+    if (res.answer) box.append(h('div.prompt-zh', { text: res.answer }));
+    if (res.en?.length) box.append(h('div.prompt-en', {
+      lang: 'en', text: Array.isArray(res.en) ? res.en.join('；') : res.en,
+    }));
+    if (res.glossSource) box.append(h('p.verdict-note', { text: `釋義來源：${res.glossSource}` }));
+  } else if (card.kind === 'rw') {
     if (res.grade?.miss?.length) {
       box.append(h('p.verdict-note', {
         text: `少了：${res.grade.miss.map((alts) => alts.join('／')).join('、')}。指定的連接詞與它要求的語氣是這一題的考點，缺一就不算改對。`,
@@ -565,8 +582,8 @@ function verdictPanel(card, res, next) {
   // 連接詞的功能分類（時間／對立讓步／條件…）只在作答之後給。
   // 放進題面等於先講一半答案——「對立讓步」那一組幾乎全接 subjonctif。
   // 作答完才出現，它是幫忙歸類記憶的線索，不是提示。
-  if (card.kind === 'connector' && card.front?.fn) {
-    box.append(h('p.verdict-note', { text: `功能：${card.front.fn}` }));
+  if (card.kind === 'connector' && res.fn) {
+    box.append(h('p.verdict-note', { text: `功能：${res.fn}` }));
   }
 
   if (res.note) box.append(h('p.verdict-note', { text: res.note }));

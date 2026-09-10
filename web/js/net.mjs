@@ -30,6 +30,7 @@ export const api = {
   today: () => call('GET', '/api/today'),
   doc: (id) => call('GET', '/api/doc', { query: { id } }),
   queue: (q) => call('GET', '/api/queue', { query: q }),
+  reveal: (id) => call('GET', '/api/reveal', { query: { id } }),
   stats: (q) => call('GET', '/api/stats', { query: q }),
   forecast: (q) => call('GET', '/api/forecast', { query: q }),
   search: (q) => call('GET', '/api/search', { query: { q } }),

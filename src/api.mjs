@@ -4,6 +4,7 @@
  */
 
 import { readFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { grade, gradePick, gradeRewrite, gradeNom } from './engine/grade.mjs';
@@ -39,6 +40,8 @@ export class Api {
   constructor(store) {
     this.store = store;
     this.verbCache = null;
+    this.cardTokens = new Map();
+    this.tokenCards = new Map();
   }
 
   /** 把 query string 的 kinds/levels 轉成通過白名單的陣列。 */
@@ -72,13 +75,32 @@ export class Api {
     const limit = clampInt(query.limit, 1, 200, 20);
     const cards = this.store.queue({ ...scope, limit });
     return {
-      cards: cards.map((c) => stripAnswer(c)),
+      cards: cards.map((c) => this.queueCard(c)),
       remaining: {
         due: this.store.dueCount(scope),
         new: this.store.newCount(scope),
       },
       newToday: this.store.newIntroducedToday(),
       newLimit: this.store.dailyNewLimit,
+    };
+  }
+
+  /**
+   * 看字回想的答案只在使用者翻面後送出。queue 若連中文釋義一起送，
+   * 畫面藏得再好也能在 Network 面板先看到，這種自評就失去意義。
+   */
+  reveal(query = {}) {
+    const cardId = this.resolveCard(String(query.id ?? ''));
+    const card = this.store.card(cardId);
+    if (!card) throw new HttpError(404, `找不到卡片 ${query.id ?? ''}`);
+    if (card.kind !== 'vocab-recall' || card.mode !== 'self') {
+      throw new HttpError(400, '只有看字回想題可以翻面');
+    }
+    const f = card.front ?? {};
+    return {
+      gloss: f.gloss ?? card.answer ?? null,
+      en: f.en ?? null,
+      glossSource: f.glossSource ?? null,
     };
   }
 
@@ -106,7 +128,8 @@ export class Api {
    */
   review(body = {}) {
     if (!body.cardId) throw new HttpError(400, '缺少 cardId');
-    const card = this.store.card(body.cardId);
+    const cardId = this.resolveCard(String(body.cardId));
+    const card = this.store.card(cardId);
     if (!card) throw new HttpError(404, `找不到卡片 ${body.cardId}`);
 
     let rating = body.rating;
@@ -151,7 +174,7 @@ export class Api {
     }
 
     const state = this.store.review({
-      cardId: body.cardId,
+      cardId,
       rating,
       answered: body.answer ?? null,
       correct: correct ?? (result ? result.correct : rating > 1),
@@ -163,9 +186,12 @@ export class Api {
       phase: 'done',
       rating,
       grade: result,
-      answer: card.answer ?? null,
+      answer: card.kind === 'vocab-recall' ? card.front?.gloss ?? null : card.answer ?? null,
+      en: card.kind === 'vocab-recall' ? card.front?.en ?? null : null,
+      glossSource: card.kind === 'vocab-recall' ? card.front?.glossSource ?? null : null,
       accept: card.accept ?? null,
       note: card.note ?? null,
+      fn: card.kind === 'connector' ? card.front?.fn ?? null : null,
       state: {
         stability: state.stability,
         difficulty: state.difficulty,
@@ -175,6 +201,25 @@ export class Api {
         intervalDays: Math.round((new Date(state.due) - new Date(state.last_review)) / 86_400_000),
       },
     };
+  }
+
+  /**
+   * 題庫 id 常直接含答案（例如 v:école|NOM|p），出題時換成執行期隨機代號。
+   * 同一張卡沿用同一代號，Map 最多只有題庫張數，不會隨每次刷新一直長大。
+   */
+  queueCard(card) {
+    let token = this.cardTokens.get(card.id);
+    if (!token) {
+      token = randomUUID();
+      this.cardTokens.set(card.id, token);
+      this.tokenCards.set(token, card.id);
+    }
+    return stripAnswer({ ...card, id: token });
+  }
+
+  /** 直接呼叫 Api 的測試與本機腳本仍可用真 id；瀏覽器拿到的則只會是代號。 */
+  resolveCard(id) {
+    return this.tokenCards.get(id) ?? id;
   }
 
   stats(query = {}) {
@@ -396,9 +441,14 @@ export class Api {
         `SELECT c.payload, s.stability, s.due, s.lapses
          FROM cards c LEFT JOIN states s ON s.card_id = c.id
          ${where}
-         ORDER BY c.freq DESC, c.id ASC LIMIT ?`,
+         ORDER BY CASE
+           WHEN c.headword = ? COLLATE NOCASE THEN 0
+           WHEN c.answer = ? COLLATE NOCASE THEN 1
+           WHEN c.headword LIKE ? COLLATE NOCASE THEN 2
+           ELSE 3
+         END, c.freq DESC, c.id ASC LIMIT ?`,
       )
-      .all(...args, SEARCH_SCAN);
+      .all(...args, q, q, `${q}%`, SEARCH_SCAN);
 
     const hits = [];
     const seenGroups = new Set();
@@ -444,8 +494,22 @@ export class HttpError extends Error {
 /** 出題時把答案拿掉，免得在 devtools 的 network 面板就看到解答。 */
 function stripAnswer(card, keepAnswer = false) {
   // must 是改寫題的必要要素、noun 是名詞化題的名詞本體，兩者都是答案片段，跟 answer 一起拿掉。
-  const { answer, accept, note, must, noun, ...rest } = card;
-  return keepAnswer ? { ...rest, answer, note } : rest;
+  const { answer, accept, note, must, noun, tags, ...rest } = card;
+  if (keepAnswer) return { ...rest, answer, note };
+
+  const front = { ...(rest.front ?? {}) };
+  if (card.kind === 'vocab-recall') {
+    delete front.gloss;
+    delete front.en;
+    delete front.glossSource;
+  }
+  if (card.kind === 'vocab-produce') delete front.word;
+  if (card.kind === 'connector') {
+    // moodRaw 是答案本身，fn 則常能直接推出答案；兩者都在作答後由 review 回應提供。
+    delete front.moodRaw;
+    delete front.fn;
+  }
+  return { ...rest, front };
 }
 
 function clampInt(raw, min, max, fallback) {

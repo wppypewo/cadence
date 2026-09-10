@@ -246,6 +246,8 @@ function go(id, { force = false } = {}) {
   setScopeVisible(page);
 
   clear(els.main);
+  // 五個檢視都需要一個頁面主標題；視覺層級由各頁自己的內容承擔，所以只供讀屏與文件大綱使用。
+  els.main.append(h('h1.sr', { text: page.label }));
   state.cleanup = page.view(els.main, ctx) ?? null;
   els.main.focus({ preventScroll: true });
   window.scrollTo(0, 0);
@@ -350,6 +352,10 @@ function openSettings() {
         examDate: exam.value || null,
       });
       dismiss();
+      // 今天與推演直接顯示考試日期或新卡額度，儲存後若不重畫會繼續顯示舊值。
+      // 複習頁保留正在輸入的答案；它會在下一次作答或重新抓佇列時套用新額度。
+      if (state.page === 'today' || state.page === 'forecast') go(state.page, { force: true });
+      refreshBadge();
       toast('設定已儲存', 'ok');
     } catch (e) {
       err.textContent = e.message;

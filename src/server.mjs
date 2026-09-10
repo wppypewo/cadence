@@ -54,8 +54,9 @@ export async function createApp({ dataDir = path.join(ROOT, 'data') } = {}) {
 
 function makeHandler(api) {
   return async function handler(req, res) {
-    const url = new URL(req.url, 'http://127.0.0.1');
     try {
+      guardLocalRequest(req);
+      const url = new URL(req.url, 'http://127.0.0.1');
       if (url.pathname.startsWith('/api/')) {
         await handleApi(api, req, res, url);
         return;
@@ -67,6 +68,38 @@ function makeHandler(api) {
       send(res, status, { error: err.message });
     }
   };
+}
+
+/**
+ * 綁在 loopback 只能擋區網連線，擋不了瀏覽器從惡意網站對 127.0.0.1 發 POST。
+ * Host 白名單同時封住 DNS rebinding；JSON content-type 讓跨站 simple request 無法寫入，
+ * Origin 則在瀏覽器有送時再核對一次。三條都只依實際 socket 的本機 port 判斷。
+ */
+export function guardLocalRequest(req) {
+  const port = req.socket.localPort;
+  const authorities = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
+  if (port === 80) {
+    authorities.add('127.0.0.1');
+    authorities.add('localhost');
+  }
+  if (!authorities.has(String(req.headers.host ?? '').toLowerCase())) {
+    throw new HttpError(403, '只接受本機 cadence 網址');
+  }
+
+  if (req.method !== 'POST') return;
+  const type = String(req.headers['content-type'] ?? '').split(';', 1)[0].trim().toLowerCase();
+  if (type !== 'application/json') throw new HttpError(415, 'POST 只接受 application/json');
+
+  const origin = req.headers.origin;
+  if (!origin) return;
+  let authority;
+  try {
+    const parsed = new URL(origin);
+    authority = parsed.protocol === 'http:' ? parsed.host.toLowerCase() : '';
+  } catch {
+    authority = '';
+  }
+  if (!authorities.has(authority)) throw new HttpError(403, '拒絕跨站寫入');
 }
 
 async function handleApi(api, req, res, url) {
@@ -82,6 +115,8 @@ async function handleApi(api, req, res, url) {
       return send(res, 200, await api.doc(q));
     case 'GET /api/queue':
       return send(res, 200, api.queue(q));
+    case 'GET /api/reveal':
+      return send(res, 200, api.reveal(q));
     case 'GET /api/stats':
       return send(res, 200, api.stats(q));
     case 'GET /api/forecast':
@@ -149,6 +184,8 @@ async function serveStatic(res, pathname) {
     'content-type': type,
     'cache-control': 'no-cache',
     'content-security-policy': "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'",
+    'referrer-policy': 'no-referrer',
+    'x-frame-options': 'DENY',
     'x-content-type-options': 'nosniff',
   });
   createReadStream(file).pipe(res);
@@ -160,6 +197,7 @@ function send(res, status, payload) {
     'content-type': 'application/json; charset=utf-8',
     'cache-control': 'no-store',
     'x-content-type-options': 'nosniff',
+    'referrer-policy': 'no-referrer',
   });
   res.end(json);
 }

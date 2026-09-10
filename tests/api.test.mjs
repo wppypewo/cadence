@@ -18,16 +18,20 @@ const BANK = [
   {
     id: 'v:ecole', kind: 'vocab-produce', mode: 'typed', level: 'A1', freq: 9,
     tags: ['vocab'], answer: 'école', accept: ['école'], note: '陰性名詞',
-    front: { zh: '學校' },
+    front: { word: 'école', gloss: '學校' },
   },
   {
     id: 'v:chien', kind: 'vocab-recall', mode: 'self', level: 'A1', freq: 8,
-    tags: ['vocab'], answer: '狗', accept: null, front: { word: 'chien' },
+    tags: ['vocab'], answer: '狗', accept: null,
+    front: { word: 'chien', gloss: '狗', en: ['dog'], glossSource: 'manual' },
   },
   {
     id: 'k:bien-que', kind: 'connector', mode: 'choice', level: 'B1', freq: 0,
     tags: ['connector', 'subjonctif'], answer: 'subjonctif', accept: ['subjonctif'],
-    options: ['indicatif', 'subjonctif'], front: { connector: 'bien que' },
+    front: {
+      connector: 'bien que', options: ['indicatif', 'subjonctif'],
+      moodRaw: 'Subjonctif', fn: '對立讓步',
+    },
   },
   {
     id: 'c:etre:present:1', kind: 'conj', mode: 'typed', level: 'A2', freq: 7,
@@ -59,10 +63,10 @@ const BANK = [
   },
 ];
 
-async function open() {
+async function open(bank = BANK) {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'cadence-api-'));
   mkdirSync(path.join(dir, 'bank'), { recursive: true });
-  writeFileSync(path.join(dir, 'bank', 'cards.json'), JSON.stringify(BANK), 'utf8');
+  writeFileSync(path.join(dir, 'bank', 'cards.json'), JSON.stringify(bank), 'utf8');
   writeFileSync(
     path.join(dir, 'bank', 'verbs.json'),
     JSON.stringify({ être: { aux: 'avoir', simple: { 'présent': ['suis', 'es', 'est', 'sommes', 'êtes', 'sont'] } } }),
@@ -111,9 +115,19 @@ test('出題不帶答案，統計裡的弱點卡才帶', async () => {
       assert.equal('answer' in c, false, `${c.id} 把答案送出去了`);
       assert.equal('accept' in c, false);
       assert.equal('note' in c, false);
+      assert.equal(BANK.some((source) => source.id === c.id), false, '題庫 id 可能直接暴露答案');
     }
+    const recall = q.cards.find((c) => c.kind === 'vocab-recall');
+    assert.equal(recall.front.gloss, undefined);
+    assert.equal(recall.front.en, undefined);
+    assert.equal(recall.front.glossSource, undefined);
+    const produce = q.cards.find((c) => c.kind === 'vocab-produce');
+    assert.equal(produce.front.word, undefined);
+    const connector = q.cards.find((c) => c.kind === 'connector');
+    assert.equal(connector.front.moodRaw, undefined);
+    assert.equal(connector.front.fn, undefined);
     // 選擇題的選項要留著，否則畫面畫不出來。
-    assert.deepEqual(q.cards.find((c) => c.id === 'k:bien-que').options, ['indicatif', 'subjonctif']);
+    assert.deepEqual(connector.front.options, ['indicatif', 'subjonctif']);
     assert.equal(q.remaining.due + q.remaining.new, BANK.length);
     assert.equal(q.newLimit, 15);
 
@@ -124,6 +138,21 @@ test('出題不帶答案，統計裡的弱點卡才帶', async () => {
     assert.equal(weak[0].card.answer, 'école');
     assert.equal(weak[0].card.note, '陰性名詞');
     assert.equal('accept' in weak[0].card, false);
+  } finally {
+    cleanup(store, dir);
+  }
+});
+
+test('看字回想的釋義要翻面才取回，其他題型不能走 reveal', async () => {
+  const [api, store, dir] = await open();
+  try {
+    const recall = api.queue({ kinds: 'vocab-recall', limit: 1 }).cards[0];
+    assert.notEqual(recall.id, 'v:chien');
+    assert.deepEqual(api.reveal({ id: recall.id }), {
+      gloss: '狗', en: ['dog'], glossSource: 'manual',
+    });
+    assert.equal(caught(() => api.reveal({ id: 'v:ecole' })).status, 400);
+    assert.equal(caught(() => api.reveal({ id: '沒有這張' })).status, 404);
   } finally {
     cleanup(store, dir);
   }
@@ -155,6 +184,18 @@ test('打字題：答對 Good、只差重音 Again、只差大小寫 Hard', asyn
     const empty = api.review({ cardId: 'v:ecole', answer: '' });
     assert.equal(empty.rating, 1);
     assert.equal(empty.grade.reason, 'empty');
+  } finally {
+    cleanup(store, dir);
+  }
+});
+
+test('連接詞的功能提示只在作答後回傳', async () => {
+  const [api, store, dir] = await open();
+  try {
+    const card = api.queue({ kinds: 'connector', limit: 1 }).cards[0];
+    assert.equal(card.front.fn, undefined);
+    const result = api.review({ cardId: card.id, answer: 'subjonctif' });
+    assert.equal(result.fn, '對立讓步');
   } finally {
     cleanup(store, dir);
   }
@@ -327,6 +368,9 @@ test('自評題由前端給分，且分數必須在 1..4', async () => {
     const r = api.review({ cardId: 'v:chien', rating: 4 });
     assert.equal(r.rating, 4);
     assert.equal(r.grade, null);
+    assert.equal(r.answer, '狗');
+    assert.deepEqual(r.en, ['dog']);
+    assert.equal(r.glossSource, 'manual');
 
     for (const rating of [0, 5, 2.5, '3', undefined, null]) {
       assert.equal(caught(() => api.review({ cardId: 'v:chien', rating })).status, 400);
@@ -489,6 +533,25 @@ test('search：中文釋義查得到，變位卡以動詞計為一組', async ()
     assert.equal(verb.groups, 1);
     assert.equal(verb.total, verb.hits.length);
     assert.equal(verb.truncated, false);
+  } finally {
+    cleanup(store, dir);
+  }
+});
+
+test('search：完全相符的詞頭排在高頻模糊結果前面', async () => {
+  const bank = [
+    {
+      id: 'v:chaton', kind: 'vocab-recall', mode: 'self', level: 'A1', freq: 100,
+      tags: ['vocab'], front: { word: 'chaton', gloss: '小貓' },
+    },
+    {
+      id: 'v:chat', kind: 'vocab-recall', mode: 'self', level: 'A1', freq: 1,
+      tags: ['vocab'], front: { word: 'chat', gloss: '貓' },
+    },
+  ];
+  const [api, store, dir] = await open(bank);
+  try {
+    assert.equal(api.search({ q: 'chat' }).hits[0].card.id, 'v:chat');
   } finally {
     cleanup(store, dir);
   }

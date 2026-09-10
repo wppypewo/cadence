@@ -2,7 +2,7 @@
 
 ## 一句話
 
-一個 Node HTTP 伺服器把 `web/` 當靜態檔案發出去，另外開十二個 JSON 端點；瀏覽器端是原生 ESM，沒有打包器；資料在兩個 append-only 的 JSONL 與一個隨時可重建的 SQLite 索引裡。
+一個 Node HTTP 伺服器把 `web/` 當靜態檔案發出去，另外開十三個 JSON 端點；瀏覽器端是原生 ESM，沒有打包器；資料在兩個 append-only 的 JSONL、一份本機設定 JSON 與一個隨時可重建的 SQLite 索引裡。
 
 ## 目錄
 
@@ -52,6 +52,7 @@ web/
   data/bank/*.json ──→ SQLite cards 表（首次啟動時載入）
   data/reviews.jsonl ─→ SQLite reviews + states 表（reindex 時重放）
   data/checkins.jsonl ─→ SQLite checkins 表（同上）
+  data/settings.json ──→ SQLite settings 表（啟動時同步）
   瀏覽器 ──fetch──→ /api/* ──→ src/api.mjs ──→ src/db.mjs
   作答 ──POST /api/review──→ 先寫 JSONL，再更新 SQLite
   打卡 ──POST /api/checkin─→ 同一個順序，寫的是另一個 JSONL
@@ -76,6 +77,7 @@ web/
 | GET | `/api/today` | DELF 四科的當日任務。**不吃參數**，免得被側欄的題型篩選改掉意思 |
 | GET | `/api/doc` | 讀 `study/` 底下的文件。`id` 只認白名單的三個代號，不接受路徑 |
 | GET | `/api/queue` | 今天的複習佇列 |
+| GET | `/api/reveal` | 使用者翻面後才取回看字回想題的釋義 |
 | GET | `/api/stats` | 統計頁全部資料 |
 | GET | `/api/forecast` | 考前推演 |
 | GET | `/api/search` | 查字 |

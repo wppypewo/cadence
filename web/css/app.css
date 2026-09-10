@@ -4,6 +4,12 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 
+/*
+ * 有 display:flex／grid 的元件會蓋掉瀏覽器內建的 [hidden] 規則。
+ * 這裡統一守住語意，免得答案、評分鍵或收合文件只改了 hidden 屬性卻仍留在畫面上。
+ */
+[hidden] { display: none !important; }
+
 html { -webkit-text-size-adjust: 100%; }
 
 body {
@@ -303,7 +309,7 @@ button, input, select { font: inherit; color: inherit; }
   .nav a .label { white-space: nowrap; }
   /* 直向排列時 margin-left:auto 推不動了，改用絕對定位釘在圖示右上。 */
   .nav .badge { position: absolute; top: 2px; left: 50%; margin: 0 0 0 6px; }
-  .rail .toggle, .rail-foot .btn { min-height: 40px; }
+  .btn, .input, .rail .toggle, .rail-foot .btn { min-height: 44px; }
   .rail-foot { margin: 0 0 0 auto; padding: 0; border: none; }
   .rail-foot .built { display: none; }
   /* 篩選改成第二列的橫向捲軸；標題與說明在這個寬度只是噪音。 */

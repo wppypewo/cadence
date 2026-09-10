@@ -228,35 +228,31 @@ async function doctor(flags) {
   if (report.bank.exists) {
     const { Store } = await import('../src/db.mjs');
     const store = new Store(DATA);
-    const cards = store.cardCount();
-    report.index = { cards, states: store.db.prepare('SELECT COUNT(*) n FROM states').get().n, reviews: store.db.prepare('SELECT COUNT(*) n FROM reviews').get().n };
+    report.bank = { ...report.bank, ...await store.auditBank(report.bank.meta) };
+    report.index = {
+      cards: store.cardCount(),
+      states: store.db.prepare('SELECT COUNT(*) n FROM states').get().n,
+      reviews: store.db.prepare('SELECT COUNT(*) n FROM reviews').get().n,
+    };
     report.index.checkins = store.db.prepare('SELECT COUNT(*) n FROM checkins').get().n;
-    report.journal = store.journalInfo();
-    // 索引裡的複習筆數必須等於 JSONL 的行數，否則索引落後了。
-    if (report.journal.exists) {
-      const lines = await countLines(store.jsonlPath);
-      report.journal.lines = lines;
-      report.journal.inSync = lines === report.index.reviews;
-    }
-    report.checkins = store.checkinInfo();
-    // 打卡檔的行數**不會**等於索引筆數：撤銷是追加一行 done:false，
-    // 同一科同一天多按幾次就是多幾行，索引只留最後一個狀態。
-    // 所以這裡對的是「索引筆數不可能超過行數」，超過就代表索引裡有檔案裡沒有的東西。
-    if (report.checkins.exists) {
-      report.checkins.lines = await countLines(store.checkinPath);
-      report.checkins.inSync = report.index.checkins <= report.checkins.lines;
-    }
+    report.journal = await store.auditJournal();
+    report.checkins = await store.auditCheckins();
     store.close();
   }
 
   const problems = [];
   for (const [k, v] of Object.entries(report.sources)) if (!v.ok) problems.push(`資料來源 ${k}：${v.detail}`);
   if (!report.bank.exists) problems.push('題庫不存在，跑 npm run build');
-  if (report.journal?.exists && report.journal.inSync === false) {
-    problems.push(`索引落後：JSONL ${report.journal.lines} 行，索引 ${report.index.reviews} 筆。跑 npm run reindex`);
+  else if (!report.bank.inSync) {
+    problems.push(`題庫與索引內容不一致（題庫 ${report.bank.cards} 張、meta ${report.bank.metaCards} 張、索引 ${report.bank.indexed} 張）。跑 npm run build`);
   }
-  if (report.checkins?.exists && report.checkins.inSync === false) {
-    problems.push(`打卡索引比檔案還多：檔案 ${report.checkins.lines} 行，索引 ${report.index.checkins} 筆。跑 npm run reindex`);
+  if (report.journal && !report.journal.inSync) {
+    const bad = report.journal.bad.length ? `，另有 ${report.journal.bad.length} 行無法重放` : '';
+    problems.push(`複習紀錄與索引內容不一致：JSONL 有效 ${report.journal.valid} 筆、索引 ${report.journal.indexed} 筆${bad}。跑 npm run reindex`);
+  }
+  if (report.checkins && !report.checkins.inSync) {
+    const bad = report.checkins.bad.length ? `，另有 ${report.checkins.bad.length} 行無法重放` : '';
+    problems.push(`打卡紀錄與索引內容不一致：折疊後 ${report.checkins.states} 天、索引 ${report.checkins.indexed} 天${bad}。跑 npm run reindex`);
   }
 
   if (flags.json) {
@@ -265,10 +261,10 @@ async function doctor(flags) {
     for (const [k, v] of Object.entries(report.sources)) {
       process.stdout.write(`${v.ok ? '✓' : '✗'} ${k.padEnd(10)} ${v.detail}\n`);
     }
-    process.stdout.write(`${report.bank.exists ? '✓' : '✗'} 題庫       ${report.bank.exists ? `${report.bank.meta.counts.cards.toLocaleString()} 張，建於 ${report.bank.meta.builtAt.slice(0, 16).replace('T', ' ')}` : report.bank.hint}\n`);
+    process.stdout.write(`${report.bank.exists && report.bank.inSync ? '✓' : '✗'} 題庫       ${report.bank.exists ? `${report.bank.cards.toLocaleString()} 張，建於 ${report.bank.meta.builtAt.slice(0, 16).replace('T', ' ')}${report.bank.inSync ? '，與索引內容一致' : '，與索引內容不一致'}` : report.bank.hint}\n`);
     if (report.index) process.stdout.write(`  索引       卡 ${report.index.cards.toLocaleString()}　狀態 ${report.index.states.toLocaleString()}　紀錄 ${report.index.reviews.toLocaleString()}\n`);
-    if (report.journal?.exists) process.stdout.write(`  複習紀錄   ${report.journal.lines} 行，${(report.journal.bytes / 1024).toFixed(1)} KB${report.journal.inSync ? '，與索引一致' : '，與索引不一致'}\n`);
-    if (report.checkins?.exists) process.stdout.write(`  打卡紀錄   ${report.checkins.lines} 行，索引 ${report.index.checkins} 天（撤銷也是一行，行數本來就會比天數多）\n`);
+    if (report.journal) process.stdout.write(`${report.journal.inSync ? '✓' : '✗'} 複習紀錄   ${report.journal.lines} 行，${(report.journal.bytes / 1024).toFixed(1)} KB${report.journal.inSync ? '，逐筆一致' : '，內容不一致'}\n`);
+    if (report.checkins?.exists || report.index?.checkins) process.stdout.write(`${report.checkins.inSync ? '✓' : '✗'} 打卡紀錄   ${report.checkins.lines} 行，索引 ${report.index.checkins} 天${report.checkins.inSync ? '，折疊後一致' : '，內容不一致'}\n`);
     if (problems.length) process.stdout.write(`\n要處理的事：\n${problems.map((p) => `  · ${p}`).join('\n')}\n`);
   }
   if (problems.length) process.exitCode = 1;
@@ -292,15 +288,6 @@ async function ensureBank() {
   // missing 是 {name, dir} 陣列，直接 join 會印出 [object Object]。
   if (!result.ok) throw new Error(`題庫建不起來：${result.missing.map((m) => m.name).join('、')}`);
   process.stdout.write(`建好了：${result.counts.cards.toLocaleString()} 張卡。\n`);
-}
-
-async function countLines(file) {
-  const { createReadStream } = await import('node:fs');
-  const { createInterface } = await import('node:readline');
-  let n = 0;
-  const rl = createInterface({ input: createReadStream(file, 'utf8'), crlfDelay: Infinity });
-  for await (const line of rl) if (line.trim()) n += 1;
-  return n;
 }
 
 function openBrowser(url) {

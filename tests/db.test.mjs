@@ -118,6 +118,28 @@ test('review() 先寫 JSONL 再更新索引，兩邊都要有', async () => {
   }
 });
 
+test('單筆 review 的 state 與 reviews 同進同退，失敗時只留下可重放的 JSONL', async () => {
+  const [store, dir] = await open();
+  try {
+    store.db.exec(`CREATE TRIGGER fail_review BEFORE INSERT ON reviews
+      BEGIN SELECT RAISE(ABORT, 'forced review failure'); END`);
+    assert.throws(
+      () => store.review({ cardId: 'a1-recall-1', rating: 3, correct: true }),
+      /forced review failure/,
+    );
+    assert.equal(store.state('a1-recall-1'), null);
+    assert.equal(store.db.prepare('SELECT COUNT(*) n FROM reviews').get().n, 0);
+    assert.equal(readFileSync(path.join(dir, 'reviews.jsonl'), 'utf8').trim().split('\n').length, 1);
+
+    store.db.exec('DROP TRIGGER fail_review');
+    const rebuilt = await store.reindex();
+    assert.equal(rebuilt.applied, 1);
+    assert.equal(store.state('a1-recall-1').reps, 1);
+  } finally {
+    cleanup(store, dir);
+  }
+});
+
 test('review() 對不存在的卡直接丟錯，不會寫進紀錄', async () => {
   const [store, dir] = await open();
   try {
@@ -268,6 +290,26 @@ test('queue 先給到期卡，剩餘額度按頻率補新卡', async () => {
   }
 });
 
+test('queue 保留優先序，但有其他題型時不連續塞超過兩張同類卡', async () => {
+  const mixed = [
+    ...[100, 99, 98, 97, 96].map((freq, i) => card(`recall-${i}`, { freq })),
+    card('conj-low', { kind: 'conj', mode: 'typed', freq: 10 }),
+    card('connector-low', { kind: 'connector', mode: 'choice', freq: 9 }),
+  ];
+  const [store, dir] = await open(mixed);
+  try {
+    const q = store.queue({ limit: mixed.length, newLimit: mixed.length });
+    assert.deepEqual(q.map((c) => c.id), [
+      'recall-0', 'recall-1', 'conj-low', 'recall-2', 'recall-3', 'connector-low', 'recall-4',
+    ]);
+    for (let i = 2; i < q.length; i += 1) {
+      assert.ok(!(q[i].kind === q[i - 1].kind && q[i].kind === q[i - 2].kind));
+    }
+  } finally {
+    cleanup(store, dir);
+  }
+});
+
 test('每日新卡上限用完之後，queue 不再補新卡', async () => {
   const [store, dir] = await open();
   try {
@@ -380,6 +422,51 @@ test('設定寫得進去、讀得回來，改目標記憶率會換掉排程器',
     store.set('dailyNewLimit', 30);
     assert.equal(store.dailyNewLimit, 30);
     assert.equal(store.get('沒設過的鍵', '預設值'), '預設值');
+  } finally {
+    cleanup(store, dir);
+  }
+});
+
+test('設定另存 JSON，刪掉可重建的 SQLite 後仍能恢復', async () => {
+  let [store, dir] = await open();
+  try {
+    store.set('desiredRetention', 0.86);
+    store.set('dailyNewLimit', 23);
+    store.set('examDate', '2027-05-15');
+    assert.equal(existsSync(path.join(dir, 'settings.json')), true);
+    store.close();
+    store = null;
+    rmSync(path.join(dir, 'cadence.db'), { force: true });
+
+    const restored = new Store(dir);
+    try {
+      assert.equal(restored.desiredRetention, 0.86);
+      assert.equal(restored.dailyNewLimit, 23);
+      assert.equal(restored.get('examDate'), '2027-05-15');
+    } finally {
+      restored.close();
+    }
+  } finally {
+    if (store) store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('doctor 用的稽核會抓到筆數相同但內容錯列的索引', async () => {
+  const [store, dir] = await open();
+  try {
+    store.review({ cardId: 'a1-recall-1', rating: 3, correct: true });
+    store.checkin({ skill: 'CO', done: true });
+    assert.equal((await store.auditJournal()).inSync, true);
+    assert.equal((await store.auditCheckins()).inSync, true);
+    assert.equal((await store.auditBank({ counts: { cards: BANK.length } })).inSync, true);
+
+    store.db.prepare('UPDATE reviews SET card_id = ? WHERE seq = 1').run('a2-recall-1');
+    store.db.prepare('UPDATE checkins SET done = 0 WHERE skill = ?').run('CO');
+    store.db.prepare('UPDATE cards SET payload = ? WHERE id = ?').run(JSON.stringify(card('ghost')), 'a1-recall-1');
+    assert.equal((await store.auditJournal()).inSync, false);
+    assert.equal((await store.auditCheckins()).inSync, false);
+    assert.equal((await store.auditBank({ counts: { cards: BANK.length } })).inSync, false);
   } finally {
     cleanup(store, dir);
   }
