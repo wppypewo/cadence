@@ -25,7 +25,7 @@ src/
     connector-gloss.mjs  權威表獨有那 25 個條目的中文與功能，vault 裡沒有
     picks.mjs        挑連接詞（四選一）
     rewrites.mjs     改寫整句
-    nominals.mjs     名詞化配對
+    nominals.mjs     名詞化配對（規則照抄自 fexgen 的 nominalize.py，漂移由測試守）
 study/               給人讀的兩份文件，由 /api/doc 原文送出，前端才渲染
 web/
   index.html         唯一的 HTML

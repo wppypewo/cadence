@@ -16,8 +16,11 @@
  * 性別不用推的：讀 french-exam-generator/data/genders.json（來源 fr.wiktionary）。
  * 查不到性別或查不到 h 的性質就不出題——冠詞是這一題型的一半分數，猜不得。
  *
- * **EXCLUDE 與 FROM_EXAM 兩份清單原生在 french-exam-generator/tools/nominalize.py。**
- * 那邊沒有機器可讀的匯出格式，只能照抄一份過來；兩邊要一起改，改一邊會靜靜地分岔。
+ * **EXCLUDE、FROM_EXAM、derive() 與 LEVELS 原生在 french-exam-generator/tools/nominalize.py。**
+ * 那邊沒有機器可讀的匯出格式，只能照抄一份過來。改這四樣任何一樣都要兩邊一起改——
+ * 只改一邊不會壞掉，只會讓題庫悄悄多幾張或少幾張卡，這種錯自己不會冒出來。
+ * 所以 `tests/nominals-drift.test.mjs` 直接跑那支 Python 把四樣逐一比回去，對不上就紅。
+ * 那個檔不在（換機器、只帶 cadence 出門）時該題自動跳過，不是假裝通過。
  * 除此之外本檔不新增任何外部來源，兩張詞表與 genders.json 都是建置流程已經在讀的檔。
  */
 
@@ -47,7 +50,8 @@ export const FROM_EXAM = [
   ['timide', 'ADJ', 'timidité', 'f', 'la timidité'],
 ];
 
-const LEVELS = new Set(['A1', 'A2', 'B1']);
+/** 收哪幾個等級。export 是為了讓漂移測試比得到——它也是照抄過來的。 */
+export const LEVELS = new Set(['A1', 'A2', 'B1']);
 
 /** 由動詞／形容詞產生候選派生名詞。只產生字串，成不成立由詞表決定。 */
 export function derive(word, pos) {

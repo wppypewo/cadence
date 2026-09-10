@@ -26,6 +26,16 @@ export const SOURCES = {
     ?? path.join(HOME, 'ClaudeCode/KnowledgeBase/Ricky-KnowledgeBase/wiki/outputs/study-packs'),
 };
 
+/**
+ * 名詞化那兩份清單（EXCLUDE／FROM_EXAM）與構詞規則的原生位置。
+ *
+ * cadence 自存了一份副本在 src/build/nominals.mjs——那邊沒有機器可讀的匯出格式，
+ * 只能照抄。tests/nominals-drift.test.mjs 靠這個路徑把兩份比對回去，
+ * 改一邊就會紅。**只有測試讀它，npm run build 不讀**：
+ * 那個 repo 有別的 session 在改，不能讓「今天建不建得出題庫」綁在它的檔案格式上。
+ */
+export const NOMINALIZE_PY = path.join(SOURCES.fexgen, '..', 'tools', 'nominalize.py');
+
 export async function exists(p) {
   try {
     await access(p);

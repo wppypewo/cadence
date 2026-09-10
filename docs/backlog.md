@@ -3,15 +3,15 @@
 兩個 agent（Claude／Codex）共用這一份。認領一項就在該列的「認領」欄寫上名字，
 做完把整列刪掉並在 commit 訊息裡講。**新增項目要寫清楚「為什麼是問題」，不只寫「做什麼」。**
 
-最後更新：2026-09-10。這一輪刪掉一列：`connector` 卡的中文釋義（使用者說「現在來處理」，
-中文與功能都補齊，寫在 `src/build/connector-gloss.mjs`）。
-同日稍早刪掉的兩列：CO／PO 的手動打卡、`.ccarchive/`。
+最後更新：2026-09-10。這一輪刪掉一列：名詞化那幾樣照抄的規則（`tests/nominals-drift.test.mjs`
+直接跑原生那支 Python 比對，對不上就紅）。實測寫下來時兩邊仍然一字不差，
+而且原本那一列低估了範圍——`derive()` 與 `LEVELS` 同樣是照抄的，一併納入比對。
+同日稍早刪掉的三列：`connector` 卡的中文釋義、CO／PO 的手動打卡、`.ccarchive/`。
 
 ## 資料正確性
 
 | 項目 | 為什麼是問題 | 認領 |
 |---|---|---|
-| `EXCLUDE` 與 `FROM_EXAM` 兩份清單各存一份 | 原生在 `french-exam-generator/tools/nominalize.py`，`src/build/nominals.mjs` 照抄一份。那邊沒有機器可讀的匯出格式，兩邊改一邊就會靜靜分岔，而且不會有任何測試紅 | |
 | `study/delf-b1-comprehension-orale.md` 的官方樣題表格是空的 | FEI 網站的直連連結當時抓不到，留了空表格等人填。聽力這一科現在等於沒有入口 | |
 
 ## 使用體驗

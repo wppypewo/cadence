@@ -105,11 +105,14 @@ cadence doctor    [--json]                    檢查資料來源、題庫、索�
 ## 開發
 
 ```bash
-npm test      # 211 題，含 732 組 FSRS 黃金向量
+npm test      # 215 題，含 732 組 FSRS 黃金向量
 npm run lint  # node --check 全檔語法檢查
 ```
 
-零執行期依賴，零建置步驟。Node ≥ 24（用到內建的 `node:sqlite`）。前端是原生 ESM 加手寫 CSS，瀏覽器直接載 `web/js/*.mjs`，沒有打包器。
+零執行期依賴，零建置步驟。Node ≥ 24（用到內建的 `node:sqlite`）。
+測試裡有四題會呼叫 `python3`：名詞化的排除清單與構詞規則是從
+`french-exam-generator/tools/nominalize.py` 照抄的，那四題直接跑原生版本比對，
+改一邊就紅。沒有 `python3` 或那個檔不在的機器上，那四題跳過，其餘照跑。前端是原生 ESM 加手寫 CSS，瀏覽器直接載 `web/js/*.mjs`，沒有打包器。
 
 細節見 [docs/](docs/)：
 
