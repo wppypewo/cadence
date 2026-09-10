@@ -22,7 +22,7 @@
 
 ```bash
 npm run lint   # node --check 全檔 ＋ bash -n cadence.command
-npm test       # 219 題，含 732 組 FSRS 黃金向量
+npm test       # 221 題，含 732 組 FSRS 黃金向量
 npm run doctor # 四個外部來源、題庫、索引三邊對帳
 ```
 
@@ -61,5 +61,5 @@ npm run doctor # 四個外部來源、題庫、索引三邊對帳
 - 不用 `innerHTML`。`dom.mjs` 的 `h()` 沒有這個入口。
 - `icon()` 的 SVG 不帶 width/height，尺寸一律由 CSS 給。
 - 圖表手寫在 `web/js/charts.mjs`，不引圖表庫。
-- Markdown 也手寫在 `web/js/markdown.mjs`，只支援 `study/` 那兩份文件真的用到的語法。要加語法就加，但不引 Markdown 套件——那會把零依賴推翻，而且解析結果最後要進 DOM，套件回傳的 HTML 字串沒有地方可以塞（`h()` 不收 `innerHTML`）。
+- Markdown 也手寫在 `web/js/markdown.mjs`，只支援 `study/` 那三份文件真的用到的語法。要加語法就加，但不引 Markdown 套件——那會把零依賴推翻，而且解析結果最後要進 DOM，套件回傳的 HTML 字串沒有地方可以塞（`h()` 不收 `innerHTML`）。
 - 註解用繁體中文，寫「為什麼」不寫「做什麼」。既有註解裡記著實測數字與踩過的坑，重構時不要刪。

@@ -26,7 +26,7 @@ src/
     picks.mjs        挑連接詞（四選一）
     rewrites.mjs     改寫整句
     nominals.mjs     名詞化配對（規則照抄自 fexgen 的 nominalize.py，漂移由測試守）
-study/               給人讀的兩份文件，由 /api/doc 原文送出，前端才渲染
+study/               給人讀的三份文件，由 /api/doc 原文送出，前端才渲染
 web/
   index.html         唯一的 HTML
   css/tokens.css     顏色、字級、間距、層級的所有變數
@@ -35,7 +35,7 @@ web/
   js/app.mjs         路由（一個 hashchange 監聽器加一張表）
   js/dom.mjs         建 DOM 的小工具、十個手寫圖示
   js/charts.mjs      手寫 SVG 圖表
-  js/markdown.mjs    最小 Markdown 渲染器，只認 study/ 兩份文件用到的語法（連結限 http／https）
+  js/markdown.mjs    最小 Markdown 渲染器，只認 study/ 三份文件用到的語法（連結限 http／https）
   js/{today,review,stats,forecast,browse}.mjs   五個檢視
 ```
 
@@ -66,7 +66,7 @@ web/
 
 所以事實用 JSONL，查詢用 SQLite，後者隨時可以整個刪掉重建。`data/cadence.db` 在 `.gitignore` 裡就是這個意思。
 
-`data/checkins.jsonl` 走同一套。CO／PO 沒有卡片，「今天做了」除了使用者自己按一下之外沒有別的來源，重建不出來，所以它與 `reviews.jsonl` 同級。分成兩個檔而不是共用一個：`reviews.jsonl` 的每一行都得對應一張卡，`reindex` 會拿 `rating` 去跑 FSRS，混進沒有卡片的行不是重建時報錯就是憑空生出假的記憶狀態。
+`data/checkins.jsonl` 走同一套。CO／PE／PO 三科的「今天做了」除了使用者自己按一下之外沒有別的來源，重建不出來，所以它與 `reviews.jsonl` 同級。CO／PO 是因為根本沒有卡片；PE 有卡片，但卡片練的是零件，考的是一篇 160 字的成文，那一篇寫了沒系統看不見。分成兩個檔而不是共用一個：`reviews.jsonl` 的每一行都得對應一張卡，`reindex` 會拿 `rating` 去跑 FSRS，混進沒有卡片的行不是重建時報錯就是憑空生出假的記憶狀態。
 
 ## 端點
 
@@ -74,7 +74,7 @@ web/
 |---|---|---|
 | GET | `/api/summary` | 卡數、到期數、連續天數 |
 | GET | `/api/today` | DELF 四科的當日任務。**不吃參數**，免得被側欄的題型篩選改掉意思 |
-| GET | `/api/doc` | 讀 `study/` 底下的文件。`id` 只認白名單的兩個代號，不接受路徑 |
+| GET | `/api/doc` | 讀 `study/` 底下的文件。`id` 只認白名單的三個代號，不接受路徑 |
 | GET | `/api/queue` | 今天的複習佇列 |
 | GET | `/api/stats` | 統計頁全部資料 |
 | GET | `/api/forecast` | 考前推演 |
@@ -82,7 +82,7 @@ web/
 | GET | `/api/verb/:word` | 完整變位表 |
 | GET | `/api/settings` | 讀設定 |
 | POST | `/api/review` | 記一次作答 |
-| POST | `/api/checkin` | CO／PO 的手動打卡。日期由伺服器決定，不吃前端傳來的 `day` |
+| POST | `/api/checkin` | CO／PE／PO 的手動打卡。可打卡的科目取自 `engine/today.mjs` 的科目表，不另外列一份。日期由伺服器決定，不吃前端傳來的 `day` |
 | POST | `/api/settings` | 寫設定 |
 
 伺服器只綁 `127.0.0.1`，不接受外部連線。

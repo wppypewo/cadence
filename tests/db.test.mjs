@@ -453,10 +453,11 @@ test('recent 數的是最近 window 天裡打了幾天，不是總筆數', async
   }
 });
 
-test('不是 CO／PO 的科目一律拒絕，也不會留下任何一行', async () => {
+test('不在清單上的科目一律拒絕，也不會留下任何一行', async () => {
   const [store, dir] = await open();
   try {
-    assert.deepEqual(CHECKIN_SKILLS, ['CO', 'PO']);
+    // 順序照 engine/today.mjs 那張科目表，這裡只是把它轉出去，不另外維護一份。
+    assert.deepEqual(CHECKIN_SKILLS, ['PE', 'CO', 'PO']);
     assert.throws(() => store.checkin({ skill: 'CE' }), /不是可打卡的科目/);
     assert.throws(() => store.checkin({ skill: '' }), /不是可打卡的科目/);
     assert.equal(existsSync(path.join(dir, 'checkins.jsonl')), false);

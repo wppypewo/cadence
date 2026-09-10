@@ -9,6 +9,10 @@
  *     `done` 是這條界線的例外，而且只有這一個例外：它不是系統算出來的，
  *     是使用者自己按下打卡鍵留的紀錄。系統照抄一份使用者說過的話不算造假，
  *     系統自己猜一個分數才算。
+ *
+ *     PE 是第三種狀況：它有卡片（所以有 count 與熟練度），同時也可以打卡，
+ *     因為卡片練不到「寫成一篇 160 字」。兩組數字並存但互不換算——
+ *     打卡不會讓到期卡變少，練完卡也不會自動算成今天寫過作文。
  */
 
 import test from 'node:test';
@@ -118,17 +122,17 @@ test('CO 與 PO 指向文件，且明講系統追蹤不到', () => {
   assert.equal(po.count, undefined);
 });
 
-test('沒傳 checkins 時，兩科都是「還沒打卡」而不是 undefined', () => {
+test('沒傳 checkins 時，三科都是「還沒打卡」而不是 undefined', () => {
   // 前端拿 done 去決定按鈕文字。undefined 在畫面上會變成一顆狀態不明的鍵，
   // 所以這裡釘死預設值：沒有紀錄就是還沒做，不是不知道。
   const t = buildToday({ ...BASE, now: new Date('2026-09-09T10:00:00') });
-  for (const task of t.tasks.slice(2)) {
+  for (const task of t.tasks.slice(1)) {
     assert.equal(task.checkable, true);
     assert.equal(task.done, false);
     assert.equal(task.lastDay, null);
     assert.equal(task.recent, 0);
   }
-  assert.equal(t.pendingChecks, 2);
+  assert.equal(t.pendingChecks, 3);
 });
 
 test('打卡資料原樣帶進 task，且 tracked 不會因此變成 true', () => {
@@ -148,16 +152,38 @@ test('打卡資料原樣帶進 task，且 tracked 不會因此變成 true', () =
   assert.equal(co.tracked, false);
   assert.equal(co.count, undefined);
   assert.equal(po.done, false);
-  // 今天沒打卡的只剩 PO 一科。
-  assert.equal(t.pendingChecks, 1);
+  // 今天沒打卡的是 PE 與 PO 兩科。
+  assert.equal(t.pendingChecks, 2);
 });
 
-test('CE／PE 不可打卡：那兩科的進度是卡片自己記的', () => {
+test('PE 同時是卡片科目與可打卡科目，兩邊的數字互不干擾', () => {
+  // PE 的 25 分裡，Réalisation de la tâche 與 Adéquation sociolinguistique 各 5 分、
+  // Cohérence et cohésion 一半，合計約 12,5 分沒有任何卡片練得到。
+  // 所以這一科既要練卡也要真的寫一篇，兩件事各記各的。
+  const t = buildToday({
+    ...BASE,
+    checkins: { PE: { done: true, lastDay: '2026-09-09', recent: 2, window: 7 } },
+    now: new Date('2026-09-09T10:00:00'),
+  });
+  const pe = t.tasks[1];
+  assert.equal(pe.mode, 'cards');
+  assert.equal(pe.tracked, true);
+  assert.equal(pe.checkable, true);
+  assert.equal(pe.done, true);
+  assert.equal(pe.recent, 2);
+  assert.equal(pe.doc, 'study/delf-b1-production-ecrite.md');
+  // 打卡不會把卡片那一半抹掉：今天該練的卡還是那些。
+  assert.equal(pe.due, 12 + 5 + 0 + 1 + 0 + 3);
+  // 也不會反過來——寫了作文不代表卡片做完了，這一科同時算進兩個計數。
+  assert.equal(t.pendingChecks, 2);
+});
+
+test('CE 不可打卡：這一科的進度卡片自己記得完', () => {
+  // CE 考的是看不看得懂字，卡片本身就是在做這件事，再多一顆打卡鍵沒有東西可記。
   const t = buildToday({ ...BASE, now: new Date('2026-09-09T10:00:00') });
-  for (const task of t.tasks.slice(0, 2)) {
-    assert.notEqual(task.checkable, true);
-    assert.equal(task.done, undefined);
-  }
+  const ce = t.tasks[0];
+  assert.notEqual(ce.checkable, true);
+  assert.equal(ce.done, undefined);
 });
 
 test('pendingCards 只數還有卡要做的科目', () => {

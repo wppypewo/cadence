@@ -42,6 +42,9 @@ npm start         # 啟動伺服器並打開瀏覽器
 全部倒向卡片最多的變位，另外幾科一張也沒動。這一頁存在的理由就是讓那件事藏不住。
 CO 與 PO 沒有卡片（題庫裡沒有音檔，發音與互動機器也判不了），那兩列指向 `study/`
 底下的官方樣題入口與 GPT 練習用的固定 prompt，做了沒有系統記不到，畫面上直接這樣寫。
+PE 兩邊都有：卡片練變位、詞彙與連接詞，但官方那張評分格裡的 Réalisation de la tâche
+與 Adéquation sociolinguistique 各 5 分、Cohérence et cohésion 一半，合計約 12,5 分
+沒有任何卡片碰得到。所以 PE 那一列除了卡片，另外掛一份寫作文件與一顆打卡鍵。
 
 複習頁是每天真正在用的頁面，其餘三個回答人腦算不出來的問題：
 
@@ -61,7 +64,7 @@ FSRS 為每張卡維護三個量：**S**（穩定度，記憶從剛複習完掉�
 
 ```
 data/reviews.jsonl   每次作答一行 JSON，只增不改。事實來源，進版控。
-data/checkins.jsonl  CO／PO 的手動打卡，一天一行，同樣只增不改、同樣進版控。
+data/checkins.jsonl  CO／PE／PO 的手動打卡，一天一行，同樣只增不改、同樣進版控。
 data/cadence.db      SQLite 索引。題庫、記憶狀態、統計都在這，可整個重算，不進版控。
 data/bank/           建置產物，由 npm run build 現算，不進版控。
 ```
@@ -105,7 +108,7 @@ cadence doctor    [--json]                    檢查資料來源、題庫、索�
 ## 開發
 
 ```bash
-npm test      # 219 題，含 732 組 FSRS 黃金向量
+npm test      # 221 題，含 732 組 FSRS 黃金向量
 npm run lint  # node --check 全檔語法檢查
 ```
 

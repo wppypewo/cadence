@@ -18,7 +18,7 @@ const LEVELS = ['A1', 'A2', 'B1'];
  * 可以被 /api/doc 讀出去的檔案，白名單寫死。
  *
  * 這是唯一一支「把使用者給的字串變成檔名」的端點，所以不接受路徑、
- * 不接受副檔名，只接受這兩個代號。給 id 以外的東西一律 404，
+ * 不接受副檔名，只接受下面那幾個代號。給 id 以外的東西一律 404，
  * 連 `..` 都沒有機會進到 path.join。
  */
 /** 搜尋一次最多回傳幾「組」結果（變位卡以動詞為一組）。 */
@@ -28,6 +28,7 @@ const SEARCH_SCAN = 800;
 
 const DOCS = {
   co: { file: 'delf-b1-comprehension-orale.md', title: 'DELF B1 聽力' },
+  pe: { file: 'delf-b1-production-ecrite.md', title: 'DELF B1 寫作' },
   po: { file: 'delf-b1-production-orale.md', title: 'DELF B1 口說' },
 };
 
@@ -301,7 +302,7 @@ export class Api {
   }
 
   /**
-   * CO／PO 的手動打卡。回傳整份 today，讓前端直接換掉畫面——
+   * 手動打卡。回傳整份 today，讓前端直接換掉畫面——
    * 只回 {ok:true} 的話前端得自己猜新的狀態，猜錯就會與伺服器分岔。
    *
    * 只認 skill 與 done 兩個欄位。日期由伺服器決定，不吃前端傳來的 day：
@@ -317,7 +318,7 @@ export class Api {
     return this.today();
   }
 
-  /** 讀 study/ 底下的一份文件。純文字回傳，前端不做 Markdown 渲染。 */
+  /** 讀 study/ 底下的一份文件。回純文字，Markdown 由前端的 markdown.mjs 渲染。 */
   async doc(query = {}) {
     const entry = DOCS[String(query.id ?? '')];
     if (!entry) throw new HttpError(404, `沒有這份文件：${query.id}`);

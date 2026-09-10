@@ -17,11 +17,13 @@
 | 2 | Exercice en interaction | 3–4 分鐘 | 抽一張情境卡，跟考官演一段對話（換貨、請假、說服朋友…）。 |
 | 3 | Expression d'un point de vue | 5–7 分鐘 | 抽一份短文（document déclencheur），講出主題並表達自己的看法，然後跟考官討論。 |
 
-第 2、3 部分是抽題的，抽完有準備時間；第 1 部分沒有。
+第 2、3 部分是抽題的；準備時間只給第三部分，第 1、2 部分抽完直接開始。
 
-> **準備時間我沒有官方出處。** 多個備考網站寫「10 分鐘，只給第三部分」，
-> 但 FEI 官網對自動抓取一律回 403，我沒能從官方頁面驗證這個數字。
-> 報名後拿到的 convocation 上會寫，以那份為準。
+> **準備時間 10 分鐘，只給第三部分**——2026-09-10 從官方樣題的考生卷第一頁確認：
+> 「Préparation : 10 minutes (ne concerne que la 3e partie de l'épreuve)」，
+> 整場口說約 15 分鐘。這一段先前寫著「FEI 官網對自動抓取一律回 403，
+> 我沒能從官方頁面驗證這個數字」，那個 403 是暫時的，同一天再測就抓得下來。
+> 考生卷的連結列在聽力那份文件的「官方樣題入口」一節。
 
 ---
 
@@ -119,10 +121,13 @@ FEI 在 2026 年換了評分格。**新格不再逐項給分後加總，而是�
 
 ## 四、來源
 
-- 評分格與 descripteurs：FEI 官方 DELF B1 GRILLE D'ÉVALUATION DE LA PRODUCTION ORALE，
-  經瑞士官方考試中心 delfdalf.ch 的「Nouvelles Grilles」分發：
+- 評分格：FEI 官方 DELF B1 GRILLE D'ÉVALUATION DE LA PRODUCTION ORALE
+  <https://www.france-education-international.fr/document/grille-po-b1>
+  （2026-09-10 直接從 FEI 取得，六項分數與下表逐格相符）
+- descripteurs：<https://www.france-education-international.fr/document/descript-perf-po-b1>
+- 三部分名稱與各自時長：同一份 grille 的第一頁欄位標注。
+- 瑞士官方考試中心 delfdalf.ch 的「Nouvelles Grilles」轉載同一份，FEI 連不上時改走
   <https://www.delfdalf.ch/fileadmin/user_upload/Nouvelles_Grilles/Grille_PO_B1.pdf>
   （2026-09-09 取得並逐格核對）
-- 三部分名稱與各自時長：同一份 grille 的第一頁欄位標注。
 - B2 的對應版本在同一個目錄，2028-05 要考 B2 時直接換檔名：
   <https://www.delfdalf.ch/fileadmin/user_upload/Nouvelles_Grilles/Grille_PO_B2.pdf>

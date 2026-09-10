@@ -21,6 +21,12 @@
  * 但「今天做了沒有」不是評量，是使用者自己知道的一件事——那件事給一顆打卡鍵
  * （見 db.mjs 的 checkins），因為不寫下來隔天就翻不出任何痕跡。
  * 分界線在這裡：**分數與熟練度不假裝，做過沒做過照實記。**
+ *
+ * **PE 同時有卡片與文件，是刻意的，不是分類沒分乾淨。**
+ * 那六種題型加起來 13,000 多張，但每一張都只練一個零件；考的是 45 分鐘一篇 160 字。
+ * 官方評分格五項各 5 分，其中 réalisation de la tâche 與 adéquation sociolinguistique
+ * 兩項共 10 分沒有任何一張卡片碰得到——沒有一張卡片會問「這封信該用 tu 還是 vous」。
+ * 所以 PE 這一列給卡片一顆按鈕、給整篇寫作一份文件與一顆打卡鍵，兩邊各記各的。
  */
 
 const DAY_MS = 86_400_000;
@@ -31,7 +37,13 @@ export const SKILL_KINDS = {
   PE: ['vocab-produce', 'conj', 'connector', 'pick', 'rw', 'nom'],
 };
 
-/** 四科的固定資料。fr 一併帶著，因為考卷上印的是法文名稱。 */
+/**
+ * 四科的固定資料。fr 一併帶著，因為考卷上印的是法文名稱。
+ *
+ * `doc` 有值代表這一科有一份 study/ 文件（前端展開來讀）；
+ * `check` 為 true 代表這一科有一件卡片記不到的事，需要手動打卡。
+ * 兩者互相獨立：CE 兩者皆無，PE 有卡片也有這兩樣。
+ */
 const SKILLS = [
   {
     id: 'CE', zh: '閱讀理解', fr: 'Compréhension des écrits',
@@ -39,19 +51,31 @@ const SKILLS = [
   },
   {
     id: 'PE', zh: '書寫表達', fr: 'Production écrite',
-    hint: '寫得出來才算會。變位、連接詞、名詞化都算在這一科。',
+    hint: '卡片練零件，考的是一篇 160 字。兩件事都要做，打卡記的是後者。',
+    doc: 'study/delf-b1-production-ecrite.md',
+    check: true,
   },
   {
     id: 'CO', zh: '聽力理解', fr: 'Compréhension de l’oral',
     hint: '官方樣題聽三輪：先聽、再對答案、最後才看逐字稿。',
     doc: 'study/delf-b1-comprehension-orale.md',
+    check: true,
   },
   {
     id: 'PO', zh: '口說表達', fr: 'Production orale',
     hint: '把固定 prompt 貼給 GPT，三個部分一次跑完，再看它給的六項評分。',
     doc: 'study/delf-b1-production-orale.md',
+    check: true,
   },
 ];
+
+/**
+ * 可以手動打卡的科目，由上面那張表直接算出來。
+ *
+ * db.mjs 驗證寫進 checkins.jsonl 的科目時 import 這一份，**不另外再寫一份清單**：
+ * 兩邊各寫一份的話，哪天這裡多一科而那裡忘了改，前端會給出一顆按下去必定 400 的鍵。
+ */
+export const CHECKIN_SKILLS = SKILLS.filter((s) => s.check).map((s) => s.id);
 
 /**
  * 距離考試還有幾天。examDate 是 'YYYY-MM-DD'。
@@ -92,20 +116,28 @@ export function buildToday(input) {
 
   const tasks = SKILLS.map((s) => {
     const kinds = SKILL_KINDS[s.id];
-    if (!kinds) {
-      const c = checkins[s.id] ?? {};
-      return {
-        id: s.id, zh: s.zh, fr: s.fr, hint: s.hint,
-        mode: 'doc', doc: s.doc,
-        // tracked 講的是「系統能不能評量這一科」，答案永遠是不能，所以不給 count、
-        // 不給熟練度、不給任何算出來的數字。下面那三個欄位是另一回事：
-        // 它們全部來自使用者自己按的那一下，是紀錄不是評量。
-        tracked: false,
+    // 打卡欄位跟 mode 無關，所以在分岔之前就算好：PE 兩邊都有。
+    // 沒有紀錄時給的是「還沒做」而不是 undefined——前端拿 done 決定按鈕文字，
+    // undefined 會畫出一顆狀態不明的鍵。
+    const c = checkins[s.id] ?? {};
+    const check = s.check
+      ? {
         checkable: true,
         done: c.done ?? false,
         lastDay: c.lastDay ?? null,
         recent: c.recent ?? 0,
         window: c.window ?? 0,
+      }
+      : {};
+    if (!kinds) {
+      return {
+        id: s.id, zh: s.zh, fr: s.fr, hint: s.hint,
+        mode: 'doc', doc: s.doc,
+        // tracked 講的是「系統能不能評量這一科」，這兩科的答案永遠是不能，
+        // 所以不給 count、不給熟練度、不給任何算出來的數字。
+        // check 裡那幾個欄位是另一回事：它們來自使用者自己按的那一下，是紀錄不是評量。
+        tracked: false,
+        ...check,
       };
     }
     const rows = kinds.map((k) => stats.get(k)).filter(Boolean);
@@ -117,6 +149,9 @@ export function buildToday(input) {
     return {
       id: s.id, zh: s.zh, fr: s.fr, hint: s.hint,
       mode: 'cards', kinds, tracked: true,
+      // doc 為 null 代表這一科只有卡片。PE 有值，因為卡片練不到整篇寫作。
+      doc: s.doc ?? null,
+      ...check,
       total, seen, unseen, due, mature: sum('mature'),
       // 這一科最多能拿到多少新卡。額度是共用的，所以兩科的 newAvailable 會重疊——
       // 它答的是「先開這一科的話能學幾張新的」，不是「這一科分到幾張」。
@@ -147,10 +182,11 @@ export function buildToday(input) {
     examDate: input.examDate ?? null,
     daysLeft: daysToExam(input.examDate, now),
     tasks,
-    // 有卡可做的科目數。0 代表今天卡片的部分做完了，但 CO／PO 仍在等人。
+    // 有卡可做的科目數。0 代表今天卡片的部分做完了，但可打卡的那三科仍可能在等人。
     pendingCards: tasks.filter((t) => t.mode === 'cards' && t.count > 0).length,
-    // 今天還沒打卡的文件科目數。與 pendingCards 分開數，因為兩者的「做完」意思不同：
-    // 一個是系統算出來的，一個是使用者自己說的。
+    // 今天還沒打卡的科目數。與 pendingCards 分開數，因為兩者的「做完」意思不同：
+    // 一個是系統算出來的，一個是使用者自己說的。PE 兩邊都會被數到，那不是重複——
+    // 卡片清空與寫完一篇作文本來就是兩件事。
     pendingChecks: tasks.filter((t) => t.checkable && !t.done).length,
   };
 }

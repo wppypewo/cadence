@@ -3,8 +3,9 @@
  *
  *   data/reviews.jsonl  每次作答一行 JSON，只增不改。進版控，十年後用 cat 就讀得懂，
  *                       不依賴本專案還活著。
- *   data/checkins.jsonl CO／PO 兩科的手動打卡，同樣只增不改、同樣進版控。
- *                       那兩科沒有卡片，「今天做了」除了自己按一下之外沒有別的來源。
+ *   data/checkins.jsonl CO／PE／PO 三科的手動打卡，同樣只增不改、同樣進版控。
+ *                       這三科都有一件卡片記不到的事：CO／PO 根本沒有卡片，
+ *                       PE 有卡片但卡片練的是零件，「寫完一整篇 160 字」不會留下任何一筆作答。
  *   data/cadence.db     SQLite。題庫、FSRS 記憶狀態、統計都在這裡，
  *                       全部可由上面兩個檔重算（cadence reindex），不進版控。
  *
@@ -18,6 +19,7 @@ import { createInterface } from 'node:readline';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createScheduler } from './engine/fsrs.mjs';
+import { CHECKIN_SKILLS } from './engine/today.mjs';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS cards (
@@ -63,7 +65,7 @@ CREATE INDEX IF NOT EXISTS reviews_card ON reviews(card_id);
 CREATE INDEX IF NOT EXISTS reviews_at ON reviews(at);
 CREATE INDEX IF NOT EXISTS reviews_day ON reviews(day);
 
--- data/checkins.jsonl 的鏡像。CO／PO 沒有卡片，只有「今天做過了」這一件事。
+-- data/checkins.jsonl 的鏡像。這三科各有一件事只有「今天做過了」這一個狀態。
 -- 一科一天一列，(skill, day) 為主鍵；撤銷是追加一行 done=0，重放時後寫的蓋過先寫的。
 CREATE TABLE IF NOT EXISTS checkins (
   skill TEXT NOT NULL,
@@ -82,8 +84,17 @@ CREATE TABLE IF NOT EXISTS settings (
 
 const DAY_MS = 86_400_000;
 
-/** 可以手動打卡的科目。只有這兩科沒有卡片，其餘五種題型的進度是卡片自己記的。 */
-export const CHECKIN_SKILLS = ['CO', 'PO'];
+/**
+ * 可以手動打卡的科目，從 engine/today.mjs 的那張科目表算出來，這裡只轉出去。
+ *
+ * 為什麼不在這裡直接寫一份清單：這個檔負責的是「什麼准寫進 checkins.jsonl」，
+ * 而「哪一科需要打卡」是科目本身的性質，答案在那張表上。兩邊各寫一份的話，
+ * 哪天那裡多一科而這裡忘了改，前端會給出一顆按下去必定 400 的鍵。
+ *
+ * 目前是 CO／PE／PO 三科：CO／PO 沒有卡片，PE 有卡片但卡片練不到整篇寫作。
+ * CE 不在其中——它的卡片與它要考的事是同一件事。
+ */
+export { CHECKIN_SKILLS } from './engine/today.mjs';
 
 /** 以本地時區算「哪一天」。用 UTC 會讓深夜複習被算到隔天，統計就對不上感覺。 */
 export function localDay(date = new Date()) {
@@ -298,9 +309,11 @@ export class Store {
     return this.db.prepare('SELECT * FROM states WHERE card_id = ?').get(cardId) ?? null;
   }
 
-  // ---- CO／PO 的手動打卡 -------------------------------------------------
+  // ---- CO／PE／PO 的手動打卡 ---------------------------------------------
   //
-  // 這兩科沒有卡片：題庫裡沒有音檔，也沒有東西能判斷一段口說講得好不好。
+  // CO／PO 沒有卡片：題庫裡沒有音檔，也沒有東西能判斷一段口說講得好不好。
+  // PE 有卡片，但那些卡練的是零件，考的是 45 分鐘寫成一篇 160 字，
+  // 那一篇寫了沒有，卡片的紀錄裡看不出來。
   // 系統評量不了「做得如何」，但「今天做了沒有」是使用者自己知道的事，
   // 而它不寫下來就會消失——隔天翻不出任何痕跡，等於昨天沒發生過。
   //
@@ -366,7 +379,7 @@ export class Store {
     return { done: row?.done === 1, lastDay: last?.day ?? null, recent, window };
   }
 
-  /** 兩科各一份，給 /api/today 用。 */
+  /** 每一科各一份，給 /api/today 用。 */
   checkinState(opts = {}) {
     return Object.fromEntries(CHECKIN_SKILLS.map((s) => [s, this.checkinSummary(s, opts)]));
   }

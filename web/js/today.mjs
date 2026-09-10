@@ -8,13 +8,16 @@
  * 兩科各報一個含新卡的總數，讀的人相加就會得到一個不存在的數字。
  * 單科只寫自己的到期量，共用的部分統一由頁尾那一行交代。
  *
- * 兩件事刻意跟其他頁不一樣：
+ * 三件事刻意跟其他頁不一樣：
  *  1. **不受側欄的題型篩選影響。**這一頁問的是「今天整體該做什麼」，
  *     被篩選改掉就變成「今天在我挑剩的範圍裡該做什麼」，那是複習頁的工作。
  *  2. **CO／PO 不顯示熟練度，只顯示做過沒做過。**題庫裡沒有音檔也沒有錄音評分，
  *     系統判不了你講得好不好，畫一條進度條就是假的。但「今天做了」這件事
  *     使用者自己知道，給一顆打卡鍵按下去就記得住——不記的話隔天完全翻不出痕跡，
  *     昨天等於沒發生。分界線在這裡：熟練度不假裝，做過沒做過照實記。
+ *  3. **PE 那一列同時有三顆按鈕。**卡片、說明文件、打卡各一顆，因為那一科真的有兩件事要做：
+ *     卡片練零件，整篇作文練評分格上卡片碰不到的那 10 分。只給卡片按鈕的話，
+ *     這一頁會讓人以為把 PE 的卡片清光就等於練了寫作。
  */
 
 import { h, clear, icon, num } from './dom.mjs';
@@ -100,48 +103,71 @@ function taskRow(task, ctx, refresh) {
       h('span.fr', { lang: 'fr', text: task.fr }),
     ),
   );
+  // 按鈕由上而下依重要性排：卡片、打卡、說明。
+  // PE 三顆都有，順序等於「今天最該按哪一顆」。
+  const act = h('div.task-act');
 
   if (task.mode === 'cards') {
     main.append(countLine(task));
     main.append(h('p.task-hint', { text: task.hint }));
-    row.append(main);
-    row.append(h('div.task-act', {},
-      task.count > 0
-        ? h('button.btn.btn-primary', {
-          type: 'button',
-          // 按鈕上只放「到期」那個數字。到期卡是這一科自己的，加得起來；
-          // 新卡額度兩科共用，寫進按鈕會讓人以為 CE 的 8 張和 PE 的 8 張是十六張。
-          text: buttonText(task),
-          onclick: () => { ctx.setScope(task.kinds); ctx.go('review', { force: true }); },
-        })
-        : h('button.btn.btn-quiet', {
-          type: 'button',
-          text: '再多練一些',
-          onclick: () => { ctx.setScope(task.kinds); ctx.go('review', { force: true }); },
-        }),
-    ));
-    return row;
+    act.append(task.count > 0
+      ? h('button.btn.btn-primary', {
+        type: 'button',
+        // 按鈕上只放「到期」那個數字。到期卡是這一科自己的，加得起來；
+        // 新卡額度兩科共用，寫進按鈕會讓人以為 CE 的 8 張和 PE 的 8 張是十六張。
+        text: buttonText(task),
+        onclick: () => { ctx.setScope(task.kinds); ctx.go('review', { force: true }); },
+      })
+      : h('button.btn.btn-quiet', {
+        type: 'button',
+        text: '再多練一些',
+        onclick: () => { ctx.setScope(task.kinds); ctx.go('review', { force: true }); },
+      }));
+  } else {
+    // 文件型（CO／PO）：先寫「今天做什麼」，再寫打卡狀態。
+    // 倒過來的話，狀態會比指示更搶眼，但今天還沒做的時候，該讀的是「要做什麼」。
+    main.append(h('p.task-do', { text: task.hint }));
   }
 
-  // 文件型（CO／PO）
-  // 先寫「今天做什麼」，再寫打卡狀態。倒過來的話，狀態會比指示更搶眼，
-  // 但今天還沒做的時候，該讀的是「要做什麼」。
-  main.append(h('p.task-do', { text: task.hint }));
-  const status = h('p.task-check');
-  main.append(status);
-  const panel = h('div.doc', { hidden: true });
-  main.append(panel);
+  if (task.checkable) {
+    const status = h('p.task-check');
+    main.append(status);
+    // CO／PO 的打卡是那一列唯一的完成訊號，所以是主要按鈕；
+    // PE 那一列的主要按鈕是卡片，打卡再畫成 primary 就變成兩顆主鍵在搶同一個位置。
+    const primary = task.mode !== 'cards';
+    const checkBtn = h('button.btn', { type: 'button' });
+    checkBtn.addEventListener('click', () => toggleCheck(task, row, checkBtn, status, ctx, refresh, primary));
+    paintCheck(task, row, checkBtn, status, primary);
+    act.append(checkBtn);
+  }
+
+  if (task.doc) {
+    const panel = h('div.doc', { hidden: true });
+    main.append(panel);
+    const openBtn = h('button.btn.btn-quiet', { type: 'button', text: '打開說明' });
+    openBtn.addEventListener('click', () => toggleDoc(task, panel, openBtn));
+    act.append(openBtn);
+  }
+
   row.append(main);
-
-  const openBtn = h('button.btn.btn-quiet', { type: 'button', text: '打開說明' });
-  openBtn.addEventListener('click', () => toggleDoc(task, panel, openBtn));
-
-  const checkBtn = h('button.btn', { type: 'button' });
-  checkBtn.addEventListener('click', () => toggleCheck(task, row, checkBtn, status, ctx, refresh));
-  paintCheck(task, row, checkBtn, status);
-
-  row.append(h('div.task-act', {}, checkBtn, openBtn));
+  row.append(act);
   return row;
+}
+
+/** 打卡鍵的文案。PE 打的是「寫了一篇」，跟 CO／PO 的「做過了」不是同一件事，不共用字。 */
+function checkWords(task) {
+  if (task.mode === 'cards') {
+    return {
+      todo: '記下今天寫過作文', undo: '取消今天的作文紀錄',
+      done: '今天寫過一篇了', pending: '今天還沒寫',
+      note: '（作文的內容系統判不了，只記得到你按了這一下）',
+    };
+  }
+  return {
+    todo: '今天做過了', undo: '取消今天的打卡',
+    done: '今天已記錄', pending: '今天還沒記錄',
+    note: '（系統只記得到你按了這一下，判不了對錯）',
+  };
 }
 
 /**
@@ -151,21 +177,22 @@ function taskRow(task, ctx, refresh) {
  * 只講今天的話，隔天早上打開仍然回答不了「昨天到底做了沒有」——
  * 而那正是當初沒有打卡功能時最缺的一件事。
  */
-function paintCheck(task, row, btn, status) {
+function paintCheck(task, row, btn, status, primary) {
+  const w = checkWords(task);
   row.dataset.done = task.done ? '1' : '0';
-  btn.className = task.done ? 'btn btn-quiet' : 'btn btn-primary';
-  btn.textContent = task.done ? '取消今天的打卡' : '今天做過了';
+  btn.className = task.done || !primary ? 'btn btn-quiet' : 'btn btn-primary';
+  btn.textContent = task.done ? w.undo : w.todo;
 
   clear(status);
   if (task.done) {
-    status.append(h('span.done', {}, icon('check'), h('span', { text: '今天已記錄' })));
+    status.append(h('span.done', {}, icon('check'), h('span', { text: w.done })));
   } else {
-    status.append(h('span.dim', { text: '今天還沒記錄' }));
+    status.append(h('span.dim', { text: w.pending }));
   }
   status.append(h('span.sep', { text: '・' }), h('span.part', { text: recentText(task) }));
   // 這一句是整個功能的但書，任何時候都要在：打卡只證明「有坐下來做」，
-  // 不證明做得對。系統仍然沒有能力判斷這兩科的內容。
-  status.append(h('span.note', { text: '（系統只記得到你按了這一下，判不了對錯）' }));
+  // 不證明做得對。系統仍然沒有能力判斷打卡記的那件事。
+  status.append(h('span.note', { text: w.note }));
 }
 
 function recentText(task) {
@@ -174,14 +201,14 @@ function recentText(task) {
   return '還沒有任何紀錄';
 }
 
-async function toggleCheck(task, row, btn, status, ctx, refresh) {
+async function toggleCheck(task, row, btn, status, ctx, refresh, primary) {
   btn.disabled = true;
   try {
     const data = await api.checkin({ skill: task.id, done: !task.done });
     // 用伺服器回來的那一份覆蓋手上的 task，不自己把 done 反過來寫：
     // recent 與 lastDay 只有後端算得出來，猜的話畫面會跟事實檔分岔。
     Object.assign(task, data.tasks.find((t) => t.id === task.id));
-    paintCheck(task, row, btn, status);
+    paintCheck(task, row, btn, status, primary);
     refresh(data);
   } catch (err) {
     ctx.toast(err.message, 'bad');
@@ -248,8 +275,8 @@ async function toggleDoc(task, panel, btn) {
   const bar = h('div.doc-bar', {}, h('span.doc-path', { text: doc.path }));
   const prompt = firstFence(doc.text);
   if (prompt) {
-    // PO 那份文件的重點是那段 prompt，而不是文件本身。
-    // 讓人不用捲到中間再手動選取——這一步的摩擦足以讓一次口說練習不會發生。
+    // PE／PO 那兩份文件的重點是那段 prompt，而不是文件本身。
+    // 讓人不用捲到中間再手動選取——這一步的摩擦足以讓一次練習不會發生。
     const copy = h('button.btn.btn-sm.btn-primary', { type: 'button', text: '複製 GPT prompt' });
     copy.addEventListener('click', async () => {
       try {
@@ -263,7 +290,7 @@ async function toggleDoc(task, panel, btn) {
     bar.append(copy);
   }
   panel.append(bar);
-  // 這兩份文件裡有 11 張表格，PO 那份的評分格是全文最該讀懂的東西。
+  // 這三份文件裡有十幾張表格，PE／PO 那兩份的評分格是全文最該讀懂的東西。
   // 原樣印在 <pre> 裡的話，表格只是一堆對不齊的直線，等於沒有。
   panel.append(renderMarkdown(doc.text));
 }
@@ -288,10 +315,11 @@ function footer(data) {
   if (data.pendingCards === 0 && data.newBudget === 0) {
     bits.unshift('卡片的部分今天已經清空了。');
   }
-  // 卡片做完不等於今天做完：CO／PO 兩科沒有卡片，只有打卡。
+  // 卡片做完不等於今天做完：CO／PO 沒有卡片，PE 的卡片也練不到整篇作文。
   // 這句話放在頁尾，因為它問的是「今天還剩什麼」，那正是頁尾在回答的事。
   if (data.pendingChecks > 0) {
-    bits.push(`另外還有 ${data.pendingChecks} 科等你打卡（CO／PO 沒有卡片，做完自己按一下）。`);
+    const names = data.tasks.filter((t) => t.checkable && !t.done).map((t) => t.id).join('／');
+    bits.push(`另外還有 ${data.pendingChecks} 科等你打卡（${names}，做完自己按一下）。`);
   }
   return h('p.today-foot', { text: bits.join('') });
 }

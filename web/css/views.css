@@ -94,8 +94,12 @@
  * 打過卡的那一列左邊的代號框改成 ok 色。這是虛線框那條規則的例外理由：
  * 虛線講的是「系統管不到內容」，那件事沒變；代號框講的是「今天這一科動過了」，
  * 而那件事現在記得住。兩個訊號各自為政，所以只動顏色不動線型。
+ *
+ * **只給文件型那兩列**。PE 也能打卡，但它的打卡只代表「今天寫過一篇作文」，
+ * 卡片那一半可能一張都還沒動；整框轉綠會讓人以為這一科今天結束了。
+ * PE 的打卡狀態由 .task-check 那一行自己交代，不佔用代號框這個位置。
  */
-.task[data-done="1"] .task-code { border-color: var(--ok); color: var(--ok); }
+.task[data-mode="doc"][data-done="1"] .task-code { border-color: var(--ok); color: var(--ok); }
 
 .task-act { display: flex; flex-direction: column; gap: var(--s2); }
 
