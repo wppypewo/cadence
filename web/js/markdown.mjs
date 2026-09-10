@@ -14,9 +14,13 @@
  *   >　　　　 引言
  *   ---　　　 分隔線
  *   ```　　　 程式碼區塊，區塊內一律原樣，不解析行內語法
- *   **粗體**、`行內碼`　行內只認這兩種
+ *   **粗體**、`行內碼`、[字](網址) 與 <網址>　行內只認這四種
  *
- * 沒支援的東西（連結、圖片、斜體、刪除線、巢狀引言）在這兩份文件裡不存在。
+ * 連結是 2026-09-10 補的。原本沒支援，理由寫的是「這兩份文件裡不存在」——
+ * 那句話當時就是錯的：兩份加起來有四個 <網址>，全部原樣印成一串不能點的字，
+ * 而 CO 那份的用途正是「只存連結」。要人反白複製一段網址才打得開，等於沒有入口。
+ *
+ * 沒支援的東西（圖片、斜體、刪除線、巢狀引言）在這兩份文件裡不存在。
  * 真的出現時會原樣印出來，不會壞掉也不會被誤判成別的東西。
  *
  * 解析與建 DOM 拆成兩半：parseBlocks／parseInline 是純函式，測得起來；
@@ -143,17 +147,33 @@ function alignOf(cell) {
 }
 
 /**
- * 行內語法。只切 **粗體** 與 `行內碼`，其餘原樣。
- * @returns {Array<{type:'text'|'strong'|'code', text:string}>}
+ * 只放行 http／https。study/ 兩份文件是自己寫的沒錯，但 `javascript:` 一旦寫得進來，
+ * 這裡就是一個現成的入口——擋在這一層，不必指望每次改文件的人都記得。
+ * 擋掉的連結原樣印出來，看得見才知道它沒生效。
+ */
+const SAFE_HREF = /^https?:\/\//i;
+
+/**
+ * 行內語法。只切 **粗體**、`行內碼` 與連結，其餘原樣。
+ *
+ * 交替順序不決定誰先被認出來——正規表達式一律取位置最前的那一個，
+ * 所以 `<https://…>` 寫在反引號裡仍然是行內碼，不會變成連結。
+ *
+ * @returns {Array<{type:'text'|'strong'|'code'|'link', text:string, href?:string}>}
  */
 export function parseInline(text) {
   const out = [];
-  const re = /\*\*([^*]+)\*\*|`([^`]+)`/g;
+  const re = /\*\*([^*]+)\*\*|`([^`]+)`|\[([^\]]+)\]\(([^)\s]+)\)|<([^>\s]+)>/g;
   let last = 0;
   let m = re.exec(text);
   while (m) {
     if (m.index > last) out.push({ type: 'text', text: text.slice(last, m.index) });
-    out.push(m[1] !== undefined ? { type: 'strong', text: m[1] } : { type: 'code', text: m[2] });
+    const href = m[4] ?? m[5];
+    if (m[1] !== undefined) out.push({ type: 'strong', text: m[1] });
+    else if (m[2] !== undefined) out.push({ type: 'code', text: m[2] });
+    // <網址> 的顯示文字就是網址本身：這份文件的用途是讓人抄得到那串網址。
+    else if (SAFE_HREF.test(href)) out.push({ type: 'link', text: m[3] ?? href, href });
+    else out.push({ type: 'text', text: m[0] });
     last = m.index + m[0].length;
     m = re.exec(text);
   }
@@ -166,6 +186,11 @@ function inline(text) {
   return parseInline(text).map((t) => {
     if (t.type === 'strong') return h('strong', { text: t.text });
     if (t.type === 'code') return h('code', { text: t.text });
+    // 一律開新分頁：這幾個連結都是外部網站，點下去不該把正在做的複習頁換掉。
+    // rel 兩個值是配 target="_blank" 的標配，少了等於把 window.opener 交出去。
+    if (t.type === 'link') {
+      return h('a.md-link', { href: t.href, target: '_blank', rel: 'noopener noreferrer', text: t.text });
+    }
     return document.createTextNode(t.text);
   });
 }

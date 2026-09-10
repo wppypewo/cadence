@@ -35,7 +35,7 @@ web/
   js/app.mjs         路由（一個 hashchange 監聽器加一張表）
   js/dom.mjs         建 DOM 的小工具、十個手寫圖示
   js/charts.mjs      手寫 SVG 圖表
-  js/markdown.mjs    最小 Markdown 渲染器，只認 study/ 兩份文件用到的語法
+  js/markdown.mjs    最小 Markdown 渲染器，只認 study/ 兩份文件用到的語法（連結限 http／https）
   js/{today,review,stats,forecast,browse}.mjs   五個檢視
 ```
 

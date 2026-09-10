@@ -105,7 +105,7 @@ cadence doctor    [--json]                    檢查資料來源、題庫、索�
 ## 開發
 
 ```bash
-npm test      # 215 題，含 732 組 FSRS 黃金向量
+npm test      # 219 題，含 732 組 FSRS 黃金向量
 npm run lint  # node --check 全檔語法檢查
 ```
 

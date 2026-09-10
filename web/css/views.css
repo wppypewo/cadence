@@ -147,6 +147,12 @@
   overflow-x: auto; white-space: pre;
 }
 .md code { font-family: var(--font-num); font-size: 0.92em; }
+/* 外部連結。實測對比度：淺 6.62:1、暗 8.20:1（--accent 對 --bg），都高於內文的 4.5:1。
+   底線不拿掉——表格裡的連結只靠顏色分辨，色覺不同的人就分不出哪一格點得下去。
+   `<網址>` 那種寫法的顯示文字就是網址本身，一整串沒有空白可斷，
+   不允許任意換行的話一行 FEI 網址就會把版面推寬。 */
+.md-link { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+.md-link:hover { color: var(--accent-hover); }
 /* 評分格那幾張表比容器寬，讓表格自己橫捲，不要把整頁撐寬。 */
 .md-tablewrap { overflow-x: auto; }
 .md-table { border-collapse: collapse; font-size: var(--t-sm); min-width: 100%; }

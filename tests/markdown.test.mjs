@@ -82,7 +82,7 @@ test('段落讀到下一個區塊開頭就停', () => {
   assert.deepEqual(b.map((x) => x.type), ['para', 'heading']);
 });
 
-test('行內只切粗體與行內碼，其餘原樣', () => {
+test('行內只切粗體、行內碼與連結，其餘原樣', () => {
   assert.deepEqual(parseInline('六項全 **B1+** 剛好 25 分'), [
     { type: 'text', text: '六項全 ' },
     { type: 'strong', text: 'B1+' },
@@ -103,4 +103,45 @@ test('沒收尾的 ``` 讀到檔尾就結束，不會把後面吃掉也不會丟
 test('法文重音在解析過程中原樣保留', () => {
   const [t] = parseBlocks('| 名稱 |\n|---|\n| Compréhension de l’oral |');
   assert.equal(t.rows[0][0], 'Compréhension de l’oral');
+});
+
+test('連結：[字](網址) 與 <網址> 兩種都認得', () => {
+  // CO 那份的用途就是存連結。渲染成不能點的字等於要人反白複製，那不算有入口。
+  assert.deepEqual(parseInline('樣題在 [FEI](https://example.fr/b1) 這裡'), [
+    { type: 'text', text: '樣題在 ' },
+    { type: 'link', text: 'FEI', href: 'https://example.fr/b1' },
+    { type: 'text', text: ' 這裡' },
+  ]);
+  // 尖括號式的顯示文字就是網址本身：抄得到那串字也是這份文件的用途之一。
+  assert.deepEqual(parseInline('<https://example.fr/a.mp3>'), [
+    { type: 'link', text: 'https://example.fr/a.mp3', href: 'https://example.fr/a.mp3' },
+  ]);
+});
+
+test('連結：只放行 http／https，其餘原樣印出來', () => {
+  // 擋掉的要看得見。靜靜地少一個連結，跟連結壞掉是同一件事但更難發現。
+  assert.deepEqual(parseInline('<mailto:a@b.c>'), [{ type: 'text', text: '<mailto:a@b.c>' }]);
+  assert.deepEqual(parseInline('[本機](./study/co.md)'), [{ type: 'text', text: '[本機](./study/co.md)' }]);
+
+  // 網址裡有括號時，`[^)\s]+` 會停在第一個 `)`，剩下的字尾自成一段文字。
+  // 分成幾段不重要，重要的是沒有一段變成 link、而且原文一個字都沒少。
+  const src = '[點我](javascript:alert(1))';
+  const parts = parseInline(src);
+  assert.ok(parts.every((t) => t.type === 'text'));
+  assert.equal(parts.map((t) => t.text).join(''), src);
+});
+
+test('連結：反引號裡的網址仍然是行內碼', () => {
+  // 取的是位置最前的那一個，不是交替順序。反引號先開始，整段就歸行內碼。
+  assert.deepEqual(parseInline('`<https://example.fr>`'), [
+    { type: 'code', text: '<https://example.fr>' },
+  ]);
+});
+
+test('連結：表格儲存格裡的連結照樣切得出來', () => {
+  // 官方樣題那張表整張都是連結，切不出來的話那一節等於白寫。
+  const [t] = parseBlocks('| 音檔 |\n|---|\n| <https://example.fr/ex1.mp3> |');
+  assert.deepEqual(parseInline(t.rows[0][0]), [
+    { type: 'link', text: 'https://example.fr/ex1.mp3', href: 'https://example.fr/ex1.mp3' },
+  ]);
 });
