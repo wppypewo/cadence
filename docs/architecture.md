@@ -2,7 +2,7 @@
 
 ## 一句話
 
-一個 Node HTTP 伺服器把 `web/` 當靜態檔案發出去，另外開十三個 JSON 端點；瀏覽器端是原生 ESM，沒有打包器；資料在兩個 append-only 的 JSONL、一份本機設定 JSON 與一個隨時可重建的 SQLite 索引裡。
+一個 Node HTTP 伺服器把 `web/` 當靜態檔案發出去，另外開十七個 JSON 端點；瀏覽器端是原生 ESM，沒有打包器；資料在三個 append-only 的 JSONL、一份本機設定 JSON 與一個隨時可重建的 SQLite 索引裡。
 
 ## 目錄
 
@@ -10,8 +10,9 @@
 bin/cadence.mjs      CLI 入口，六個指令
 src/
   server.mjs         HTTP、路由、靜態檔案
-  api.mjs            十二個端點的實作，不碰 HTTP 細節
+  api.mjs            十七個端點的實作，不碰 HTTP 細節
   db.mjs             SQLite schema、JSONL 讀寫、reindex
+  attempts.mjs       四科實作與模考的 JSONL、鏡像與驗證
   engine/
     fsrs.mjs         FSRS-6 排程（純函數）
     grade.mjs        打字題批改（前後端共用）
@@ -31,12 +32,13 @@ web/
   index.html         唯一的 HTML
   css/tokens.css     顏色、字級、間距、層級的所有變數
   css/app.css        外框：導覽、卡片、按鈕、toast
-  css/views.css      五個檢視各自的樣式
+  css/views.css      主要檢視與次級工作台的樣式
   js/app.mjs         路由（一個 hashchange 監聽器加一張表）
   js/dom.mjs         建 DOM 的小工具、十個手寫圖示
   js/charts.mjs      手寫 SVG 圖表
   js/markdown.mjs    最小 Markdown 渲染器，只認 study/ 三份文件用到的語法（連結限 http／https）
-  js/{today,review,stats,forecast,browse}.mjs   五個檢視
+  js/{today,review,stats,forecast,browse}.mjs   五個主要檢視
+  js/{practice,mock}.mjs   四科實作與模考工作台
 ```
 
 ## 資料流
@@ -52,10 +54,12 @@ web/
   data/bank/*.json ──→ SQLite cards 表（首次啟動時載入）
   data/reviews.jsonl ─→ SQLite reviews + states 表（reindex 時重放）
   data/checkins.jsonl ─→ SQLite checkins 表（同上）
+  data/attempts.jsonl ─→ SQLite practice_events 表（同上）
   data/settings.json ──→ SQLite settings 表（啟動時同步）
   瀏覽器 ──fetch──→ /api/* ──→ src/api.mjs ──→ src/db.mjs
   作答 ──POST /api/review──→ 先寫 JSONL，再更新 SQLite
   打卡 ──POST /api/checkin─→ 同一個順序，寫的是另一個 JSONL
+  實作／模考 ──POST /api/practice、/api/mock──→ attempts.jsonl，再更新 SQLite
 ```
 
 寫入順序是刻意的：**先落地不可重建的那一份**。JSONL 寫成功之後即使 SQLite 更新失敗，`reindex` 也能把狀態補回來；反過來則會永久少一筆。
@@ -68,6 +72,8 @@ web/
 所以事實用 JSONL，查詢用 SQLite，後者隨時可以整個刪掉重建。`data/cadence.db` 在 `.gitignore` 裡就是這個意思。
 
 `data/checkins.jsonl` 走同一套。CO／PE／PO 三科的「今天做了」除了使用者自己按一下之外沒有別的來源，重建不出來，所以它與 `reviews.jsonl` 同級。CO／PO 是因為根本沒有卡片；PE 有卡片，但卡片練的是零件，考的是一篇 160 字的成文，那一篇寫了沒系統看不見。分成兩個檔而不是共用一個：`reviews.jsonl` 的每一行都得對應一張卡，`reindex` 會拿 `rating` 去跑 FSRS，混進沒有卡片的行不是重建時報錯就是憑空生出假的記憶狀態。
+
+`data/attempts.jsonl` 記四科實作與模考。完成狀態和表現分開存：一次練習可以沒有分數，分數也不會被換算成卡片熟練度。PE 可存草稿；CO 的本機音檔與 PO 的錄音只在瀏覽器使用，不寫入紀錄。
 
 ## 端點
 
@@ -84,7 +90,10 @@ web/
 | GET | `/api/verb/:word` | 完整變位表 |
 | GET | `/api/settings` | 讀設定 |
 | POST | `/api/review` | 記一次作答 |
+| POST | `/api/review-correction` | 以追加事件更正剛才一筆人工評分，重放後不增加作答次數 |
 | POST | `/api/checkin` | CO／PE／PO 的手動打卡。可打卡的科目取自 `engine/today.mjs` 的科目表，不另外列一份。日期由伺服器決定，不吃前端傳來的 `day` |
+| POST | `/api/practice` | 記 CE／PE／CO／PO 一次實作練習 |
+| POST | `/api/mock` | 一次記完整四科模考 |
 | POST | `/api/settings` | 寫設定 |
 
 伺服器只綁 `127.0.0.1`，不接受外部連線。

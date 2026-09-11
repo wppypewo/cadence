@@ -35,6 +35,10 @@ npm start         # 啟動伺服器並打開瀏覽器
 - **推演** — 給一個考試日期，模擬到那天為止的每日負擔與預期記得的張數。
 - **查詢** — 查一個字，看它的釋義、詞性、等級與完整變位表。
 
+「今天」與「統計」另有兩個次級工作台：CE／PE／CO／PO 實作練習，以及四科模考紀錄。
+PE 有計時草稿與字數，CO 可播放本機音檔，PO 可在瀏覽器錄音回聽；聲音不會上傳或寫進紀錄。
+統計頁的弱點清單可以直接開一組有限批次，複習自評按錯時也能以追加事件更正剛才一筆。
+
 ## 為什麼是這五個檢視
 
 「今天」回答「現在坐下來，先做哪一件事」。DELF B1 的及格條件是四科總分 50/100
@@ -78,12 +82,13 @@ FSRS 為每張卡維護三個量：**S**（穩定度，記憶從剛複習完掉�
 ```
 data/reviews.jsonl   每次作答一行 JSON，只增不改。事實來源，進版控。
 data/checkins.jsonl  CO／PE／PO 的手動打卡，一天一行，同樣只增不改、同樣進版控。
+data/attempts.jsonl  四科實作練習與模考，一次一行；只存文字與數字，不存音檔。
 data/settings.json   考試日期、每日新卡量（可不設上限）、新卡起始等級與目標記憶率，本機保存，不進版控。
 data/cadence.db      SQLite 索引。題庫、記憶狀態、統計都在這，可整個重算，不進版控。
 data/bank/           建置產物，由 npm run build 現算，不進版控。
 ```
 
-這樣切的理由：SQLite 檔壞掉、schema 改版、或這個專案被丟掉，練了幾百天的紀錄都還在，而且是 `cat` 就讀得懂的格式。索引壞了跑 `npm run reindex` 從兩個 JSONL 重建。
+這樣切的理由：SQLite 檔壞掉、schema 改版、或這個專案被丟掉，練了幾百天的紀錄都還在，而且是 `cat` 就讀得懂的格式。索引壞了跑 `npm run reindex` 從三個 JSONL 重建。
 
 ## 資料與授權
 
@@ -102,7 +107,7 @@ Verbiste（Copyright 2003–2016 Pierre Sarrazin）是 GPL-2.0-or-later。本專
 
 有一份資料不在上表：`src/build/connector-gloss.mjs`。權威表依語氣分列、沒有中文欄，輔助表有中文但只收常用的，兩張表交集之外那 25 個連接詞的中文在 vault 裡不存在，所以由本專案自己寫。合併時輔助表一律優先、這份只填空；vault 哪天補了同一個連接詞，`npm run build` 會把那一列點出來要人刪掉。
 
-另有 `CADENCE_DATA` 可以換掉題庫、索引與作答紀錄的落點（預設是 repo 內的 `data/`）。它的用途是測試與示範：`data/reviews.jsonl` 與 `data/checkins.jsonl` 是這個 repo 唯二不可重建的檔案，隨手跑幾張卡就會寫進去。目錄要自己先備好（`bank/` 與 `reviews.jsonl`；打卡檔第一次打卡時自動建立），不會自動建立。
+另有 `CADENCE_DATA` 可以換掉題庫、索引與作答紀錄的落點（預設是 repo 內的 `data/`）。它的用途是測試與示範：三個 `data/*.jsonl` 是不可重建的事實檔，隨手跑幾張卡或儲存練習就會寫進去。目錄要自己先備好（`bank/`；三個事實檔都會在第一次寫入時建立），不會自動建立。
 
 ```bash
 CADENCE_DATA=/tmp/cadence-demo npm start
@@ -113,20 +118,20 @@ CADENCE_DATA=/tmp/cadence-demo npm start
 ```bash
 cadence serve     [--port 4173] [--no-open]   啟動本機伺服器
 cadence build     [--verbose]                 重建題庫
-cadence reindex                               從兩個 JSONL 重建 SQLite 索引
+cadence reindex                               從三個 JSONL 重建 SQLite 索引
 cadence stats     [--json]                    在終端機印出進度
 cadence forecast  --exam YYYY-MM-DD [--limit 60] [--new 15] [--target 0.85]
 cadence doctor    [--json]                    檢查資料來源、題庫、索引是否一致
 ```
 
-`doctor` 另外會看兩個事實檔有沒有還沒 commit 的行。App 只負責追加，不會替人 commit，
-而 repo 是那兩個檔唯一的異地備份；有沒進版控的行會列在「提醒」，不影響結束碼。
+`doctor` 另外會看三個事實檔有沒有還沒 commit 的行。App 只負責追加，不會替人 commit，
+而 repo 是它們唯一的異地備份；有沒進版控的行會列在「提醒」，不影響結束碼。
 `CADENCE_DATA` 指到別處時不查。
 
 ## 開發
 
 ```bash
-npm test      # 241 題，含 732 組 FSRS 黃金向量
+npm test      # 254 題，含 732 組 FSRS 黃金向量
 npm run lint  # node --check 全檔語法檢查
 ```
 
