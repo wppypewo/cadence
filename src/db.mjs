@@ -409,6 +409,14 @@ export class Store {
     return this.db.prepare('SELECT * FROM states WHERE card_id = ?').get(cardId) ?? null;
   }
 
+  /** 假設現在給 1..4 分，各會排到幾天後。算法與 review() 相同，但不寫紀錄也不動索引。 */
+  previewIntervals(cardId, at = new Date()) {
+    const prev = this.state(cardId);
+    const elapsed = prev ? (at - new Date(prev.last_review)) / DAY_MS : 0;
+    const base = prev ? { stability: prev.stability, difficulty: prev.difficulty } : null;
+    return [1, 2, 3, 4].map((r) => this.scheduler.review(base, r, elapsed).intervalDays);
+  }
+
   // ---- CO／PE／PO 的手動打卡 ---------------------------------------------
   //
   // CO／PO 沒有卡片：題庫裡沒有音檔，也沒有東西能判斷一段口說講得好不好。
@@ -700,8 +708,19 @@ function scopeClause(scope = {}) {
 }
 
 /**
+ * 看字回想與中翻法是同一個字的兩面（id 只差結尾的 |r／|p）。兩條題型各按頻率排，
+ * 同一個高頻字在兩條都排第一，輪流取就會一前一後貼著出——第二張的答案就寫在第一張上。
+ */
+const SIBLING_WINDOW = 4;
+const siblingKey = (card) => (card.kind === 'vocab-recall' || card.kind === 'vocab-produce'
+  ? card.id.replace(/\|[rp]$/, '')
+  : card.id);
+
+/**
  * 仍以到期時間／頻率為主序，只在同題型已連續兩張時往後找最近的其他題型。
  * 這樣不會把新卡插到到期卡前面，也不會讓二十張一輪被九千張變位卡整批佔滿。
+ * 另外避開最近 SIBLING_WINDOW 張裡出現過的同一個字；找不到才依序退讓：
+ * 先只求不緊貼，再退回原本的題型規則。
  */
 function limitKindRuns(candidates, limit, seed = []) {
   const pool = [...candidates];
@@ -710,19 +729,21 @@ function limitKindRuns(candidates, limit, seed = []) {
   let run = 0;
   for (let i = seed.length - 1; i >= 0 && seed[i].kind === seed.at(-1)?.kind; i -= 1) run += 1;
   if (seed.length) lastKind = seed.at(-1).kind;
+  const recent = seed.slice(-SIBLING_WINDOW).map(siblingKey);
 
   while (out.length < limit && pool.length) {
-    let at = 0;
-    if (run >= 2) {
-      const alternate = pool.findIndex((card) => card.kind !== lastKind);
-      if (alternate >= 0) at = alternate;
-    }
+    const kindOk = (card) => run < 2 || card.kind !== lastKind;
+    let at = pool.findIndex((card) => kindOk(card) && !recent.includes(siblingKey(card)));
+    if (at < 0) at = pool.findIndex((card) => kindOk(card) && siblingKey(card) !== recent.at(-1));
+    if (at < 0) at = run >= 2 ? Math.max(0, pool.findIndex((card) => card.kind !== lastKind)) : 0;
     const [card] = pool.splice(at, 1);
     if (card.kind === lastKind) run += 1;
     else {
       lastKind = card.kind;
       run = 1;
     }
+    recent.push(siblingKey(card));
+    if (recent.length > SIBLING_WINDOW) recent.shift();
     out.push(card);
   }
   return out;

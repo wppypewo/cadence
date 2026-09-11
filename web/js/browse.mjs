@@ -80,7 +80,8 @@ export function browseView(root) {
     timer = setTimeout(() => run(q), 220);
   });
 
-  async function run(raw) {
+  /** reopen：從變位表回來時帶著剛才打開的動詞與它是第幾列，好把焦點放回那一列。 */
+  async function run(raw, reopen = null) {
     const q = raw.trim();
     if (!q) return void clear(out).append(hint());
     const mine = ++seq;
@@ -93,18 +94,28 @@ export function browseView(root) {
       if (!hits.length) {
         out.append(h('div.card.empty', {}, icon('find'),
           h('p', {}, '題庫裡沒有 ', h('span.fr', { text: q }), ' 。'),
-          h('p.sub', { text: '題庫只收 A1–B1 的高頻詞與 784 個不規則動詞，不是完整字典。中文釋義也在搜尋範圍內。' })));
+          h('p.sub', { text: '題庫只收 A1–B1 的高頻詞與 784 個不規則動詞，不是完整字典。中文釋義與題目句子也在搜尋範圍內。' })));
         return;
       }
       const rows = group(hits);
       const list = h('div.hits');
-      const back = () => run(q);
+      const back = (verb, at) => run(q, { verb, at });
       for (const row of rows) {
         if (row.verb) list.append(verbRow(row, out, back));
         else if (row.kinds) list.append(vocabRow(row, out, back));
-        else list.append(hitRow(row.hit, out, back));
+        else list.append(hitRow(row.hit, out, back, q));
       }
       out.append(countLine(res, rows), list);
+      // 「回搜尋結果」那顆鈕已經隨變位表一起清掉，不接住的話焦點掉回 body，
+      // 下一次 Tab 要從頁首重數。回到剛才那一列，查完一個接著查下一個才順。
+      // 同一個動詞可能有好幾列（例如 être 的變位與單字各一列），只比動詞會永遠回到第一列，
+      // 所以先試原本的位置，位置對不上（結果變了）才退回找第一列。
+      if (reopen) {
+        const same = list.children[reopen.at];
+        (same?.dataset.verb === reopen.verb
+          ? same
+          : [...list.querySelectorAll('.hit-open')].find((r) => r.dataset.verb === reopen.verb))?.focus();
+      }
     } catch (err) {
       if (mine !== seq) return;
       clear(out).append(h('div.card.errorbox', {}, h('p', { text: err.message })));
@@ -234,7 +245,7 @@ function vocabRow(entry, out, back) {
   return openable(row, f.word, out, back);
 }
 
-function hitRow({ card, state }, out, back) {
+function hitRow({ card, state }, out, back, q = '') {
   const f = card.front ?? {};
   const head = f.word || f.connector || f.verb || card.answer || card.id;
   // 名詞化卡的 front.pos／posZh 講的是**基詞**的詞性（changer 是動詞），
@@ -252,6 +263,17 @@ function hitRow({ card, state }, out, back) {
     h('div.w.fr', { lang: 'fr', text: head }),
     h('div.m', { text: sub }),
   );
+  // 這一列看得到的字裡找不到查的字時，說明命中在哪個欄位，不然看起來像搜錯了。
+  // 釋義已經印在副標上的（查「去」出現 aller・去）就不再重講一次。
+  const via = matchedVia(card, `${head} ${sub}`, q);
+  if (via) {
+    // 改寫題的題目是法文，挑連接詞的題目是中文——後者標成 lang=fr 會套上法文襯線字，
+    // 報讀器也會用法文念中文。
+    const cjk = via.text && /[㐀-鿿]/.test(via.text);
+    left.append(h('div.m', {}, `命中在${via.label}`,
+      via.text ? '：' : null,
+      via.text ? (cjk ? via.text : h('span.fr', { lang: 'fr', text: via.text })) : null));
+  }
   if (card.kind === 'conj') {
     left.append(h('div.m', {},
       h('span.fr', { lang: 'fr', text: `${f.pronoun} ${card.answer}` }),
@@ -274,13 +296,38 @@ function hitRow({ card, state }, out, back) {
   return openable(row, verb, out, back);
 }
 
+/**
+ * 查詢字落在標題以外的哪個欄位。不分大小寫，但不處理重音——伺服器那邊怎麼比對的
+ * 這裡不重做一份，對不上就不寫，寧可少一行說明也不寫錯的出處。
+ */
+function matchedVia(card, shown, q) {
+  const needle = q.trim().toLowerCase();
+  if (!needle || String(shown).toLowerCase().includes(needle)) return null;
+  const f = card.front ?? {};
+  const fields = [
+    ['題目句子', f.prompt, true],
+    ['中文釋義', f.gloss, false],
+    ['中文釋義', f.zh, false],
+    ['基詞', f.base, false],
+    ['動詞', f.verb, false],
+  ];
+  for (const [label, value, show] of fields) {
+    if (typeof value === 'string' && value.toLowerCase().includes(needle)) return { label, text: show ? value : null };
+  }
+  return null;
+}
+
 /** 讓一列變成可點、可用鍵盤打開的按鈕。滑鼠與鍵盤走同一條路。 */
 function openable(row, verb, out, back) {
   row.classList.add('hit-open');
   row.tabIndex = 0;
   row.setAttribute('role', 'button');
   row.setAttribute('aria-label', `展開 ${verb} 的變位表`);
-  const open = () => showVerb(verb, out, back);
+  row.dataset.verb = verb;
+  const open = () => {
+    const at = [...row.parentNode.children].indexOf(row);
+    showVerb(verb, out, () => back(verb, at));
+  };
   row.addEventListener('click', open);
   row.addEventListener('keydown', (ev) => {
     if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open(); }
@@ -289,28 +336,36 @@ function openable(row, verb, out, back) {
 }
 
 async function showVerb(name, out, back) {
-  const panel = h('section.verb', {}, h('div.verb-head', {}, h('h2.fr', { lang: 'fr', text: name })));
+  // 按下去的那一列被 clear 掉了，焦點得有地方接：落在動詞標題上，
+  // 報讀器念出查的是哪個字，下一個 Tab 就是「回搜尋結果」。
+  const heading = () => h('h2.fr.landing', { lang: 'fr', text: name, tabindex: -1 });
+  const panel = h('section.verb', {}, h('div.verb-head', {}, heading()));
   clear(out).append(panel);
   panel.scrollIntoView({ block: 'start', behavior: 'auto' });
+  panel.querySelector('h2')?.focus({ preventScroll: true });
 
   let data;
   try {
     data = await api.verb(name);
   } catch (err) {
-    clear(panel).append(h('div.card.errorbox', {}, h('p', { text: err.message })));
+    const retreat = h('button.btn', { text: '← 回搜尋結果', onclick: back });
+    clear(panel).append(h('div.card.errorbox', {}, h('p', { text: err.message }), retreat));
+    retreat.focus();
     return;
   }
 
   clear(panel);
   // 回去要回到剛才那份結果，不是回到空白頁——查完一個動詞常常還要查下一個。
   const backBtn = h('button.btn.btn-quiet.btn-sm', { text: '← 回搜尋結果', onclick: back });
+  const title = heading();
   panel.append(h('div.verb-head', {},
     h('div', {},
-      h('h2.fr', { lang: 'fr', text: name }),
+      title,
       h('p.verb-sub', { text: verbSub(data) }),
     ),
     backBtn,
   ));
+  title.focus({ preventScroll: true });
   if (data.impersonal) {
     panel.append(h('p.verb-note', { text: '無人稱動詞，只有第三人稱單數。' }));
   }

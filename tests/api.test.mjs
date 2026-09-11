@@ -148,9 +148,12 @@ test('看字回想的釋義要翻面才取回，其他題型不能走 reveal', a
   try {
     const recall = api.queue({ kinds: 'vocab-recall', limit: 1 }).cards[0];
     assert.notEqual(recall.id, 'v:chien');
-    assert.deepEqual(api.reveal({ id: recall.id }), {
-      gloss: '狗', en: ['dog'], glossSource: 'manual',
-    });
+    const { intervals, ...shown } = api.reveal({ id: recall.id });
+    assert.deepEqual(shown, { gloss: '狗', en: ['dog'], glossSource: 'manual' });
+    // 評分鍵上的預覽：四個、整數天、至少 1 天、分數越高排得越遠（不會倒過來）。
+    assert.equal(intervals.length, 4);
+    for (const d of intervals) assert.ok(Number.isInteger(d) && d >= 1, `${d}`);
+    for (let i = 1; i < 4; i += 1) assert.ok(intervals[i] >= intervals[i - 1], intervals.join(','));
     assert.equal(caught(() => api.reveal({ id: 'v:ecole' })).status, 400);
     assert.equal(caught(() => api.reveal({ id: '沒有這張' })).status, 404);
   } finally {

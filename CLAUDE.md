@@ -13,7 +13,7 @@
 
 ```bash
 npm run lint   # node --check 全檔
-npm test       # 240 題，含 732 組 FSRS 黃金向量
+npm test       # 241 題，含 732 組 FSRS 黃金向量
 ```
 
 兩個都綠才算完成。動到 `src/engine/fsrs.mjs` 時，黃金向量測試紅了代表移植跑掉了，不要改測試去配合實作。
@@ -23,7 +23,7 @@ npm test       # 240 題，含 732 組 FSRS 黃金向量
 - 顏色只從 `web/css/tokens.css` 拿，其他檔案不寫十六進位色碼。改 token 之前先算對比度：內文與圖示文字要 4.5:1（WCAG 1.4.3），按鈕與輸入框的外框要 3:1（WCAG 1.4.11）。明暗兩套都要算。
 - 不用 `innerHTML`。`dom.mjs` 的 `h()` 沒有提供這個入口，繞過去等於自己開一個 XSS。
 - `icon()` 產出的 SVG 沒有 width/height，尺寸一律由 CSS 給。新增用到圖示的地方時記得配一條尺寸規則。
-- 手機版導覽是 `position: fixed` 的底部標籤列。改 `.main` 的 padding 或 `.toast` 的 bottom 時要一起考慮那條的高度。
+- 手機版導覽是 `position: fixed` 的底部標籤列。改 `.main` 的 padding 或 `.toasts` 的 bottom 時要一起考慮那條的高度。
 - 圖表手寫在 `web/js/charts.mjs`，不引圖表庫。
 - Markdown 也手寫在 `web/js/markdown.mjs`，只支援 `study/` 那三份文件真的用到的語法。要加語法就加，但不引 Markdown 套件——那會把零依賴推翻，而且解析結果最後要進 DOM，套件回傳的 HTML 字串沒有地方可以塞（`h()` 不收 `innerHTML`）。
 - Markdown 的連結只放行 `http`／`https`（`markdown.mjs` 的 `SAFE_HREF`），其餘連同中括號原樣印成文字。`study/` 那三份是自己寫的沒錯，但那條白名單是唯一擋著 `javascript:` 的東西，不要拿掉。產出的 `<a>` 一律帶 `target="_blank"` 與 `rel="noopener noreferrer"`。

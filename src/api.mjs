@@ -101,6 +101,8 @@ export class Api {
       gloss: f.gloss ?? card.answer ?? null,
       en: f.en ?? null,
       glossSource: f.glossSource ?? null,
+      // 四個評分各會排到幾天後，印在評分鍵上。只算不寫，不碰 reviews.jsonl。
+      intervals: this.store.previewIntervals(cardId),
     };
   }
 

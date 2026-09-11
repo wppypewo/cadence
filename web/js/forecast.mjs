@@ -19,13 +19,18 @@ export function forecastView(root, ctx) {
   root.append(box);
 
   const form = h('form.fc-form', { onsubmit: (ev) => { ev.preventDefault(); run(); } });
-  const exam = input({ type: 'date', value: ctx.settings?.examDate ?? defaultExam(), required: true });
+  const saved = ctx.settings?.examDate ?? null;
+  const exam = input({ type: 'date', value: saved ?? defaultExam(), required: true });
+  // 只有使用者自己動過這一格才寫回設定。原本只要值跟設定不同就存，
+  // 沒設考試日期的人開頁按一次推演，60 天後這個暫代值就悄悄變成「今天」頁的倒數。
+  let examTouched = false;
+  exam.addEventListener('input', () => { examTouched = true; });
   const limit = input({ type: 'number', min: 5, max: 500, step: 5, value: 60 });
   const fresh = input({ type: 'number', min: 0, max: 200, step: 1, value: ctx.settings?.dailyNewLimit ?? 15 });
   const target = input({ type: 'number', min: 50, max: 99, step: 1, value: 85 });
 
   form.append(
-    field('考試日期', exam, null),
+    field('考試日期', exam, examHint(saved)),
     field('每天最多做', limit, '含新卡'),
     // 設定成不設上限時，這一格的預設 15 不是設定值，要講明，不然會被當成「照設定推演」。
     field('每天學新卡', fresh, ctx.settings?.dailyNewLimit === null ? '設定是不設上限，這裡填預計每天學幾張' : null),
@@ -51,14 +56,41 @@ export function forecastView(root, ctx) {
         new: fresh.value,
         target: Number(target.value) / 100,
       });
-      // 使用者填了考試日期就記起來，下次打開直接帶入。
-      if (exam.value !== ctx.settings?.examDate) {
-        ctx.saveSettings({ examDate: exam.value }).catch(() => {});
-      }
       render(data);
+      if (examTouched && exam.value !== (ctx.settings?.examDate ?? null)) rememberExam(exam.value);
     } catch (err) {
       clear(out).append(h('div.card.errorbox', {}, h('p', { text: err.message })));
     }
+  }
+
+  /**
+   * 把推演用的日期記成考試日期，並給一顆復原。
+   * 這個值會變成「今天」頁的倒數，改了卻沒說一聲，下次看到的倒數會對不上自己的認知。
+   */
+  function rememberExam(value) {
+    const before = ctx.settings?.examDate ?? null;
+    // 提示寫的是「設定裡有沒有日期」，存或復原之後要跟著改，不然會繼續說還沒設。
+    const hint = exam.closest('.field')?.querySelector('.hint');
+    const paintHint = (v) => { if (hint) hint.textContent = examHint(v); };
+    ctx.saveSettings({ examDate: value })
+      .then(() => {
+        examTouched = false;
+        paintHint(value);
+        ctx.toast(`考試日期改成 ${value}`, 'ok', {
+          label: '復原',
+          run: () => ctx.saveSettings({ examDate: before })
+            .then(() => {
+              // 只改回設定的話，欄位與下面的推演結果都還停在剛才那個日期，畫面上會有兩個日子。
+              exam.value = before ?? defaultExam();
+              examTouched = false;
+              paintHint(before);
+              ctx.toast(before ? `考試日期改回 ${before}，重新推演中` : '考試日期改回未設定，重新推演中', 'ok');
+              run();
+            })
+            .catch((e) => ctx.toast(`沒改回去：${e.message}`, 'bad')),
+        });
+      })
+      .catch((e) => ctx.toast(`考試日期沒存到：${e.message}`, 'bad'));
   }
 
   function render(d) {
@@ -156,9 +188,7 @@ function solvedPanel(sv) {
       h('b', { text: `${sv.recommended.dailyNew} 張新卡` }),
       ' 就能達標。',
     ));
-    body.append(h('p.verdict-note', {
-      text: `這是「還能達標的最大新卡量」——學得比這個多，考試當天的整體記憶率反而會被稀釋。`,
-    }));
+    body.append(h('p.verdict-note', { text: achievableNote(sv) }));
   } else {
     body.append(h('p.lead', {},
       '這個目標達不到。最好的情況是每天 ',
@@ -212,6 +242,20 @@ function solvedPanel(sv) {
 
 }
 
+/**
+ * 「學更多反而被稀釋」只在曲線真的往下彎時成立。範圍小的時候（例如只練名詞化）
+ * 每一格的記憶率都一樣，那句話就是錯的；推薦值剛好落在掃描上限時，也還沒看到往下彎的那段。
+ */
+function achievableNote(sv) {
+  const rates = sv.tried.map((t) => t.rate);
+  const top = Math.max(...sv.tried.map((t) => t.dailyNew));
+  if (pct(Math.max(...rates), 1) === pct(Math.min(...rates), 1)) {
+    return `在這個範圍裡，每天學幾張新卡幾乎不影響考試當天的記憶率：0 到 ${top} 張都是 ${pct(rates[0], 1)}。`;
+  }
+  if (sv.recommended.dailyNew === top) return `掃到上限 ${top} 張都還達標，實際能承受的量可能更多。`;
+  return '這是「還能達標的最大新卡量」——學得比這個多，考試當天的整體記憶率反而會被稀釋。';
+}
+
 // ---- 小工具 --------------------------------------------------------------
 
 /** 還沒推演過時的畫面。說明按鈕會做什麼、要等多久、哪些設定會影響結果。 */
@@ -251,7 +295,8 @@ function field(label, control, hint) {
 }
 
 function swatch(name, color) {
-  const dot = h('i');
+  // 底色那一格要描邊，見 views.css 的 .legend i.blank。
+  const dot = h(color === 'var(--sunken)' ? 'i.blank' : 'i');
   dot.style.background = color;
   return h('span', {}, dot, name);
 }
@@ -273,6 +318,12 @@ function pickRows(tried, win) {
   const step = Math.max(1, Math.round(tried.length / 9));
   for (let i = 0; i < tried.length; i += step) keep.add(i);
   return [...keep].sort((a, b) => a - b).map((i) => tried[i]);
+}
+
+function examHint(saved) {
+  return saved
+    ? '改了日期再推演，會一併改掉設定裡的考試日期'
+    : '還沒設考試日期，先用 60 天後；改了日期再推演才會記住';
 }
 
 function defaultExam() {

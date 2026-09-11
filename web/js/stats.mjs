@@ -74,7 +74,7 @@ export function statsView(root, ctx) {
       stat('已掌握', s.matureCards, `共 ${num(s.totalCards)} 張・穩定度 ≥ 21 天`),
       stat('學過', s.seenCards, `未學 ${num(s.newCards)} 張`),
       stat('今天到期', s.dueNow, s.dueNow ? '去做掉它' : '沒有欠帳'),
-      stat('連續天數', s.streakDays, s.streakDays ? '別斷' : '今天可以重新開始'),
+      stat('連續天數', s.streakDays, s.streakDays ? '每天至少答一題就算一天' : '今天答一題就開始算'),
       stat('今天', s.todayReviews, accuracy === null ? '還沒開始' : `正確率 ${pct(accuracy)}`),
       stat('累計作答', s.totalReviews, `紀錄檔 ${fmtBytes(d.journal.bytes)}`),
     ));
@@ -101,7 +101,7 @@ export function statsView(root, ctx) {
       ));
     }
     kinds.append(h('div.legend', {},
-      swatch('已掌握', 'var(--accent)'), swatch('學過但未穩', 'var(--accent-weak)'), swatch('未學', 'var(--sunken)'),
+      swatch('已掌握', 'var(--accent)'), swatch('學過但未穩', 'var(--accent-mid)'), swatch('未學', 'var(--sunken)'),
     ));
     body.append(panel('各類別進度', '已掌握 / 學過 / 全部', kinds));
 
@@ -195,7 +195,8 @@ function panel(title, why, bodyNode) {
 }
 
 function swatch(name, color) {
-  const dot = h('i');
+  // 底色那一格要描邊，見 views.css 的 .legend i.blank。
+  const dot = h(color === 'var(--sunken)' ? 'i.blank' : 'i');
   dot.style.background = color;
   return h('span', {}, dot, name);
 }

@@ -14,7 +14,7 @@
  *             所以按「儲存」才生效——拖動滑桿的中間值不該被寫進去。
  */
 
-import { h, clear, icon } from './dom.mjs';
+import { h, clear, icon, announce } from './dom.mjs';
 import { api } from './net.mjs';
 import { todayView } from './today.mjs';
 import { reviewView } from './review.mjs';
@@ -84,7 +84,12 @@ function applyStoredTheme() {
 
 async function boot() {
   buildShell();
-  window.addEventListener('hashchange', () => go(hashPage()));
+  window.addEventListener('hashchange', () => {
+    const id = hashPage();
+    // 不認得的 hash 不換頁，只把網址改回目前這一頁。replaceState 不會再觸發 hashchange。
+    if (location.hash !== `#${id}`) history.replaceState(null, '', `#${id}`);
+    go(id);
+  });
 
   try {
     const s = await api.summary();
@@ -129,6 +134,12 @@ function buildShell() {
 
   els.main = document.getElementById('view');
   els.toasts = document.getElementById('toasts');
+  // 跳過連結的 href="#view" 會改到 hash，而 hash 在這個 App 是路由：
+  // 原本按下去會被當成不認得的頁面送回「今天」，複習到一半的進度跟著清掉。只移焦點就好。
+  document.querySelector('.skip')?.addEventListener('click', (ev) => {
+    ev.preventDefault();
+    els.main.focus();
+  });
   document.getElementById('brand-sub').textContent = '法文複習';
 }
 
@@ -140,13 +151,15 @@ function scopePanel() {
   const box = h('div.scope');
   // 「今天」頁按下去會直接改題型範圍，勾選框得跟著動，不然側欄會跟實際範圍說兩套話。
   els.toggles = new Map();
-  box.append(h('h2.scope-h', { text: '題型' }));
-  const kinds = h('div.toggles');
+  // 這兩個字是勾選群組的名字，不是文件的一節。用 h2 的話，讀屏的標題清單會多出兩個
+  // 底下沒有內文的「節」，而勾選框本身反而沒有被念出屬於哪一組。
+  box.append(h('p.scope-h', { id: 'scope-kinds', text: '題型' }));
+  const kinds = h('div.toggles', { role: 'group', 'aria-labelledby': 'scope-kinds' });
   for (const k of KINDS) kinds.append(toggle(k.label, 'kinds', k.id));
   box.append(kinds);
 
-  box.append(h('h2.scope-h', { text: '程度' }));
-  const levels = h('div.toggles');
+  box.append(h('p.scope-h', { id: 'scope-levels', text: '程度' }));
+  const levels = h('div.toggles', { role: 'group', 'aria-labelledby': 'scope-levels' });
   for (const l of LEVELS) levels.append(toggle(l, 'levels', l));
   box.append(levels);
 
@@ -169,6 +182,8 @@ function toggle(label, group, value) {
       updateScopeNote();
       go(state.page, { force: true });
       refreshBadge();
+      // 複習頁換範圍就是整批重抓，正在看的那張卡會直接換掉；不說一聲會像是卡被跳過了。
+      if (state.page === 'review') toast('已套用新範圍，這一批卡依新範圍重抓；作答紀錄不受影響');
     },
   });
   els.toggles.set(`${group}:${value}`, input);
@@ -224,9 +239,15 @@ function saveScope() {
 
 /* ── 路由 ─────────────────────────────────────────────────────── */
 
+/**
+ * 網址對應到哪一頁。`#/review` 這種常見寫法也認。
+ * 認不得時留在目前這一頁，只有剛開啟、還沒有目前頁時才落到第一頁——
+ * 退回「今天」會重畫整個檢視，複習頁手上的佇列與打到一半的答案都會不見。
+ */
 function hashPage() {
-  const id = location.hash.replace(/^#/, '');
-  return PAGES.some((p) => p.id === id) ? id : PAGES[0].id;
+  const id = location.hash.replace(/^#\/?/, '');
+  if (PAGES.some((p) => p.id === id)) return id;
+  return state.page ?? PAGES[0].id;
 }
 
 function go(id, { force = false } = {}) {
@@ -245,6 +266,8 @@ function go(id, { force = false } = {}) {
   document.title = `${page.label} · cadence`;
   setScopeVisible(page);
 
+  // 上一頁留在 live region 的句子（例如批改結果）不清掉，讀屏換頁後可能再念一次。
+  announce('');
   clear(els.main);
   // 五個檢視都需要一個頁面主標題；視覺層級由各頁自己的內容承擔，所以只供讀屏與文件大綱使用。
   els.main.append(h('h1.sr', { text: page.label }));
@@ -420,7 +443,8 @@ function themeButton() {
   const paint = () => {
     const mode = document.documentElement.dataset.theme ?? 'auto';
     clear(btn);
-    btn.append(icon(mode === 'dark' ? 'moon' : 'sun'),
+    // 跟隨系統時畫太陽，會被讀成「現在是淺色」。
+    btn.append(icon(mode === 'auto' ? 'monitor' : (mode === 'dark' ? 'moon' : 'sun')),
       h('span', { text: mode === 'auto' ? '跟隨系統' : (mode === 'dark' ? '深色' : '淺色') }));
     btn.setAttribute('aria-label', `佈景：${mode === 'auto' ? '跟隨系統' : (mode === 'dark' ? '深色' : '淺色')}，按一下切換`);
   };
@@ -441,10 +465,22 @@ function themeButton() {
  * 提示條。只用在「操作結果」與錯誤，不用在慶祝。
  * aria-live 用 polite，不打斷螢幕閱讀器正在念的批改結果。
  */
-function toast(message, tone = 'info') {
+function toast(message, tone = 'info', action = null) {
   const node = h('div.toast', { dataset: { tone }, role: 'status' },
     tone === 'bad' ? icon('alert') : null,
-    h('span', { text: message }));
+    h('span', { text: message }),
+    action
+      ? h('button.btn.btn-quiet.btn-sm', {
+        type: 'button',
+        text: action.label,
+        onclick: () => { node.remove(); action.run(); },
+      })
+      : null);
   els.toasts.append(node);
-  setTimeout(() => node.remove(), 4200);
+  // 帶按鈕的提示要留得夠久才按得到；滑鼠或焦點還停在上面時不收，否則會在按下去前消失。
+  const close = () => {
+    if (node.matches(':hover, :focus-within')) setTimeout(close, 1000);
+    else node.remove();
+  };
+  setTimeout(close, action ? 10000 : 4200);
 }

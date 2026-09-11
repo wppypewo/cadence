@@ -308,6 +308,26 @@ test('新卡逐題型輪流取，題型內仍按頻率，開頭頻率高的題�
   }
 });
 
+test('同一個字的看字回想與中翻法不會排在相鄰位置', async () => {
+  // 兩條題型各按頻率排，同一個字在兩條都排同一名，舊版輪流取就是 p、r 貼著出。
+  const bank = ['aller', 'venir', 'faire'].flatMap((w, i) => [
+    card(`v:${w}|VER|r`, { freq: 50 - i }),
+    card(`v:${w}|VER|p`, { kind: 'vocab-produce', mode: 'typed', freq: 50 - i }),
+  ]);
+  bank.push(card('conj-x', { kind: 'conj', mode: 'typed', freq: 1 }));
+  const [store, dir] = await open(bank);
+  try {
+    const q = store.queue({ limit: bank.length, newLimit: bank.length });
+    assert.equal(q.length, bank.length);
+    const key = (c) => c.id.replace(/\|[rp]$/, '');
+    for (let i = 1; i < q.length; i += 1) {
+      assert.notEqual(key(q[i]), key(q[i - 1]), `${q[i - 1].id} 與 ${q[i].id} 相鄰`);
+    }
+  } finally {
+    cleanup(store, dir);
+  }
+});
+
 test('freq 0 的手寫題型也排得進新卡，不會被幾十張高頻卡擠到永遠輪不到', async () => {
   // 真實題庫裡連接詞／挑連接詞／改寫三種的 freq 全是 0。舊版跨題型直接比頻率，
   // 這三種排在一萬兩千多名之後——這個測試就是那個情況的縮小版。

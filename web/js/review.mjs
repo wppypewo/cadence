@@ -45,16 +45,28 @@ const RATING_ZH = [null, '忘了', '很吃力', '想起來了', '太簡單'];
 // 改寫題自評的三格。問的是「整句跟解答比」，不是「記得牢不牢」，所以另一套字。
 const RW_RATING_ZH = [null, '差很多', '有出入', '一致'];
 
+// 題庫存的是機器代碼（src/build/bank.mjs），直接印出來畫面上就是「釋義來源：manual」。
+// 認不得的值不印：多一行看不懂的字，比少一行出處更糟。
+const GLOSS_SOURCE_ZH = {
+  'Wiktionnaire-fr': '中文釋義取自法文維基詞典（Wiktionnaire）',
+  manual: '中文釋義為人工整理',
+};
+
 export function reviewView(root, ctx) {
   const state = {
     cards: [],
     idx: 0,
+    // 這次進頁面以來的累計，給停頓頁與完成畫面的摘要用。ms 只算作答時間，不含看批改。
     done: 0,
+    again: 0,
+    ms: 0,
     startedAt: 0,
     // 改寫題第一趟的結果：要素齊全、正在等自評。這時還沒寫進紀錄。
     selfPhase: null,
     verdict: null,
     remaining: null,
+    // 到期卡清完後的那一次停頓。為 true 時下一批已經抓好放在 cards，只是先不顯示。
+    checkpoint: false,
     loading: true,
     error: null,
   };
@@ -74,10 +86,22 @@ export function reviewView(root, ctx) {
       state.verdict = null;
       state.selfPhase = null;
       state.startedAt = performance.now();
+      // 新卡不設上限之後一批接一批沒有盡頭，到期卡清完是唯一自然的收工點。
+      // 用剛抓回來的 remaining 判斷，不用作答後 refreshBadge 補的那份——那份是非同步的，
+      // 「下一張」按得快時還沒回來。一天只停一次：停過之後還在練就是要加練，不再攔。
+      state.checkpoint = state.done > 0 && data.cards.length > 0
+        && data.remaining.due === 0 && !enoughShownToday();
+      if (state.checkpoint) markEnoughShown();
     } catch (err) {
       state.error = err.message;
     }
     state.loading = false;
+    render();
+  }
+
+  function keepGoing() {
+    state.checkpoint = false;
+    state.startedAt = performance.now();
     render();
   }
 
@@ -97,7 +121,10 @@ export function reviewView(root, ctx) {
   /** 送出一次作答。打字題在本地先批一次只為了立刻上色，記分以伺服器為準。 */
   async function submit({ answer = null, rating = null }) {
     const card = current();
-    if (!card || state.verdict) return;
+    // pending 擋的是「回應回來之前又送一次」：數字鍵、Enter 連按兩下都會在
+    // state.verdict 還沒設好之前再進來一次，reviews.jsonl 只增不改，重複那行刪不掉。
+    if (!card || state.verdict || state.pending) return;
+    state.pending = true;
     const ms = Math.round(performance.now() - state.startedAt);
     try {
       const res = await api.review({ cardId: card.id, answer, rating, ms });
@@ -112,6 +139,8 @@ export function reviewView(root, ctx) {
       state.selfPhase = null;
       state.verdict = { ...res, answered: answer };
       state.done += 1;
+      if (res.rating === 1) state.again += 1;
+      state.ms += ms;
       announce(verdictText(res, answer));
       render();
       // 上方那行「待複習 n・新卡 x/y」是作答後才會變的，隨佇列一起抓的那份已經過期。
@@ -125,6 +154,8 @@ export function reviewView(root, ctx) {
       });
     } catch (err) {
       ctx.toast(err.message, 'bad');
+    } finally {
+      state.pending = false;
     }
   }
 
@@ -137,8 +168,18 @@ export function reviewView(root, ctx) {
         h('button.btn', { onclick: load, text: '再試一次' }),
       ));
     }
+    if (state.checkpoint) {
+      body.append(checkpoint(state, ctx, keepGoing));
+      body.querySelector('.empty h2')?.focus();
+      return;
+    }
     const card = current();
-    if (!card) return void body.append(finished(state, ctx, load));
+    if (!card) {
+      body.append(finished(state, ctx, load));
+      // 上一張的「下一張」鈕已經被清掉，不接住的話焦點掉回 body，報讀器也不會念出做完了。
+      body.querySelector('.empty h2')?.focus();
+      return;
+    }
     body.append(h('div.study', {},
       topBar(state),
       face(card, state, submit),
@@ -150,6 +191,15 @@ export function reviewView(root, ctx) {
   // 鍵盤：捕捉在 document 上，因為批改後焦點在按鈕上也要能按 1–4。
   function onKey(ev) {
     if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+    // 按住不放的自動重複一律不算：按住 Enter 會一路「下一張」，批改結果連看都沒看到。
+    if (ev.repeat) return;
+    // 停頓頁底下的下一批已經抓好，current() 會回傳一張畫面上看不到的卡，
+    // 不擋的話按 Space、3 會替那張沒看過的卡評分。
+    if (state.checkpoint) return;
+    // 設定對話框開著、或焦點在輸入框裡時，按鍵是打給那裡的——
+    // 在設定裡打「3」不該順手替這張卡評分。作答框自己的 Enter 由它自己的 keydown 處理。
+    const t = ev.target;
+    if (t?.closest?.('dialog[open]') || t?.matches?.('input, textarea, select, [contenteditable="true"]')) return;
     const card = current();
     if (!card) return;
     if (state.verdict) {
@@ -161,6 +211,13 @@ export function reviewView(root, ctx) {
         ev.preventDefault();
         submit({ answer: state.selfPhase.answered, rating: Number(ev.key) });
       }
+      return;
+    }
+    if (card.mode === 'choice') {
+      // 只收 1–9：選項最多六個（挑連接詞），數字鍵對到第幾個就送第幾個。
+      const opts = card.front?.options ?? [];
+      const n = /^[1-9]$/.test(ev.key) ? Number(ev.key) : 0;
+      if (n && n <= opts.length) { ev.preventDefault(); submit({ answer: opts[n - 1] }); }
       return;
     }
     if (card.mode === 'self') {
@@ -292,44 +349,74 @@ function typedAnswer(card, state, submit) {
   // 實測自動化工具送進來的 Enter（key 是 Enter、keyCode 卻是 0）就不會觸發；
   // 真人打字兩條路都通，但只有明寫的這條測得到。
   // isComposing／keyCode 229 是給輸入法的——選字階段的 Enter 是在確認候選字，不是要交卷。
-  input.addEventListener('keydown', (ev) => {
-    if (ev.key !== 'Enter' || ev.isComposing || ev.keyCode === 229) return;
-    ev.preventDefault();
-    submit({ answer: input.value });
-  });
+  input.addEventListener('keydown', (ev) => answerKey(ev, input, submit));
 
   if (!state.verdict) {
     form.append(accentBar(input));
-    form.append(h('div.study-actions', {},
-      h('button.btn.btn-primary', { type: 'submit', text: '對答案' }),
-      h('button.btn.btn-quiet', {
-        type: 'button', text: '不會，直接看',
-        onclick: () => submit({ answer: '' }),
-      }),
-      h('span.spacer'),
-      h('span.kbd-hint', {}, h('kbd', { text: 'Enter' }), ' 送出'),
-    ));
+    form.append(answerActions(submit));
   }
   return form;
 }
 
 /**
+ * 作答框的 Enter。Shift+Enter 等於「不會，直接看」：手已經在鍵盤上，
+ * 為了放棄一題去摸滑鼠是這頁最貴的動作。不用 Esc，是因為 Esc 常被順手按來關東西，
+ * 誤觸就是一筆「忘了」寫進只增不改的紀錄。
+ */
+function answerKey(ev, input, submit) {
+  if (ev.key !== 'Enter' || ev.isComposing || ev.keyCode === 229) return;
+  ev.preventDefault();
+  if (ev.repeat) return;
+  submit({ answer: ev.shiftKey ? '' : input.value });
+}
+
+function answerActions(submit) {
+  return h('div.study-actions', {},
+    h('button.btn.btn-primary', { type: 'submit', text: '對答案', 'aria-keyshortcuts': 'Enter' }),
+    h('button.btn.btn-quiet', {
+      type: 'button', text: '不會，直接看', 'aria-keyshortcuts': 'Shift+Enter',
+      onclick: () => submit({ answer: '' }),
+    }),
+    h('span.spacer'),
+    h('span.kbd-hint', {},
+      h('kbd', { text: 'Enter' }), ' 送出　',
+      h('kbd', { text: 'Shift' }), '+', h('kbd', { text: 'Enter' }), ' 不會'),
+  );
+}
+
+/**
  * 重音列。用 setRangeText 插在游標處，而且刻意不搶焦點——
  * 點完符號還要繼續打字，焦點跳走就得再點一次輸入框。
+ *
+ * 鍵盤走 roving tabindex：整排只佔一個 Tab 停點，進來之後左右鍵換字、Enter 插入並回到輸入框。
+ * 原本十五顆全是 tabindex -1，沒有滑鼠就完全用不到；全開成 0 又會讓「對答案」隔著十五下 Tab。
+ * 停點記在上次用過的那顆，連打兩個 é 不必每次從頭數。
  */
 function accentBar(input) {
-  const bar = h('div.accents', { role: 'group', 'aria-label': '插入法文重音字母' });
-  for (const ch of ACCENTS) {
-    bar.append(h('button', {
-      type: 'button', text: ch, tabindex: -1, title: `插入 ${ch}`,
-      onmousedown: (ev) => ev.preventDefault(),
-      onclick: () => {
-        const at = input.selectionStart ?? input.value.length;
-        input.setRangeText(ch, at, input.selectionEnd ?? at, 'end');
-        input.focus();
-      },
-    }));
+  const bar = h('div.accents', { role: 'toolbar', 'aria-label': '插入法文重音字母' });
+  const keys = ACCENTS.map((ch, i) => h('button', {
+    type: 'button', text: ch, tabindex: i === 0 ? 0 : -1, title: `插入 ${ch}`,
+    onmousedown: (ev) => ev.preventDefault(),
+    onclick: () => {
+      const at = input.selectionStart ?? input.value.length;
+      input.setRangeText(ch, at, input.selectionEnd ?? at, 'end');
+      rove(i, false);
+      input.focus();
+    },
+  }));
+  function rove(to, focus) {
+    keys.forEach((k, i) => { k.tabIndex = i === to ? 0 : -1; });
+    if (focus) keys[to].focus();
   }
+  bar.addEventListener('keydown', (ev) => {
+    const i = keys.indexOf(ev.target);
+    if (i < 0) return;
+    const to = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: keys.length - 1 }[ev.key];
+    if (to === undefined) return;
+    ev.preventDefault();
+    rove((to + keys.length) % keys.length, true);
+  });
+  bar.append(...keys);
   return bar;
 }
 
@@ -354,11 +441,7 @@ function rewriteAnswer(card, state, submit) {
   }, input);
 
   // 換行對一個句子沒有用處，Enter 直接送出，跟其他題型一致。
-  input.addEventListener('keydown', (ev) => {
-    if (ev.key !== 'Enter' || ev.isComposing || ev.keyCode === 229) return;
-    ev.preventDefault();
-    submit({ answer: input.value });
-  });
+  input.addEventListener('keydown', (ev) => answerKey(ev, input, submit));
 
   if (self) {
     form.append(rwSelfRating(self, submit));
@@ -366,15 +449,7 @@ function rewriteAnswer(card, state, submit) {
   }
   if (!state.verdict) {
     form.append(accentBar(input));
-    form.append(h('div.study-actions', {},
-      h('button.btn.btn-primary', { type: 'submit', text: '對答案' }),
-      h('button.btn.btn-quiet', {
-        type: 'button', text: '不會，直接看',
-        onclick: () => submit({ answer: '' }),
-      }),
-      h('span.spacer'),
-      h('span.kbd-hint', {}, h('kbd', { text: 'Enter' }), ' 送出'),
-    ));
+    form.append(answerActions(submit));
   }
   return form;
 }
@@ -410,28 +485,37 @@ function rwSelfRating(self, submit) {
 }
 
 function choiceAnswer(card, state, submit) {
-  const box = h('div.choices', { role: 'group', 'aria-label': '選一個答案' });
+  // 群組本身是焦點落點（tabindex -1）：上一張的「下一張」鈕被清掉後焦點要有地方接，
+  // 又不能直接落在第一個選項上——那樣一按 Enter 就替使用者選了第一個。
+  const box = h('div.choices.answer-target.landing', { role: 'group', 'aria-label': '選一個答案', tabindex: -1 });
   const picked = state.verdict?.answered ?? null;
+  const opts = card.front?.options ?? [];
   // 連接詞卡帶 optionZh（語氣的中文），挑連接詞卡的選項本身就是法文詞、沒有這一欄。
   const zh = card.front?.optionZh ?? {};
-  for (const opt of card.front?.options ?? []) {
+  opts.forEach((opt, i) => {
     let mark = null;
     if (state.verdict) {
       if (opt === state.verdict.answer) mark = 'ok';
       else if (opt === picked) mark = 'bad';
     }
+    // 已經批改過的選項按不動，數字鍵提示一起拿掉，免得看起來還能按。
+    const key = i < 9 && !state.verdict ? String(i + 1) : null;
     const btn = h('button', {
       type: 'button',
       disabled: Boolean(state.verdict),
       dataset: mark ? { mark } : {},
+      'aria-keyshortcuts': key,
       onclick: () => submit({ answer: opt }),
-    }, h('span.fr', { lang: 'fr', text: opt }));
+    }, key ? h('kbd', { text: key, 'aria-hidden': 'true' }) : null, h('span.fr', { lang: 'fr', text: opt }));
     // 中文放在法文底下，不取代它：考卷上印的是 subjonctif，
     // 只認得「虛擬式」的人到了考場一樣認不出來。
     if (zh[opt]) btn.append(h('small', { text: zh[opt] }));
     box.append(btn);
-  }
-  return box;
+  });
+  const last = Math.min(opts.length, 9);
+  return h('div.answer-row', {}, box,
+    state.verdict || !last ? null
+      : h('span.kbd-hint', {}, h('kbd', { text: '1' }), '–', h('kbd', { text: String(last) }), ' 選答案'));
 }
 
 /**
@@ -444,7 +528,8 @@ function selfAnswer(card, state, submit) {
   const back = h('div.prompt', { hidden: true });
   const err = h('p.field-error', { hidden: true });
 
-  const reveal = h('button.btn.btn-primary.reveal-btn', {
+  // answer-target：新卡出來時焦點落在這顆上，Enter 與 Space 都能翻面。
+  const reveal = h('button.btn.btn-primary.reveal-btn.answer-target', {
     type: 'button', text: '看答案',
     onclick: async () => {
       reveal.disabled = true;
@@ -454,7 +539,12 @@ function selfAnswer(card, state, submit) {
         if (answer.en) back.append(h('div.prompt-en', {
           lang: 'en', text: Array.isArray(answer.en) ? answer.en.join('；') : answer.en,
         }));
-        if (answer.glossSource) back.append(h('div.prompt-note', { text: `釋義來源：${answer.glossSource}` }));
+        if (GLOSS_SOURCE_ZH[answer.glossSource]) back.append(h('div.prompt-note', { text: GLOSS_SOURCE_ZH[answer.glossSource] }));
+        // 每顆評分鍵寫上它會把這張卡排到哪一天。「想起來了」與「太簡單」差三天還是三十天，
+        // 看不到就很難誠實地分。舊伺服器沒有這個欄位時留白。
+        rate.querySelectorAll('.iv').forEach((node, i) => {
+          node.textContent = answer.intervals?.[i] ? relDays(answer.intervals[i]) : '';
+        });
         back.hidden = false;
         reveal.hidden = true;
         rate.hidden = false;
@@ -472,7 +562,7 @@ function selfAnswer(card, state, submit) {
     rate.append(h('button', {
       type: 'button', dataset: { r: String(r) },
       onclick: () => submit({ rating: r }),
-    }, h('b', { text: RATING_ZH[r] }), h('small', { text: String(r) })));
+    }, h('b', { text: RATING_ZH[r] }), h('span.iv'), h('small', { text: String(r) })));
   }
 
   box.append(back, reveal, err, rate);
@@ -526,7 +616,7 @@ function verdictPanel(card, res, next) {
     if (res.en?.length) box.append(h('div.prompt-en', {
       lang: 'en', text: Array.isArray(res.en) ? res.en.join('；') : res.en,
     }));
-    if (res.glossSource) box.append(h('p.verdict-note', { text: `釋義來源：${res.glossSource}` }));
+    if (GLOSS_SOURCE_ZH[res.glossSource]) box.append(h('p.verdict-note', { text: GLOSS_SOURCE_ZH[res.glossSource] }));
   } else if (card.kind === 'rw') {
     if (res.grade?.miss?.length) {
       box.append(h('p.verdict-note', {
@@ -614,19 +704,58 @@ function finished(state, ctx, reload) {
   const capHit = r && r.newLimit !== null && r.newToday >= r.newLimit;
   const noneLeft = r && r.remaining.new === 0;
   const nothingLeft = r && r.remaining.due === 0 && (capHit || noneLeft);
+  // state.done 是這次進頁面以來的累計，不是最後一批——舊字樣「這一輪做完了，共 40 張」會被讀成一批 40 張。
   return h('div.card.empty', {},
     icon('check'),
-    h('h2', { text: state.done ? `這一輪做完了，共 ${state.done} 張` : '現在沒有到期的卡' }),
+    h('h2.landing', { tabindex: -1, text: state.done ? '沒有卡可以做了' : '現在沒有到期的卡' }),
+    state.done ? h('p', { text: sessionLine(state) }) : null,
     h('p', {
       text: nothingLeft
         ? `${noneLeft ? '這個範圍裡的新卡也都學過了。' : '今天的新卡額度也用完了。'}休息比硬撐有效——FSRS 的排程已經替明天算好了。`
         : '還有卡可以練，按下面繼續。',
     }),
     h('div.study-actions', {},
-      nothingLeft ? null : h('button.btn.btn-primary', { text: '再來一輪', onclick: reload }),
+      nothingLeft ? null : h('button.btn', { text: '再來一輪', onclick: reload }),
       h('button.btn', { text: '看統計', onclick: () => ctx.go('stats') }),
     ),
   );
+}
+
+/**
+ * 到期卡清完後停一次。主按鈕是離開：到期的做完就是今天的份量，
+ * 繼續學新卡是加練，所以放次要——學得越多，之後每天要複習的也越多。
+ */
+function checkpoint(state, ctx, keepGoing) {
+  return h('div.card.empty', {},
+    icon('check'),
+    h('h2.landing', { tabindex: -1, text: '今天到期的卡都清完了' }),
+    h('p', { text: `${sessionLine(state)}今天新學 ${state.remaining.newToday} 張。` }),
+    h('p', { text: '今天的份量到這裡就夠了。還想練可以繼續學新卡，只是學得越多，之後每天要複習的也越多。' }),
+    h('div.study-actions', {},
+      h('button.btn.btn-primary', { text: '回今天', onclick: () => ctx.go('today') }),
+      h('button.btn', { text: '繼續學新卡', onclick: keepGoing }),
+    ),
+  );
+}
+
+function sessionLine(state) {
+  const min = Math.round(state.ms / 60_000);
+  const time = min < 1 ? '作答時間不到 1 分鐘' : `作答時間共 ${min} 分鐘`;
+  const again = state.again ? `其中 ${state.again} 張要重來` : '沒有要重來的';
+  return `這次做了 ${state.done} 張，${again}，${time}。`;
+}
+
+// 一天只停一次，重新整理頁面也算數，所以記在 localStorage 而不是 state。
+// 讀寫丟例外（隱私模式、封鎖網站資料）時當作沒停過：多停一次無害。
+const ENOUGH_KEY = 'cadence.enoughShown';
+const localDay = () => new Date().toLocaleDateString('sv');
+
+function enoughShownToday() {
+  try { return localStorage.getItem(ENOUGH_KEY) === localDay(); } catch { return false; }
+}
+
+function markEnoughShown() {
+  try { localStorage.setItem(ENOUGH_KEY, localDay()); } catch { /* 見上 */ }
 }
 
 function skeleton() {

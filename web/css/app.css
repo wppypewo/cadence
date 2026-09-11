@@ -32,6 +32,10 @@ button, input, select { font: inherit; color: inherit; }
   border-radius: 3px;
 }
 :focus:not(:focus-visible) { outline: none; }
+/* 程式移過去的焦點落點（換卡後的選項群組、做完一輪的標題、變位表的動詞）。
+   它們只是讓報讀器念到這裡、讓下一個 Tab 從這裡接著走，本身不能按，
+   畫一圈外框反而像在說「這可以點」。 */
+.landing:focus { outline: none; }
 
 .sr {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
@@ -215,8 +219,6 @@ button, input, select { font: inherit; color: inherit; }
 @media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
 
 .toast {
-  position: fixed; left: 50%; bottom: var(--s5); transform: translateX(-50%);
-  z-index: var(--z-toast);
   display: flex; align-items: center; gap: var(--s3);
   padding: var(--s3) var(--s4);
   background: var(--surface); border: 1px solid var(--border-strong);
@@ -272,7 +274,14 @@ button, input, select { font: inherit; color: inherit; }
 .range-row input[type="range"] { flex: 1; accent-color: var(--accent); }
 .range-row output { min-width: 4ch; text-align: right; font-size: var(--t-md); }
 
-.toasts { position: fixed; inset: auto 0 0 0; z-index: var(--z-toast); pointer-events: none; }
+/* 位置由容器給，每一條只管自己的外觀。原本每一條各自 fixed 在同一點，
+   兩條同時出現（改考試日期的「復原」加一則錯誤）會疊成一條，下面那條按不到。 */
+.toasts {
+  position: fixed; left: 50%; bottom: var(--s5); transform: translateX(-50%);
+  z-index: var(--z-toast);
+  display: flex; flex-direction: column; align-items: center; gap: var(--s2);
+  pointer-events: none;
+}
 .toasts .toast { pointer-events: auto; }
 
 .noscript {
@@ -324,7 +333,7 @@ button, input, select { font: inherit; color: inherit; }
   .scope .toggles { flex-wrap: nowrap; margin: 0; }
   .toggle span { white-space: nowrap; }
   /* toast 也要避開底部導覽，不然批改結果會被蓋掉一半。 */
-  .toast { bottom: calc(var(--s5) + 60px + env(safe-area-inset-bottom)); }
+  .toasts { bottom: calc(var(--s5) + 60px + env(safe-area-inset-bottom)); }
   /* 底部導覽是 fixed，內容要自己讓出那一條的高度，否則最後一列永遠被蓋住。 */
   .main { padding: var(--s4) var(--s4) calc(var(--s8) + 60px + env(safe-area-inset-bottom)); }
   .page-head { flex-direction: column; align-items: stretch; }

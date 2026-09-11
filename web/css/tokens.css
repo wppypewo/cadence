@@ -30,7 +30,8 @@
   --r-card: 12px;
   --r-pill: 999px;
 
-  /* 字級：12 13 15 17 21 28 40 */
+  /* 字級：11 12 13 15 17 21 28 40。11 只給 kbd 用：鍵名寫在按鈕角落，12 會蓋到按鈕文字。 */
+  --t-2xs: 0.6875rem;
   --t-xs: 0.75rem;
   --t-sm: 0.8125rem;
   --t-md: 0.9375rem;
@@ -63,13 +64,19 @@
   --border: #cdc8be;
   --border-strong: #8a8478;
   --text: #1c1b19;
-  --text-muted: #635f58;
+  /* muted 原本對 faint 只有 1.17:1，兩層文字在畫面上是同一層。這個值對
+     surface / sunken / bg 是 8.26 / 6.88 / 7.58，對 faint 1.52。 */
+  --text-muted: #524e48;
   --text-faint: #6e6961;
 
   --accent: #0e6259;
   --accent-hover: #0a4b44;
   --accent-on: #ffffff;
   --accent-weak: #dfece9;
+  /* 統計條「學過但未穩」那段。原本借 --accent-weak，對未學的底色 --sunken 只有 1.01:1，
+     整段等於看不見。這個值對 sunken / surface 是 3.14 / 3.77（WCAG 1.4.11 的 3:1）。
+     它對 --accent 只有 1.91，兩段之間的分界靠 .meter 的 gap 露出 sunken，不靠色差。 */
+  --accent-mid: #518e87;
 
   --ok: #256b41;
   --ok-weak: #dfeee5;
@@ -91,13 +98,16 @@
     --border: #3a3933;
     --border-strong: #6a695f;
     --text: #ecebe7;
-    --text-muted: #a5a099;
+    /* 對 surface / sunken / bg 是 8.28 / 9.33 / 8.99，對 faint 1.58。理由見淺色那條。 */
+    --text-muted: #b8b3ab;
     --text-faint: #928d85;
 
     --accent: #49bdb0;
     --accent-hover: #6ad2c6;
     --accent-on: #06211e;
     --accent-weak: #12302d;
+    /* 對 sunken / surface 是 3.57 / 3.17，對 --accent 2.38。理由見淺色那條。 */
+    --accent-mid: #34746c;
 
     --ok: #6cb98b;
     --ok-weak: #14271c;
@@ -119,13 +129,14 @@
   --border: #3a3933;
   --border-strong: #6a695f;
   --text: #ecebe7;
-  --text-muted: #a5a099;
+  --text-muted: #b8b3ab;
   --text-faint: #928d85;
 
   --accent: #49bdb0;
   --accent-hover: #6ad2c6;
   --accent-on: #06211e;
   --accent-weak: #12302d;
+  --accent-mid: #34746c;
 
   --ok: #6cb98b;
   --ok-weak: #14271c;

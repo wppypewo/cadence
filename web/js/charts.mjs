@@ -102,7 +102,9 @@ export function bars(data, { height = 150, aName = '', bName = '', title = '', c
     const hA = (d.a / maxY) * sc.ih;
     const hB = ((d.b ?? 0) / maxY) * sc.ih;
     const base = PAD.top + sc.ih;
-    if (hB > 0) node.append(s('rect.bar-2', { x, y: base - hA - hB, width: bw, height: hB }));
+    // 兩段疊著畫時中間留一道縫：accent 與 accent-mid 只差 1.9:1，貼在一起分不出界線。
+    const seam = hA > 0 ? Math.min(1.5, hB / 2) : 0;
+    if (hB > 0) node.append(s('rect.bar-2', { x, y: base - hA - hB, width: bw, height: hB - seam }));
     if (hA > 0) node.append(s('rect.bar', { x, y: base - hA, width: bw, height: hA }));
     node.append(s('title', {}, `${d.label}：${d.a}${d.b ? ` + ${d.b}` : ''}`));
   });
@@ -110,7 +112,7 @@ export function bars(data, { height = 150, aName = '', bName = '', title = '', c
   node.append(s('line.axis', { x1: PAD.left, x2: w - PAD.right, y1: PAD.top + sc.ih, y2: PAD.top + sc.ih }));
   labelEnds(node, data, w, height);
   const box = h('div', {}, cap ? caption(cap) : null, node);
-  if (aName) box.append(legend([[aName, 'var(--accent)'], bName && [bName, 'var(--accent-weak)']].filter(Boolean)));
+  if (aName) box.append(legend([[aName, 'var(--accent)'], bName && [bName, 'var(--accent-mid)']].filter(Boolean)));
   return box;
 }
 
@@ -153,7 +155,7 @@ function labelEnds(node, data, w, height) {
 function legend(pairs) {
   const box = h('div.legend');
   for (const [name, color] of pairs) {
-    const dot = h('i');
+    const dot = h(color === 'var(--sunken)' ? 'i.blank' : 'i');
     dot.style.background = color;
     box.append(h('span', {}, dot, name));
   }

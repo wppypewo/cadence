@@ -56,7 +56,11 @@ export function todayView(root, ctx) {
       foot.replaceWith(fresh);
       foot = fresh;
     };
-    for (const task of data.tasks) list.append(taskRow(task, ctx, refresh));
+    // 整頁只留一顆實心主鍵：每列各一顆 primary 時，眼睛找不到「現在先做哪一個」。
+    // 依頁面順序取第一個還有事可做的列：有卡要做的卡片列，或還沒打卡的文件列。
+    const lead = data.tasks.find((t) => (t.mode === 'cards' && t.count > 0)
+      || (t.checkable && t.mode !== 'cards' && !t.done));
+    for (const task of data.tasks) list.append(taskRow(task, ctx, refresh, task === lead));
     box.append(list);
     box.append(foot);
   }
@@ -75,7 +79,8 @@ function header(data) {
 
   const sub = left === null
     ? '到設定裡填上考試日期，這裡會變成倒數。'
-    : `距離 ${data.examDate} 的 DELF B1${left < 0 ? '（日期已過，記得改）' : ''}`;
+    // 不寫死哪一級：B1 考完後這個日期會改成 B2 的，寫死會讓倒數掛錯考試名。
+    : `距離 ${data.examDate} 的考試${left < 0 ? '（日期已過，記得改）' : ''}`;
 
   return h('header.today-head', {},
     h('p.today-date', { text: `${data.day}　${WEEKDAY[d.getDay()]}` }),
@@ -92,7 +97,7 @@ function runLine(data) {
   return bits.join('・');
 }
 
-function taskRow(task, ctx, refresh) {
+function taskRow(task, ctx, refresh, isLead = false) {
   const row = h('article.task', { dataset: { skill: task.id, mode: task.mode } });
 
   row.append(h('div.task-code', {}, h('span', { text: task.id })));
@@ -111,7 +116,7 @@ function taskRow(task, ctx, refresh) {
     main.append(countLine(task));
     main.append(h('p.task-hint', { text: task.hint }));
     act.append(task.count > 0
-      ? h('button.btn.btn-primary', {
+      ? h(isLead ? 'button.btn.btn-primary' : 'button.btn', {
         type: 'button',
         // 按鈕上只放「到期」那個數字。到期卡是這一科自己的，加得起來；
         // 新卡額度兩科共用，寫進按鈕會讓人以為 CE 的 8 張和 PE 的 8 張是十六張。
@@ -134,10 +139,11 @@ function taskRow(task, ctx, refresh) {
     main.append(status);
     // CO／PO 的打卡是那一列唯一的完成訊號，所以是主要按鈕；
     // PE 那一列的主要按鈕是卡片，打卡再畫成 primary 就變成兩顆主鍵在搶同一個位置。
-    const primary = task.mode !== 'cards';
+    // 文件列只有排在最前面那一列是實心（見 render 的 lead），其餘是一般外框鍵，仍看得出要按。
+    const weight = task.mode === 'cards' ? 'quiet' : (isLead ? 'primary' : 'plain');
     const checkBtn = h('button.btn', { type: 'button' });
-    checkBtn.addEventListener('click', () => toggleCheck(task, row, checkBtn, status, ctx, refresh, primary));
-    paintCheck(task, row, checkBtn, status, primary);
+    checkBtn.addEventListener('click', () => toggleCheck(task, row, checkBtn, status, ctx, refresh, weight));
+    paintCheck(task, row, checkBtn, status, weight);
     act.append(checkBtn);
   }
 
@@ -153,6 +159,8 @@ function taskRow(task, ctx, refresh) {
   row.append(act);
   return row;
 }
+
+const CHECK_CLASS = { primary: 'btn btn-primary', plain: 'btn', quiet: 'btn btn-quiet' };
 
 /** 打卡鍵的文案。PE 打的是「寫了一篇」，跟 CO／PO 的「做過了」不是同一件事，不共用字。 */
 function checkWords(task) {
@@ -177,10 +185,10 @@ function checkWords(task) {
  * 只講今天的話，隔天早上打開仍然回答不了「昨天到底做了沒有」——
  * 而那正是當初沒有打卡功能時最缺的一件事。
  */
-function paintCheck(task, row, btn, status, primary) {
+function paintCheck(task, row, btn, status, weight) {
   const w = checkWords(task);
   row.dataset.done = task.done ? '1' : '0';
-  btn.className = task.done || !primary ? 'btn btn-quiet' : 'btn btn-primary';
+  btn.className = task.done ? 'btn btn-quiet' : CHECK_CLASS[weight];
   btn.textContent = task.done ? w.undo : w.todo;
 
   clear(status);
@@ -201,14 +209,14 @@ function recentText(task) {
   return '還沒有任何紀錄';
 }
 
-async function toggleCheck(task, row, btn, status, ctx, refresh, primary) {
+async function toggleCheck(task, row, btn, status, ctx, refresh, weight) {
   btn.disabled = true;
   try {
     const data = await api.checkin({ skill: task.id, done: !task.done });
     // 用伺服器回來的那一份覆蓋手上的 task，不自己把 done 反過來寫：
     // recent 與 lastDay 只有後端算得出來，猜的話畫面會跟事實檔分岔。
     Object.assign(task, data.tasks.find((t) => t.id === task.id));
-    paintCheck(task, row, btn, status, primary);
+    paintCheck(task, row, btn, status, weight);
     refresh(data);
   } catch (err) {
     ctx.toast(err.message, 'bad');
@@ -314,16 +322,14 @@ function footer(data) {
   const bits = data.newLimit === null
     ? [
       // 不設上限時「今天總共幾張」會把一萬多張沒學過的卡全算進去，那個數沒有意義，所以不寫。
-      `今天到期 ${num(data.dueTotal)} 張。`,
-      `新卡不設每日上限，今天已學 ${num(data.newToday)} 張，還有 ${num(data.newAvailable)} 張沒學過。`,
+      `今天到期 ${num(data.dueTotal)} 張；新卡不設上限，今天已學 ${num(data.newToday)} 張。`,
       // 這是使用者自己選的，但代價要寫在看得到的地方。
-      '今天學的每一張新卡，幾天內都會回來變成到期卡；想知道累積起來有多少，到推演頁算一次。',
+      '新卡幾天內都會回來變成到期卡，累積起來有多少到推演頁算。',
     ]
     : [
-      `今天總共 ${num(data.dayTotal)} 張：到期 ${num(data.dueTotal)} 張，新卡最多 ${num(data.newAvailable)} 張。`,
-      `每日新卡上限 ${data.newLimit} 張，今天已用 ${data.newToday} 張，剩 ${data.newBudget} 張。`,
+      `今天總共 ${num(data.dayTotal)} 張：到期 ${num(data.dueTotal)} 張，新卡最多 ${num(data.newAvailable)} 張（每日上限 ${data.newLimit}，已用 ${data.newToday}）。`,
       // 額度共用是上面每一列都不寫總數的原因，所以這句要留在這裡當總解釋。
-      '這個額度兩科共用：先打開哪一科，那一科就先把額度用掉。',
+      '新卡額度兩科共用，先打開哪一科就先用掉。',
     ];
   // pendingCards 為 0 已經代表每一科「到期 0、可學新卡 0」，不必再另外看額度。
   if (data.pendingCards === 0) {
@@ -337,7 +343,7 @@ function footer(data) {
   // 這句話放在頁尾，因為它問的是「今天還剩什麼」，那正是頁尾在回答的事。
   if (data.pendingChecks > 0) {
     const names = data.tasks.filter((t) => t.checkable && !t.done).map((t) => t.id).join('／');
-    bits.push(`另外還有 ${data.pendingChecks} 科等你打卡（${names}，做完自己按一下）。`);
+    bits.push(`還有 ${data.pendingChecks} 科要自己打卡：${names}。`);
   }
   return h('p.today-foot', { text: bits.join('') });
 }

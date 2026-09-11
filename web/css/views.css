@@ -287,13 +287,15 @@
  * 重音鍵盤。這排不是裝飾——沒有法文輸入法的鍵盤打不出 é ç œ，
  * 而這個 App 的立場是重音算數，所以必須自己把符號給出來。
  * 點一下插入到游標位置，不搶焦點。
+ * 外框用 --border-strong 不用 --border：這是按鈕，受 WCAG 1.4.11 的 3:1 管，
+ * --border 對 surface 不到 3:1，按鈕的邊界會糊進底色。
  */
 .accents { display: flex; flex-wrap: wrap; gap: var(--s1); }
 .accents button {
   min-width: 38px; min-height: 38px; padding: 0 var(--s2);
   font-family: var(--font-fr); font-size: var(--t-lg);
   background: var(--surface); color: var(--text);
-  border: 1px solid var(--border); border-radius: var(--r-control);
+  border: 1px solid var(--border-strong); border-radius: var(--r-control);
   cursor: pointer;
   transition: background var(--dur-out) var(--ease), border-color var(--dur-out) var(--ease);
 }
@@ -303,8 +305,10 @@
 /* 選擇題（連接詞後接什麼語氣）。 */
 .choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--s2); }
 .choices button {
+  position: relative;
   display: flex; flex-direction: column; justify-content: center; gap: 2px;
-  min-height: 52px; padding: var(--s2) var(--s4);
+  /* 右邊多留的空間給角落的數字鍵，選項文字不會壓到它。 */
+  min-height: 52px; padding: var(--s2) var(--s6) var(--s2) var(--s4);
   font-family: var(--font-fr); font-size: var(--t-lg); text-align: left;
   background: var(--surface); color: var(--text);
   border: 1px solid var(--border-strong); border-radius: var(--r-control); cursor: pointer;
@@ -319,6 +323,8 @@
    淺色模式只剩 3.63:1，低於內文要求的 4.5:1。 */
 .choices button[data-mark="ok"] small,
 .choices button[data-mark="bad"] small { color: inherit; }
+/* 數字鍵放角落不放前面：法文詞仍然是按鈕的主體，數字只是告訴你按哪個鍵。 */
+.choices button kbd { position: absolute; top: var(--s2); right: var(--s2); }
 .choices button:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-weak); }
 .choices button:disabled { cursor: default; opacity: 0.5; }
 .choices button[data-mark="ok"] { border-color: var(--ok); background: var(--ok-weak); color: var(--ok); opacity: 1; }
@@ -336,6 +342,9 @@
 .ratings button:hover { background: var(--sunken); }
 .ratings b { font-size: var(--t-md); font-weight: 600; }
 .ratings small { font-family: var(--font-num); font-size: var(--t-xs); color: var(--text-faint); }
+/* 按下去之後這張卡會排到哪一天。比數字鍵重要，所以用 muted 不用 faint。 */
+.ratings .iv { font-size: var(--t-xs); color: var(--text-muted); }
+.ratings .iv:empty { display: none; }
 .ratings button[data-r="1"]:hover { border-color: var(--bad); color: var(--bad); }
 .ratings button[data-r="2"]:hover { border-color: var(--warn); color: var(--warn); }
 .ratings button[data-r="3"]:hover, .ratings button[data-r="4"]:hover { border-color: var(--ok); color: var(--ok); }
@@ -384,7 +393,7 @@
 .kbd-hint { font-size: var(--t-xs); color: var(--text-faint); white-space: nowrap; }
 kbd {
   display: inline-block; min-width: 20px; padding: 1px 5px;
-  font-family: var(--font-num); font-size: 11px; text-align: center;
+  font-family: var(--font-num); font-size: var(--t-2xs); text-align: center;
   background: var(--sunken); border: 1px solid var(--border);
   border-bottom-width: 2px; border-radius: 5px; color: var(--text-muted);
 }
@@ -423,10 +432,12 @@ kbd {
 .scroll-x { overflow-x: auto; }
 
 /* 進度長條：已掌握 / 學過 / 未學，一條看完。 */
-.meter { display: flex; height: 8px; border-radius: var(--r-pill); overflow: hidden; background: var(--sunken); }
+/* gap 露出的是底色 sunken：已掌握與學過但未穩兩段彼此只差 1.9:1（深色 2.4:1），
+   各自對 sunken 都在 3:1 以上，所以用一道底色缺口分界，而不是再找第三個色。 */
+.meter { display: flex; gap: 2px; height: 8px; border-radius: var(--r-pill); overflow: hidden; background: var(--sunken); }
 .meter i { display: block; height: 100%; }
 .meter .mature { background: var(--accent); }
-.meter .seen { background: var(--accent-weak); }
+.meter .seen { background: var(--accent-mid); }
 
 /* 長條封頂 360px，不讓它吃滿整列。剛開始練的時候每一條都是全空的，
    如果條子有 500px 長，右邊那組數字就被推到離題型名稱半個螢幕遠，
@@ -469,7 +480,9 @@ kbd {
    沒有 ResizeObserver 時退回 10px，就是原本的行為。 */
 .chart .tick { fill: var(--text-faint); font-family: var(--font-num); font-size: var(--tick, 10px); }
 .chart .bar { fill: var(--accent); }
-.chart .bar-2 { fill: var(--accent-weak); }
+/* 疊在上面那段（答錯）。原本用 --accent-weak，對白底只有 1.2:1，等於看不見；
+   改用統計條「學過但未穩」那一色，對比見 tokens.css 的 --accent-mid。 */
+.chart .bar-2 { fill: var(--accent-mid); }
 .chart .bar-bad { fill: var(--bad); }
 .chart .line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
 .chart .area { fill: var(--accent-weak); opacity: 0.7; }
@@ -478,6 +491,8 @@ kbd {
 
 .legend { display: flex; flex-wrap: wrap; gap: var(--s4); margin-top: var(--s3); font-size: var(--t-xs); color: var(--text-muted); }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+/* 「未學」「沒學到」那一格的顏色就是 --sunken，跟底色幾乎一樣，不描邊會像少了一個色塊。 */
+.legend i.blank { box-shadow: inset 0 0 0 1px var(--border-strong); }
 
 /* 每日熱力圖。方塊 11px，一年也塞得下。 */
 .heat { display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, 11px); gap: 3px; }
