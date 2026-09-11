@@ -1,7 +1,7 @@
 /**
  * 外殼與路由。
  *
- * 沒有路由函式庫，就是一個 hashchange 監聽器加一張表。五個頁面、
+ * 沒有路由函式庫，就是一個 hashchange 監聽器加一張表。五個主要頁面、兩個次級工作台，
  * 沒有巢狀路由、沒有參數——這種規模引框架，維護成本會比省下的多。
  *
  * 這一層負責三件跨頁面的事：
@@ -21,6 +21,8 @@ import { reviewView } from './review.mjs';
 import { statsView } from './stats.mjs';
 import { forecastView } from './forecast.mjs';
 import { browseView } from './browse.mjs';
+import { practiceView } from './practice.mjs';
+import { mockView } from './mock.mjs';
 
 // scoped 標的是「這一頁的內容真的會跟著側欄的題型／程度變」。
 // 沒標的兩頁各有理由：「今天」問的是今天整體該做什麼，本來就要看全部四科；
@@ -33,6 +35,9 @@ const PAGES = [
   { id: 'stats', label: '統計', icon: 'chart', view: statsView, scoped: true },
   { id: 'forecast', label: '推演', icon: 'route', view: forecastView, scoped: true },
   { id: 'browse', label: '查詢', icon: 'find', view: browseView, scoped: false },
+  // 工作台由今天／統計頁帶著科目進入，不佔用主要導覽的五個固定位置。
+  { id: 'practice', label: '練習工作台', icon: 'cards', view: practiceView, scoped: false, nav: false },
+  { id: 'mock', label: '模考紀錄', icon: 'chart', view: mockView, scoped: false, nav: false },
 ];
 
 const KINDS = [
@@ -55,6 +60,9 @@ const state = {
   meta: null,
   page: null,
   cleanup: null,
+  practiceSkill: 'PE',
+  reviewPreset: null,
+  guided: false,
 };
 
 const els = {};
@@ -67,6 +75,12 @@ const ctx = {
   toast,
   go,
   saveSettings,
+  openPractice,
+  startReview,
+  takeReviewPreset,
+  get guided() { return state.guided; },
+  endGuided() { state.guided = false; },
+  get practiceSkill() { return state.practiceSkill; },
 };
 
 applyStoredTheme();
@@ -112,6 +126,7 @@ function buildShell() {
   const nav = h('nav.nav', { 'aria-label': '主要導覽' });
   els.tabs = new Map();
   for (const page of PAGES) {
+    if (page.nav === false) continue;
     const badge = page.badge ? h('span.badge.num', { text: '', hidden: true }) : null;
     const a = h('a', { href: `#${page.id}` },
       icon(page.icon), h('span.label', { text: page.label }), badge);
@@ -141,6 +156,28 @@ function buildShell() {
     els.main.focus();
   });
   document.getElementById('brand-sub').textContent = '法文複習';
+}
+
+/** 從今天頁或統計頁進入實作練習，科目只活在這次瀏覽器工作階段。 */
+function openPractice(skill, { guided = false } = {}) {
+  if (!['CE', 'PE', 'CO', 'PO'].includes(skill)) return;
+  state.practiceSkill = skill;
+  state.guided = guided;
+  go('practice', { force: true });
+}
+
+/** 統一處理一般複習、今日引導與弱點批次，避免各頁自己改半套狀態。 */
+function startReview({ kinds = null, preset = null, guided = false } = {}) {
+  if (Array.isArray(kinds)) setScope(kinds);
+  state.reviewPreset = preset;
+  state.guided = guided;
+  go('review', { force: true });
+}
+
+function takeReviewPreset() {
+  const preset = state.reviewPreset;
+  state.reviewPreset = null;
+  return preset;
 }
 
 /**
@@ -269,7 +306,7 @@ function go(id, { force = false } = {}) {
   // 上一頁留在 live region 的句子（例如批改結果）不清掉，讀屏換頁後可能再念一次。
   announce('');
   clear(els.main);
-  // 五個檢視都需要一個頁面主標題；視覺層級由各頁自己的內容承擔，所以只供讀屏與文件大綱使用。
+  // 每個檢視都需要一個頁面主標題；視覺層級由各頁自己的內容承擔，所以只供讀屏與文件大綱使用。
   els.main.append(h('h1.sr', { text: page.label }));
   state.cleanup = page.view(els.main, ctx) ?? null;
   els.main.focus({ preventScroll: true });

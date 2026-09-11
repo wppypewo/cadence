@@ -79,6 +79,61 @@ export function statsView(root, ctx) {
       stat('累計作答', s.totalReviews, `紀錄檔 ${fmtBytes(d.journal.bytes)}`),
     ));
 
+    // 卡片統計回答記憶排程；四科實作回答有沒有真的讀、寫、聽、說。兩者不能混成一個熟練度。
+    const practice = h('div.body');
+    const skillGrid = h('div.practice-stats');
+    for (const item of d.practice.bySkill) {
+      const performance = item.average === null ? '尚無分數' : `平均 ${pct(item.average)}`;
+      skillGrid.append(h('article.practice-stat', {},
+        h('div', {},
+          h('strong', { text: item.skill }),
+          h('span', { text: item.attempts ? `${item.days} 天・${item.minutes} 分鐘` : '還沒有實作紀錄' }),
+          h('small', { text: performance }),
+        ),
+        h('button.btn.btn-sm', { type: 'button', text: '開始練習', onclick: () => ctx.openPractice(item.skill) }),
+      ));
+    }
+    practice.append(skillGrid);
+    if (d.practice.recent.length) {
+      const recent = h('div.attempt-list');
+      for (const item of d.practice.recent.slice(0, 8)) {
+        const result = item.score === null ? null : `${item.score}/${item.maxScore}`;
+        recent.append(h('div.attempt-row', {},
+          h('span.chip', { text: item.skill }),
+          h('div', {}, h('strong', { text: item.source || '未命名練習' }), h('small', { text: item.day })),
+          h('span.num', { text: [item.durationSec ? `${Math.round(item.durationSec / 60)} 分` : null, item.wordCount ? `${item.wordCount} mots` : null, result].filter(Boolean).join('・') || '完成' }),
+        ));
+      }
+      practice.append(h('h3.section-label', { text: '最近實作' }), recent);
+    }
+    body.append(panel('四科實作', `最近 120 天・紀錄檔 ${fmtBytes(d.attemptsJournal.bytes)}`, practice));
+
+    const mock = h('div.body');
+    const latestMock = d.practice.mocks[0];
+    if (latestMock) {
+      mock.append(h('div.mock-latest', {},
+        h('div', {},
+          h('strong.num', { text: `${latestMock.total}/${latestMock.maxTotal}` }),
+          h('span', { text: `${latestMock.day}${latestMock.source ? `・${latestMock.source}` : ''}` }),
+        ),
+        h('div.mock-parts', {}, ...Object.entries(latestMock.scores).map(([skill, value]) =>
+          h('span.chip', { text: `${skill} ${value.score}/${value.maxScore}` }))),
+      ));
+      const history = h('div.mock-history');
+      for (const item of d.practice.mocks.slice(0, 6)) {
+        history.append(h('div', {},
+          h('span', { text: item.day }),
+          h('strong.num', { text: `${item.total}/${item.maxTotal}` }),
+          h('small', { text: item.source || '未命名模考' }),
+        ));
+      }
+      mock.append(history);
+    } else {
+      mock.append(emptyLine('還沒有完整模考紀錄。'));
+    }
+    mock.append(h('div.panel-actions', {}, h('button.btn', { type: 'button', text: '記錄一次模考', onclick: () => ctx.go('mock') })));
+    body.append(panel('模考趨勢', latestMock ? '最近一次完整四科' : '總分與單科門檻分開記', mock));
+
     // ---- 各類別進度 ----
     const kinds = h('div.body');
     // 照 KIND_ZH 的鍵序排；認不得的題型（將來新增而還沒補中文的）排在最後，
@@ -143,6 +198,10 @@ export function statsView(root, ctx) {
         ));
       }
       weak.append(list);
+      weak.append(h('div.panel-actions', {}, h('button.btn.btn-primary', {
+        type: 'button', text: `練這 ${d.weakest.length} 張`,
+        onclick: () => ctx.startReview({ preset: 'weak' }),
+      })));
     }
     body.append(panel('最弱的卡', '按答錯次數排序', weak));
 

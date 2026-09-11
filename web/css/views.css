@@ -16,6 +16,47 @@
 
 .today { display: flex; flex-direction: column; gap: var(--s5); }
 
+/* ---- 四科練習與模考 --------------------------------------------------- */
+
+.workbench { display: flex; flex-direction: column; gap: var(--s5); }
+.workbench .page-head { margin-bottom: 0; }
+.practice-timer {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s5);
+  padding: var(--s5);
+}
+.practice-clock {
+  display: block; margin-top: var(--s1);
+  font-size: var(--t-3xl); line-height: 1; letter-spacing: -0.03em;
+}
+.practice-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+.practice-tool, .practice-form { display: flex; flex-direction: column; gap: var(--s4); padding: var(--s5); }
+.practice-tool h3 { font-size: var(--t-lg); }
+.practice-tool-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s3); }
+.practice-tool-head .num, .practice-tool .hint { color: var(--text-muted); font-size: var(--t-sm); }
+.practice-draft { min-height: 320px; padding: var(--s4); resize: vertical; line-height: 1.75; font-size: var(--t-lg); }
+.practice-notes { min-height: 112px; padding: var(--s3); resize: vertical; line-height: 1.6; }
+.practice-audio { width: 100%; }
+.pass-list { display: grid; gap: var(--s2); }
+.pass-list .inline-check { min-height: 36px; }
+.pass-list input { width: 18px; height: 18px; accent-color: var(--accent); }
+.score-fields, .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s4); }
+
+.mock-fieldset { margin: 0; padding: 0; border: 0; }
+.mock-fieldset legend { margin-bottom: var(--s2); font-size: var(--t-sm); font-weight: 500; }
+.mock-scores { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2); }
+.mock-score {
+  display: grid; grid-template-columns: 2.5rem minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center; gap: var(--s2); padding: var(--s3);
+  background: var(--sunken); border-radius: var(--r-control);
+}
+.mock-score strong { font-size: var(--t-sm); }
+.mock-result {
+  padding: var(--s3) var(--s4); border: 1px solid var(--border);
+  border-radius: var(--r-control); color: var(--text-muted);
+}
+.mock-result[data-tone="ok"] { border-color: var(--ok); background: var(--ok-weak); color: var(--ok); }
+.mock-result[data-tone="warn"] { border-color: var(--warn); background: var(--warn-weak); color: var(--warn); }
+
 .today-head { display: flex; flex-direction: column; gap: var(--s1); }
 .today-date { font-size: var(--t-sm); color: var(--text-muted); }
 
@@ -348,6 +389,12 @@
 .ratings button[data-r="1"]:hover { border-color: var(--bad); color: var(--bad); }
 .ratings button[data-r="2"]:hover { border-color: var(--warn); color: var(--warn); }
 .ratings button[data-r="3"]:hover, .ratings button[data-r="4"]:hover { border-color: var(--ok); color: var(--ok); }
+.correction { padding-top: var(--s2); border-top: 1px dashed var(--border); }
+.correction summary {
+  width: fit-content; color: var(--text-muted); font-size: var(--t-sm); cursor: pointer;
+}
+.correction-ratings { margin-top: var(--s3); }
+.correction-ratings button:disabled { opacity: .55; cursor: default; }
 
 /*
  * 批改結果。三種語氣對應三種語意，顏色只是輔助——
@@ -408,6 +455,35 @@ kbd {
   display: grid; grid-template-columns: repeat(3, 1fr);
   gap: var(--s3); margin-bottom: var(--s5);
 }
+.practice-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2); }
+.practice-stat {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s3);
+  padding: var(--s3); background: var(--sunken); border-radius: var(--r-control);
+}
+.practice-stat > div { display: flex; min-width: 0; flex-direction: column; }
+.practice-stat strong { font-size: var(--t-lg); }
+.practice-stat span, .practice-stat small { color: var(--text-muted); font-size: var(--t-xs); }
+.section-label { margin-top: var(--s4); font-size: var(--t-sm); }
+.attempt-list, .mock-history { display: grid; gap: 1px; overflow: hidden; border-radius: var(--r-control); background: var(--border); }
+.attempt-row {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;
+  gap: var(--s3); padding: var(--s2) var(--s3); background: var(--surface);
+}
+.attempt-row > div { display: flex; min-width: 0; flex-direction: column; }
+.attempt-row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-sm); }
+.attempt-row small, .attempt-row > .num { color: var(--text-muted); font-size: var(--t-xs); }
+.panel-actions { display: flex; justify-content: flex-end; padding-top: var(--s3); }
+.mock-latest { display: flex; align-items: center; justify-content: space-between; gap: var(--s4); }
+.mock-latest > div:first-child { display: flex; flex-direction: column; }
+.mock-latest strong { font-size: var(--t-2xl); }
+.mock-latest span { color: var(--text-muted); font-size: var(--t-sm); }
+.mock-parts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--s1); }
+.mock-history { margin-top: var(--s3); }
+.mock-history > div {
+  display: grid; grid-template-columns: 7rem 5rem minmax(0, 1fr); gap: var(--s3);
+  padding: var(--s2) var(--s3); background: var(--surface); font-size: var(--t-sm);
+}
+.mock-history small { overflow: hidden; color: var(--text-muted); text-overflow: ellipsis; white-space: nowrap; }
 /* 視窗窄到三欄會把數字擠成兩行時退成兩欄，仍然排得滿（2×3）。 */
 @media (max-width: 860px) { .stat-grid { grid-template-columns: repeat(2, 1fr); } }
 .stat {
@@ -664,6 +740,13 @@ table.grid tr[data-hit="1"] td { background: var(--accent-weak); color: var(--ac
 .verb-table .f { font-family: var(--font-fr); }
 
 @media (max-width: 640px) {
+  .practice-timer { align-items: stretch; flex-direction: column; }
+  .score-fields, .form-grid, .mock-scores { grid-template-columns: minmax(0, 1fr); }
+  .practice-stats { grid-template-columns: minmax(0, 1fr); }
+  .mock-latest { align-items: flex-start; flex-direction: column; }
+  .mock-parts { justify-content: flex-start; }
+  .attempt-row { grid-template-columns: auto minmax(0, 1fr); }
+  .attempt-row > .num { grid-column: 2; }
   .card-face { padding: var(--s5) var(--s4); }
   /* 重音鍵在手機上是最常按的東西，38px 低於拇指的可靠命中範圍。
      15 個排成 5×3 剛好填滿一行，不會留下最後一列只剩一顆的畸零格。 */

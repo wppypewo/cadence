@@ -37,6 +37,9 @@ export const api = {
   settings: () => call('GET', '/api/settings'),
   saveSettings: (body) => call('POST', '/api/settings', { body }),
   review: (body) => call('POST', '/api/review', { body }),
+  correctReview: (body) => call('POST', '/api/review-correction', { body }),
   checkin: (body) => call('POST', '/api/checkin', { body }),
+  practice: (body) => call('POST', '/api/practice', { body }),
+  mock: (body) => call('POST', '/api/mock', { body }),
   verb: (name) => call('GET', `/api/verb/${encodeURIComponent(name)}`),
 };

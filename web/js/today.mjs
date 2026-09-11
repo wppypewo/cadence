@@ -56,11 +56,10 @@ export function todayView(root, ctx) {
       foot.replaceWith(fresh);
       foot = fresh;
     };
-    // 整頁只留一顆實心主鍵：每列各一顆 primary 時，眼睛找不到「現在先做哪一個」。
-    // 依頁面順序取第一個還有事可做的列：有卡要做的卡片列，或還沒打卡的文件列。
-    const lead = data.tasks.find((t) => (t.mode === 'cards' && t.count > 0)
-      || (t.checkable && t.mode !== 'cards' && !t.done));
-    for (const task of data.tasks) list.append(taskRow(task, ctx, refresh, task === lead));
+    const lead = pickLead(data.tasks);
+    for (const task of data.tasks) {
+      list.append(taskRow(task, ctx, refresh, task === lead?.task ? lead.action : null));
+    }
     box.append(list);
     box.append(foot);
   }
@@ -97,7 +96,19 @@ function runLine(data) {
   return bits.join('・');
 }
 
-function taskRow(task, ctx, refresh, isLead = false) {
+/**
+ * 整頁只留一顆實心主鍵：每列各一顆 primary 時，眼睛找不到「現在先做哪一個」。
+ * 依頁面順序取第一個還有事可做的列：有卡要做的卡片列，或還沒打卡的文件列。
+ */
+function pickLead(tasks) {
+  for (const task of tasks) {
+    if (task.mode === 'cards' && task.count > 0) return { task, action: 'cards' };
+    if (!(task.practiced || task.done)) return { task, action: 'practice' };
+  }
+  return null;
+}
+
+function taskRow(task, ctx, refresh, leadAction = null) {
   const row = h('article.task', { dataset: { skill: task.id, mode: task.mode } });
 
   row.append(h('div.task-code', {}, h('span', { text: task.id })));
@@ -116,17 +127,17 @@ function taskRow(task, ctx, refresh, isLead = false) {
     main.append(countLine(task));
     main.append(h('p.task-hint', { text: task.hint }));
     act.append(task.count > 0
-      ? h(isLead ? 'button.btn.btn-primary' : 'button.btn', {
+      ? h(leadAction === 'cards' ? 'button.btn.btn-primary' : 'button.btn', {
         type: 'button',
         // 按鈕上只放「到期」那個數字。到期卡是這一科自己的，加得起來；
         // 新卡額度兩科共用，寫進按鈕會讓人以為 CE 的 8 張和 PE 的 8 張是十六張。
         text: buttonText(task),
-        onclick: () => { ctx.setScope(task.kinds); ctx.go('review', { force: true }); },
+        onclick: () => ctx.startReview({ kinds: task.kinds, guided: leadAction === 'cards' }),
       })
       : h('button.btn.btn-quiet', {
         type: 'button',
         text: '再多練一些',
-        onclick: () => { ctx.setScope(task.kinds); ctx.go('review', { force: true }); },
+        onclick: () => ctx.startReview({ kinds: task.kinds }),
       }));
   } else {
     // 文件型（CO／PO）：先寫「今天做什麼」，再寫打卡狀態。
@@ -134,16 +145,27 @@ function taskRow(task, ctx, refresh, isLead = false) {
     main.append(h('p.task-do', { text: task.hint }));
   }
 
+  const practiceBtn = h(leadAction === 'practice' ? 'button.btn.btn-primary' : 'button.btn', {
+    type: 'button',
+    text: practiceWords(task.id),
+    onclick: () => ctx.openPractice(task.id, { guided: leadAction === 'practice' }),
+  });
+  act.append(practiceBtn);
+
+  if (!task.checkable && task.practiced) {
+    main.append(h('p.task-check', {},
+      h('span.done', {}, icon('check'), h('span', { text: '今天的實作練習已記錄' })),
+      h('span.sep', { text: '・' }), h('span.part', { text: attemptText(task.attempt) }),
+      h('span.note', { text: '（完成與分數分開記錄）' }),
+    ));
+  }
+
   if (task.checkable) {
     const status = h('p.task-check');
     main.append(status);
-    // CO／PO 的打卡是那一列唯一的完成訊號，所以是主要按鈕；
-    // PE 那一列的主要按鈕是卡片，打卡再畫成 primary 就變成兩顆主鍵在搶同一個位置。
-    // 文件列只有排在最前面那一列是實心（見 render 的 lead），其餘是一般外框鍵，仍看得出要按。
-    const weight = task.mode === 'cards' ? 'quiet' : (isLead ? 'primary' : 'plain');
     const checkBtn = h('button.btn', { type: 'button' });
-    checkBtn.addEventListener('click', () => toggleCheck(task, row, checkBtn, status, ctx, refresh, weight));
-    paintCheck(task, row, checkBtn, status, weight);
+    checkBtn.addEventListener('click', () => toggleCheck(task, row, checkBtn, status, ctx, refresh, 'quiet'));
+    paintCheck(task, row, checkBtn, status, 'quiet');
     act.append(checkBtn);
   }
 
@@ -157,7 +179,12 @@ function taskRow(task, ctx, refresh, isLead = false) {
 
   row.append(main);
   row.append(act);
+
   return row;
+}
+
+function practiceWords(skill) {
+  return ({ CE: '閱讀工作台', PE: '寫作工作台', CO: '開始聽力', PO: '開始口說' })[skill] ?? '開始練習';
 }
 
 const CHECK_CLASS = { primary: 'btn btn-primary', plain: 'btn', quiet: 'btn btn-quiet' };
@@ -168,13 +195,13 @@ function checkWords(task) {
     return {
       todo: '記下今天寫過作文', undo: '取消今天的作文紀錄',
       done: '今天寫過一篇了', pending: '今天還沒寫',
-      note: '（作文的內容系統判不了，只記得到你按了這一下）',
+      note: '（這裡只記完成；工作台可另存時間、草稿與分數）',
     };
   }
   return {
     todo: '今天做過了', undo: '取消今天的打卡',
     done: '今天已記錄', pending: '今天還沒記錄',
-    note: '（系統只記得到你按了這一下，判不了對錯）',
+    note: '（這裡只記完成；工作台可另存時間與分數）',
   };
 }
 
@@ -188,6 +215,19 @@ function checkWords(task) {
 function paintCheck(task, row, btn, status, weight) {
   const w = checkWords(task);
   row.dataset.done = task.done ? '1' : '0';
+  if (task.practiced) {
+    btn.className = 'btn btn-quiet';
+    btn.textContent = '已由練習紀錄完成';
+    btn.disabled = true;
+    clear(status).append(
+      h('span.done', {}, icon('check'), h('span', { text: '今天的實作練習已記錄' })),
+      h('span.sep', { text: '・' }),
+      h('span.part', { text: attemptText(task.attempt) }),
+      h('span.note', { text: '（完成與分數分開記錄）' }),
+    );
+    return;
+  }
+  btn.disabled = false;
   btn.className = task.done ? 'btn btn-quiet' : CHECK_CLASS[weight];
   btn.textContent = task.done ? w.undo : w.todo;
 
@@ -201,6 +241,15 @@ function paintCheck(task, row, btn, status, weight) {
   // 這一句是整個功能的但書，任何時候都要在：打卡只證明「有坐下來做」，
   // 不證明做得對。系統仍然沒有能力判斷打卡記的那件事。
   status.append(h('span.note', { text: w.note }));
+}
+
+function attemptText(attempt) {
+  if (!attempt) return '已有練習紀錄';
+  const bits = [];
+  if (attempt.durationSec) bits.push(`${Math.max(1, Math.round(attempt.durationSec / 60))} 分鐘`);
+  if (attempt.wordCount) bits.push(`${num(attempt.wordCount)} mots`);
+  if (attempt.score !== null) bits.push(`${attempt.score}/${attempt.maxScore}`);
+  return bits.join('・') || '已有練習紀錄';
 }
 
 function recentText(task) {
@@ -343,7 +392,7 @@ function footer(data) {
   // 這句話放在頁尾，因為它問的是「今天還剩什麼」，那正是頁尾在回答的事。
   if (data.pendingChecks > 0) {
     const names = data.tasks.filter((t) => t.checkable && !t.done).map((t) => t.id).join('／');
-    bits.push(`還有 ${data.pendingChecks} 科要自己打卡：${names}。`);
+    bits.push(`還有 ${data.pendingChecks} 科要完成實作練習或打卡：${names}。`);
   }
   return h('p.today-foot', { text: bits.join('') });
 }

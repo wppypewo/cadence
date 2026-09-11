@@ -53,6 +53,7 @@ const GLOSS_SOURCE_ZH = {
 };
 
 export function reviewView(root, ctx) {
+  const preset = ctx.takeReviewPreset();
   const state = {
     cards: [],
     idx: 0,
@@ -69,6 +70,7 @@ export function reviewView(root, ctx) {
     checkpoint: false,
     loading: true,
     error: null,
+    preset,
   };
 
   const body = h('div');
@@ -79,7 +81,7 @@ export function reviewView(root, ctx) {
     state.error = null;
     render();
     try {
-      const data = await api.queue({ ...ctx.scopeQuery(), limit: 20 });
+      const data = await api.queue({ ...ctx.scopeQuery(), limit: 20, preset: state.preset });
       state.cards = data.cards;
       state.remaining = data;
       state.idx = 0;
@@ -89,7 +91,7 @@ export function reviewView(root, ctx) {
       // 新卡不設上限之後一批接一批沒有盡頭，到期卡清完是唯一自然的收工點。
       // 用剛抓回來的 remaining 判斷，不用作答後 refreshBadge 補的那份——那份是非同步的，
       // 「下一張」按得快時還沒回來。一天只停一次：停過之後還在練就是要加練，不再攔。
-      state.checkpoint = state.done > 0 && data.cards.length > 0
+      state.checkpoint = !state.preset && state.done > 0 && data.cards.length > 0
         && data.remaining.due === 0 && !enoughShownToday();
       if (state.checkpoint) markEnoughShown();
     } catch (err) {
@@ -114,8 +116,30 @@ export function reviewView(root, ctx) {
     state.selfPhase = null;
     state.idx += 1;
     state.startedAt = performance.now();
-    if (state.idx >= state.cards.length) load();
+    if (state.idx >= state.cards.length) {
+      if (state.preset) render();
+      else load();
+    }
     else render();
+  }
+
+  async function correct(rating) {
+    const old = state.verdict;
+    if (!old?.reviewId || state.pending || rating === old.rating) return;
+    state.pending = true;
+    try {
+      const changed = await api.correctReview({ id: old.reviewId, rating });
+      if (old.rating === 1 && rating !== 1) state.again -= 1;
+      if (old.rating !== 1 && rating === 1) state.again += 1;
+      state.verdict = { ...old, rating, state: changed.state, corrected: true };
+      announce(`剛才的評分已改為「${RATING_ZH[rating]}」`);
+      render();
+      ctx.refreshBadge();
+    } catch (err) {
+      ctx.toast(err.message, 'bad');
+    } finally {
+      state.pending = false;
+    }
   }
 
   /** 送出一次作答。打字題在本地先批一次只為了立刻上色，記分以伺服器為準。 */
@@ -183,7 +207,7 @@ export function reviewView(root, ctx) {
     body.append(h('div.study', {},
       topBar(state),
       face(card, state, submit),
-      state.verdict ? verdictPanel(card, state.verdict, next) : null,
+      state.verdict ? verdictPanel(card, state.verdict, next, correct) : null,
     ));
     focusInput(body);
   }
@@ -601,7 +625,7 @@ function headText(res) {
   return REASON_ZH[res.grade.reason] ?? res.grade.reason ?? '';
 }
 
-function verdictPanel(card, res, next) {
+function verdictPanel(card, res, next, correct) {
   const t = tone(res);
   const box = h('div.verdict', { dataset: { tone: t }, tabindex: -1 });
 
@@ -686,6 +710,20 @@ function verdictPanel(card, res, next) {
     h('span', {}, '累計答錯　', h('b', { text: String(res.state.lapses) })),
   ));
 
+  if (res.reviewId && res.selfRated) {
+    const ratings = h('div.ratings.correction-ratings', { role: 'group', 'aria-label': '更正剛才的評分' });
+    for (let rating = 1; rating <= 4; rating += 1) {
+      ratings.append(h('button', {
+        type: 'button', dataset: { r: String(rating) }, disabled: rating === res.rating,
+        onclick: () => correct(rating),
+      }, h('b', { text: RATING_ZH[rating] }), rating === res.rating ? h('small', { text: '目前' }) : null));
+    }
+    box.append(h('details.correction', {},
+      h('summary', { text: res.corrected ? '評分已更正' : '剛才評分按錯了？' }),
+      ratings,
+    ));
+  }
+
   box.append(h('div.study-actions', {},
     h('button.btn.btn-primary', { type: 'button', text: '下一張', onclick: next }),
     h('span.spacer'),
@@ -699,6 +737,17 @@ function verdictPanel(card, res, next) {
 // ---- 空狀態與載入 --------------------------------------------------------
 
 function finished(state, ctx, reload) {
+  if (state.preset === 'weak') {
+    return h('div.card.empty', {},
+      icon('check'),
+      h('h2.landing', { tabindex: -1, text: state.done ? '弱點這一批做完了' : '目前沒有弱點卡' }),
+      state.done ? h('p', { text: sessionLine(state) }) : h('p', { text: '這個範圍裡沒有答錯過的卡。' }),
+      h('div.study-actions', {},
+        h('button.btn.btn-primary', { text: '回統計', onclick: () => ctx.go('stats') }),
+        ctx.guided ? h('button.btn', { text: '回今天', onclick: () => ctx.go('today') }) : null,
+      ),
+    );
+  }
   const r = state.remaining;
   // 不設上限（newLimit 為 null）時額度永遠用不完，只剩「新卡學光了」這一種收工方式。
   const capHit = r && r.newLimit !== null && r.newToday >= r.newLimit;
