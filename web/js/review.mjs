@@ -126,13 +126,14 @@ export function reviewView(root, ctx) {
   async function correct(rating) {
     const old = state.verdict;
     if (!old?.reviewId || state.pending || rating === old.rating) return;
+    const labels = current()?.kind === 'rw' ? RW_RATING_ZH : RATING_ZH;
     state.pending = true;
     try {
       const changed = await api.correctReview({ id: old.reviewId, rating });
       if (old.rating === 1 && rating !== 1) state.again -= 1;
       if (old.rating !== 1 && rating === 1) state.again += 1;
       state.verdict = { ...old, rating, state: changed.state, corrected: true };
-      announce(`剛才的評分已改為「${RATING_ZH[rating]}」`);
+      announce(`剛才的評分已改為「${labels[rating]}」`);
       render();
       ctx.refreshBadge();
     } catch (err) {
@@ -712,11 +713,13 @@ function verdictPanel(card, res, next, correct) {
 
   if (res.reviewId && res.selfRated) {
     const ratings = h('div.ratings.correction-ratings', { role: 'group', 'aria-label': '更正剛才的評分' });
-    for (let rating = 1; rating <= 4; rating += 1) {
+    const labels = card.kind === 'rw' ? RW_RATING_ZH : RATING_ZH;
+    const maxRating = card.kind === 'rw' ? 3 : 4;
+    for (let rating = 1; rating <= maxRating; rating += 1) {
       ratings.append(h('button', {
         type: 'button', dataset: { r: String(rating) }, disabled: rating === res.rating,
         onclick: () => correct(rating),
-      }, h('b', { text: RATING_ZH[rating] }), rating === res.rating ? h('small', { text: '目前' }) : null));
+      }, h('b', { text: labels[rating] }), rating === res.rating ? h('small', { text: '目前' }) : null));
     }
     box.append(h('details.correction', {},
       h('summary', { text: res.corrected ? '評分已更正' : '剛才評分按錯了？' }),

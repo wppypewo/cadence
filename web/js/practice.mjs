@@ -133,7 +133,13 @@ export function practiceView(root, ctx) {
     if (kind === 'PE') return writingTool();
     if (kind === 'CO') return listeningTool();
     if (kind === 'PO') return speakingTool();
-    return { node: null, text: () => null, wordCount: () => null, defaultSource: () => null, clearDraft: () => {} };
+    return {
+      node: document.createDocumentFragment(),
+      text: () => null,
+      wordCount: () => null,
+      defaultSource: () => null,
+      clearDraft: () => {},
+    };
   }
 
   function writingTool() {

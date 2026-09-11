@@ -46,6 +46,7 @@ test('模考一次保存四科，並算出可核對的總分', () => {
     assert.equal(row.maxTotal, 100);
     assert.equal(f.log.summary().mocks[0].source, '樣題');
     assert.throws(() => f.log.mock({ day: '2026-09-10', scores: { CE: scores.CE } }), /缺少分數/);
+    assert.throws(() => f.log.mock({ day: '2026-02-31', scores }), /日期需要/);
   } finally { f.close(); }
 });
 
@@ -53,11 +54,12 @@ test('索引可由 attempts.jsonl 重建，壞行會回報而不吃掉好行', a
   const f = fixture();
   try {
     const row = f.log.practice({ skill: 'PO', durationSec: 600 });
-    writeFileSync(path.join(f.dir, 'attempts.jsonl'), `${JSON.stringify(row)}\n壞掉\n`, 'utf8');
+    const badScore = { ...row, id: 'bad-score', score: 30, maxScore: 25 };
+    writeFileSync(path.join(f.dir, 'attempts.jsonl'), `${JSON.stringify(row)}\n壞掉\n${JSON.stringify(badScore)}\n`, 'utf8');
     f.db.exec('DELETE FROM practice_events');
     const rebuilt = await f.log.reindex();
     assert.equal(rebuilt.applied, 1);
-    assert.equal(rebuilt.skipped, 1);
+    assert.equal(rebuilt.skipped, 2);
     assert.equal(f.db.prepare('SELECT COUNT(*) n FROM practice_events').get().n, 1);
     const audit = await f.log.audit();
     assert.equal(audit.inSync, false);

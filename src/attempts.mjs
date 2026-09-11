@@ -58,9 +58,7 @@ export class AttemptLog {
 
   mock(input, now = new Date()) {
     const day = String(input.day ?? localDay(now));
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || Number.isNaN(new Date(`${day}T00:00:00`).getTime())) {
-      throw new Error('日期需要 YYYY-MM-DD 格式');
-    }
+    if (!validDay(day)) throw new Error('日期需要 YYYY-MM-DD 格式');
     const scores = {};
     for (const skill of PRACTICE_SKILLS) {
       const raw = input.scores?.[skill];
@@ -186,17 +184,20 @@ export class AttemptLog {
         try {
           const entry = JSON.parse(line);
           validateEntry(entry);
-          expected.push({ id: entry.id, type: entry.type, skill: entry.skill ?? null, at: entry.at, day: entry.day, payload: JSON.stringify(entry) });
+          expected.push({
+            line: lineNo,
+            row: { id: entry.id, type: entry.type, skill: entry.skill ?? null, at: entry.at, day: entry.day, payload: JSON.stringify(entry) },
+          });
         } catch (err) {
           bad.push({ line: lineNo, error: err.message });
         }
       }
     }
     const indexed = this.db.prepare('SELECT id, type, skill, at, day, payload FROM practice_events ORDER BY rowid').all();
-    const mismatchAt = firstDifference(expected, indexed);
+    const mismatchAt = firstDifference(expected.map((item) => item.row), indexed);
     return {
       ...info, lines, valid: expected.length, indexed: indexed.length, bad,
-      mismatchAt: mismatchAt === null ? null : (bad[mismatchAt]?.line ?? mismatchAt + 1),
+      mismatchAt: mismatchAt === null ? null : (expected[mismatchAt]?.line ?? mismatchAt + 1),
       inSync: bad.length === 0 && mismatchAt === null,
     };
   }
@@ -204,8 +205,39 @@ export class AttemptLog {
 
 function validateEntry(entry) {
   if (!entry?.id || !entry.at || !entry.day || !['practice', 'mock'].includes(entry.type)) throw new Error('缺必要欄位');
-  if (entry.type === 'practice' && !PRACTICE_SKILLS.includes(entry.skill)) throw new Error('不認得的科目');
-  if (entry.type === 'mock' && !entry.scores) throw new Error('模考缺少四科分數');
+  if (Number.isNaN(Date.parse(entry.at)) || !validDay(entry.day)) throw new Error('日期格式錯誤');
+  if (entry.type === 'practice') {
+    if (!PRACTICE_SKILLS.includes(entry.skill)) throw new Error('不認得的科目');
+    integer(entry.durationSec, 0, 86_400, '練習秒數');
+    if ((entry.score === null) !== (entry.maxScore === null)) throw new Error('得分與滿分要一起填');
+    const score = optionalNumber(entry.score, 0, 100, '得分');
+    const maxScore = optionalNumber(entry.maxScore, 0.5, 100, '滿分');
+    if (score !== null && score > maxScore) throw new Error('得分不能高於滿分');
+    if (entry.wordCount !== null) integer(entry.wordCount, 0, 20_000, '字數');
+    optionalText(entry.source, 120, '題目或來源');
+    optionalText(entry.text, 20_000, '練習文字');
+    optionalText(entry.notes, 4_000, '練習筆記');
+    return;
+  }
+  if (!entry.scores) throw new Error('模考缺少四科分數');
+  let total = 0;
+  let maxTotal = 0;
+  for (const skill of PRACTICE_SKILLS) {
+    const score = requiredNumber(entry.scores[skill]?.score, 0, 100, `${skill} 得分`);
+    const maxScore = requiredNumber(entry.scores[skill]?.maxScore, 0.5, 100, `${skill} 滿分`);
+    if (score > maxScore) throw new Error(`${skill} 得分不能高於滿分`);
+    total += score;
+    maxTotal += maxScore;
+  }
+  if (entry.total !== total || entry.maxTotal !== maxTotal) throw new Error('模考總分與四科不一致');
+  optionalText(entry.source, 120, '模考來源');
+  optionalText(entry.notes, 4_000, '模考檢討');
+}
+
+function validDay(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
 function enumValue(value, allowed, message) {
