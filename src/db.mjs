@@ -1,19 +1,21 @@
 /**
- * 儲存層：一份不可重建的事實紀錄，加一份隨時可丟的索引。
+ * 儲存層：不可重建的事實紀錄，加一份隨時可丟的索引。
  *
  *   data/reviews.jsonl  每次作答一行 JSON，只增不改。進版控，十年後用 cat 就讀得懂，
  *                       不依賴本專案還活著。
  *   data/checkins.jsonl CO／PE／PO 三科的手動打卡，同樣只增不改、同樣進版控。
  *                       這三科都有一件卡片記不到的事：CO／PO 根本沒有卡片，
  *                       PE 有卡片但卡片練的是零件，「寫完一整篇 160 字」不會留下任何一筆作答。
+ *   data/attempts.jsonl 四科實作練習與模考，同樣只增不改；音檔不會寫進來。
  *   data/cadence.db     SQLite。題庫、FSRS 記憶狀態、統計都在這裡，
- *                       全部可由上面兩個檔重算（cadence reindex），不進版控。
+ *                       全部可由上面三個檔重算（cadence reindex），不進版控。
  *
  * 這樣切的理由：SQLite 檔壞掉、schema 改版、或這個專案被丟掉，
  * 使用者練了幾百天的紀錄都還在，而且是人看得懂的格式。
  */
 
 import { DatabaseSync } from 'node:sqlite';
+import { randomUUID } from 'node:crypto';
 import {
   appendFileSync, createReadStream, existsSync, mkdirSync, statSync,
   readFileSync, renameSync, writeFileSync,
@@ -57,6 +59,7 @@ CREATE INDEX IF NOT EXISTS states_due ON states(due);
 -- reviews.jsonl 的鏡像，供統計查詢。壞了就重建，不是事實來源。
 CREATE TABLE IF NOT EXISTS reviews (
   seq       INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id  TEXT,
   card_id   TEXT NOT NULL,
   at        TEXT NOT NULL,
   day       TEXT NOT NULL,
@@ -65,7 +68,8 @@ CREATE TABLE IF NOT EXISTS reviews (
   answered  TEXT,
   correct   INTEGER,
   reason    TEXT,
-  ms        INTEGER
+  ms        INTEGER,
+  self_rated INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS reviews_card ON reviews(card_id);
 CREATE INDEX IF NOT EXISTS reviews_at ON reviews(at);
@@ -141,6 +145,12 @@ function migrate(db) {
   }
   if (reload) db.exec('DELETE FROM cards');
   db.exec('CREATE INDEX IF NOT EXISTS cards_headword ON cards(headword)');
+
+  // reviews 是可由 JSONL 重建的鏡像，但不能在啟動時清掉；舊資料補 nullable/default 欄位即可。
+  const reviewCols = db.prepare('PRAGMA table_info(reviews)').all().map((c) => c.name);
+  if (!reviewCols.includes('event_id')) db.exec('ALTER TABLE reviews ADD COLUMN event_id TEXT');
+  if (!reviewCols.includes('self_rated')) db.exec('ALTER TABLE reviews ADD COLUMN self_rated INTEGER NOT NULL DEFAULT 0');
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS reviews_event ON reviews(event_id) WHERE event_id IS NOT NULL');
 }
 
 /**
@@ -345,6 +355,8 @@ export class Store {
 
     const entry = {
       v: 1,
+      type: 'review',
+      id: randomUUID(),
       card: input.cardId,
       at: at.toISOString(),
       day: localDay(at),
@@ -354,11 +366,12 @@ export class Store {
       correct: input.correct ?? null,
       reason: input.reason ?? null,
       ms: input.ms ?? null,
+      selfRated: input.selfRated === true,
     };
     appendFileSync(this.jsonlPath, `${JSON.stringify(entry)}\n`, 'utf8');
 
     this.applyReview(entry);
-    return this.state(input.cardId);
+    return { ...this.state(input.cardId), eventId: entry.id };
   }
 
   /** 把一筆紀錄套進索引。reindex 會對整個檔案重跑這個函式。 */
@@ -389,12 +402,12 @@ export class Store {
           due.toISOString(), entry.at, entry.rating === 1 ? 1 : 0,
         );
       this.db
-        .prepare('INSERT INTO reviews(card_id, at, day, rating, elapsed, answered, correct, reason, ms) VALUES(?,?,?,?,?,?,?,?,?)')
+        .prepare('INSERT INTO reviews(event_id, card_id, at, day, rating, elapsed, answered, correct, reason, ms, self_rated) VALUES(?,?,?,?,?,?,?,?,?,?,?)')
         .run(
-          entry.card, entry.at, entry.day ?? localDay(new Date(entry.at)), entry.rating, entry.elapsed,
+          entry.id ?? null, entry.card, entry.at, entry.day ?? localDay(new Date(entry.at)), entry.rating, entry.elapsed,
           entry.answered ?? null,
           entry.correct === null || entry.correct === undefined ? null : Number(entry.correct),
-          entry.reason ?? null, entry.ms ?? null,
+          entry.reason ?? null, entry.ms ?? null, entry.selfRated ? 1 : 0,
         );
       this.db.exec('RELEASE apply_review');
     } catch (err) {
@@ -415,6 +428,31 @@ export class Store {
     const elapsed = prev ? (at - new Date(prev.last_review)) / DAY_MS : 0;
     const base = prev ? { stability: prev.stability, difficulty: prev.difficulty } : null;
     return [1, 2, 3, 4].map((r) => this.scheduler.review(base, r, elapsed).intervalDays);
+  }
+
+  /**
+   * 更正剛才的人工評分。更正本身也是一行事件；重放時用最新更正覆蓋該筆的評分，
+   * 因而不會多算一次作答，也不必回頭改掉已存在的 JSONL。
+   */
+  async correctReview({ id, rating }) {
+    if (!id) throw new Error('缺少要更正的作答 id');
+    if (!Number.isInteger(rating) || rating < 1 || rating > 4) throw new Error('rating 必須是 1..4 的整數');
+    const latest = this.db.prepare('SELECT event_id, card_id, self_rated FROM reviews ORDER BY seq DESC LIMIT 1').get();
+    if (!latest || latest.event_id !== id) throw new Error('只能更正剛才那一筆作答');
+    if (latest.self_rated !== 1) throw new Error('自動批改的答案不能改成人工評分');
+    const entry = { v: 2, type: 'rating-correction', id: randomUUID(), target: id, rating, at: new Date().toISOString() };
+    appendFileSync(this.jsonlPath, `${JSON.stringify(entry)}\n`, 'utf8');
+    const rebuilt = await this.reindex();
+    const state = this.state(latest.card_id);
+    return {
+      id: entry.id, target: id, rating,
+      state: {
+        stability: state.stability, difficulty: state.difficulty, due: state.due,
+        reps: state.reps, lapses: state.lapses,
+        intervalDays: Math.round((new Date(state.due) - new Date(state.last_review)) / DAY_MS),
+      },
+      rebuilt: rebuilt.applied,
+    };
   }
 
   // ---- CO／PE／PO 的手動打卡 ---------------------------------------------
@@ -493,27 +531,52 @@ export class Store {
   }
 
   /**
-   * 從兩個 JSONL 整個重算索引。
+   * 從作答與打卡兩個 JSONL 重算各自索引；attempts.jsonl 由 attempts.mjs 接著重建。
    * 壞掉的行不會讓整個重建失敗，會被計數回報——寧可救回 99% 也不要全丟。
    */
   async reindex(onProgress = () => {}) {
     this.db.exec('DELETE FROM states');
     this.db.exec('DELETE FROM reviews');
     this.db.exec('DELETE FROM checkins');
-    const reviews = await this.replayFile(this.jsonlPath, (entry) => {
-      if (!entry.card || !entry.at || !entry.rating) throw new Error('缺必要欄位');
-      this.applyReview(entry);
-    }, onProgress);
+    const reviews = await this.reindexReviews(onProgress);
     const checkins = await this.replayFile(this.checkinPath, (entry) => {
       if (!entry.skill || !entry.day) throw new Error('缺必要欄位');
       this.applyCheckin(entry);
     });
     return {
       applied: reviews.applied,
+      corrections: reviews.corrections,
       checkins: checkins.applied,
       skipped: reviews.skipped + checkins.skipped,
       bad: [...reviews.bad, ...checkins.bad.map((b) => ({ ...b, file: 'checkins.jsonl' }))],
     };
+  }
+
+  /** reviews.jsonl 同時容納作答與後寫的評分更正，先折疊更正再照原順序重放作答。 */
+  async reindexReviews(onProgress = () => {}) {
+    const journal = await readReviewEvents(this.jsonlPath);
+    this.db.exec('BEGIN');
+    let applied = 0;
+    try {
+      for (const item of journal.reviews) {
+        try {
+          const correction = journal.corrections.get(item.entry.id);
+          const entry = correction
+            ? { ...item.entry, rating: correction.rating, correct: correction.rating > 1 }
+            : item.entry;
+          this.applyReview(entry);
+          applied += 1;
+          if (applied % 500 === 0) onProgress(applied);
+        } catch (err) {
+          journal.bad.push({ line: item.line, error: err.message });
+        }
+      }
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+    return { applied, corrections: journal.corrections.size, skipped: journal.bad.length, bad: journal.bad };
   }
 
   /** 逐行重放一個 JSONL。檔案不存在視為零行，不是錯誤——打卡檔要等第一次打卡才出現。 */
@@ -544,7 +607,7 @@ export class Store {
     return { applied, skipped: bad.length, bad };
   }
 
-  /** 兩個事實檔的體積與行數，doctor 用。 */
+  /** 作答與打卡事實檔的體積與行數，doctor 用。 */
   journalInfo() {
     if (!existsSync(this.jsonlPath)) return { exists: false, bytes: 0 };
     return { exists: true, bytes: statSync(this.jsonlPath).size };
@@ -564,51 +627,23 @@ export class Store {
     const indexed = this.db
       .prepare('SELECT card_id, at, day, rating, elapsed, answered, correct, reason, ms FROM reviews ORDER BY seq')
       .all();
-    const expected = [];
-    const bad = [];
-    let lines = 0;
-
-    if (info.exists) {
-      const rl = createInterface({ input: createReadStream(this.jsonlPath, 'utf8'), crlfDelay: Infinity });
-      let lineNo = 0;
-      for await (const line of rl) {
-        lineNo += 1;
-        if (!line.trim()) continue;
-        lines += 1;
-        try {
-          const entry = JSON.parse(line);
-          if (!entry.card || !entry.at || !entry.rating || !Number.isFinite(Number(entry.elapsed))) {
-            throw new Error('缺必要欄位');
-          }
-          expected.push({
-            line: lineNo,
-            row: {
-              card_id: String(entry.card),
-              at: String(entry.at),
-              day: String(entry.day ?? localDay(new Date(entry.at))),
-              rating: Number(entry.rating),
-              elapsed: Number(entry.elapsed),
-              answered: entry.answered ?? null,
-              correct: entry.correct === null || entry.correct === undefined ? null : Number(entry.correct),
-              reason: entry.reason ?? null,
-              ms: entry.ms ?? null,
-            },
-          });
-        } catch (err) {
-          bad.push({ line: lineNo, error: err.message });
-        }
-      }
-    }
+    const journal = await readReviewEvents(this.jsonlPath);
+    const expected = journal.reviews.map(({ line, entry }) => {
+      const correction = journal.corrections.get(entry.id);
+      const effective = correction ? { ...entry, rating: correction.rating, correct: correction.rating > 1 } : entry;
+      return { line, row: reviewMirror(effective) };
+    });
 
     const at = firstRowDifference(expected.map((x) => x.row), indexed);
     return {
       ...info,
-      lines,
+      lines: journal.lines,
       valid: expected.length,
+      corrections: journal.corrections.size,
       indexed: indexed.length,
-      bad,
+      bad: journal.bad,
       mismatchAt: at === null ? null : (expected[at]?.line ?? at + 1),
-      inSync: bad.length === 0 && at === null,
+      inSync: journal.bad.length === 0 && at === null,
     };
   }
 
@@ -672,6 +707,64 @@ export class Store {
       inSync: at === null && (metaCards === null || metaCards === cards.length),
     };
   }
+}
+
+/** 讀完整條作答事件流；更正只能指向前面一筆可人工評分且有 id 的作答。 */
+async function readReviewEvents(file) {
+  if (!existsSync(file)) return { lines: 0, reviews: [], corrections: new Map(), bad: [] };
+  const rl = createInterface({ input: createReadStream(file, 'utf8'), crlfDelay: Infinity });
+  const reviews = [];
+  const byId = new Map();
+  const eventIds = new Set();
+  const corrections = new Map();
+  const bad = [];
+  let lines = 0;
+  let lineNo = 0;
+  for await (const line of rl) {
+    lineNo += 1;
+    if (!line.trim()) continue;
+    lines += 1;
+    try {
+      const entry = JSON.parse(line);
+      if (entry.type === 'rating-correction') {
+        if (!entry.id || !entry.target || !entry.at || !Number.isInteger(entry.rating)
+          || entry.rating < 1 || entry.rating > 4) throw new Error('評分更正缺必要欄位');
+        if (eventIds.has(entry.id)) throw new Error('事件 id 重複');
+        const target = byId.get(entry.target);
+        if (!target) throw new Error('評分更正找不到原作答');
+        if (!target.selfRated) throw new Error('評分更正只能套用到人工評分');
+        eventIds.add(entry.id);
+        corrections.set(entry.target, entry);
+        continue;
+      }
+      if (!entry.card || !entry.at || !entry.rating || !Number.isFinite(Number(entry.elapsed))) {
+        throw new Error('缺必要欄位');
+      }
+      if (entry.id && eventIds.has(entry.id)) throw new Error('事件 id 重複');
+      if (entry.id) {
+        eventIds.add(entry.id);
+        byId.set(entry.id, entry);
+      }
+      reviews.push({ line: lineNo, entry });
+    } catch (err) {
+      bad.push({ line: lineNo, error: err.message });
+    }
+  }
+  return { lines, reviews, corrections, bad };
+}
+
+function reviewMirror(entry) {
+  return {
+    card_id: String(entry.card),
+    at: String(entry.at),
+    day: String(entry.day ?? localDay(new Date(entry.at))),
+    rating: Number(entry.rating),
+    elapsed: Number(entry.elapsed),
+    answered: entry.answered ?? null,
+    correct: entry.correct === null || entry.correct === undefined ? null : Number(entry.correct),
+    reason: entry.reason ?? null,
+    ms: entry.ms ?? null,
+  };
 }
 
 function firstRowDifference(expected, actual) {
@@ -856,6 +949,24 @@ Object.assign(Store.prototype, {
     const fresh = limitKindRuns(interleaveKinds(lanes, want), want, due);
 
     return [...due, ...fresh];
+  },
+
+  /** 從統計頁開出的有限弱點批次。只取曾答錯的舊卡，不補新卡，也不受到期日限制。 */
+  queueWeak(limit = 20, scope = {}) {
+    const [clause, params] = scopeClause(scope);
+    const candidates = this.db.prepare(
+      `SELECT c.payload, s.due, s.stability, s.difficulty, s.reps, s.lapses
+       FROM states s JOIN cards c ON c.id = s.card_id
+       WHERE s.lapses > 0${clause}
+       ORDER BY s.lapses DESC, s.difficulty DESC, s.last_review ASC LIMIT ?`,
+    ).all(...params, queueScan(limit)).map((row) => ({
+      ...JSON.parse(row.payload),
+      state: {
+        due: row.due, stability: row.stability, difficulty: row.difficulty,
+        reps: row.reps, lapses: row.lapses,
+      },
+    }));
+    return limitKindRuns(candidates, limit);
   },
 
   // ---- 統計 -------------------------------------------------------------

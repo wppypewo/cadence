@@ -103,12 +103,14 @@ export function daysToExam(examDate, now = new Date()) {
  * @param {number}   input.reviewsToday 今天已作答次數
  * @param {number}   input.streakDays   連續練習天數
  * @param {Object}   [input.checkins]   store.checkinState() 的輸出，{CO:{...}, PO:{...}}
+ * @param {Object}   [input.practiceToday] 今日四科實作紀錄；它證明做過，不代表能力分數
  * @param {Date}     [input.now]
  */
 export function buildToday(input) {
   const now = input.now ?? new Date();
   const stats = new Map((input.byKind ?? []).map((r) => [r.kind, r]));
   const checkins = input.checkins ?? {};
+  const practiceToday = input.practiceToday ?? {};
 
   // 新卡上限是**全域共用**的一個數字，不是每科一份。
   // 這裡刻意不把它拆成四份：拆法沒有任何依據，而且拆了會騙人——
@@ -125,15 +127,20 @@ export function buildToday(input) {
     // 沒有紀錄時給的是「還沒做」而不是 undefined——前端拿 done 決定按鈕文字，
     // undefined 會畫出一顆狀態不明的鍵。
     const c = checkins[s.id] ?? {};
+    const attempt = practiceToday[s.id] ?? null;
     const check = s.check
       ? {
         checkable: true,
-        done: c.done ?? false,
+        // 實作紀錄本身已經證明今天做過；分數仍留在 attempt 裡，不能拿完成狀態冒充能力。
+        done: Boolean(attempt) || (c.done ?? false),
+        checkinDone: c.done ?? false,
         lastDay: c.lastDay ?? null,
         recent: c.recent ?? 0,
         window: c.window ?? 0,
+        practiced: Boolean(attempt),
+        attempt,
       }
-      : {};
+      : { practiced: Boolean(attempt), attempt };
     if (!kinds) {
       return {
         id: s.id, zh: s.zh, fr: s.fr, hint: s.hint,

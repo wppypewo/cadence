@@ -11,6 +11,7 @@ import { grade, gradePick, gradeRewrite, gradeNom } from './engine/grade.mjs';
 import { simulate, solveDailyNew, ratingDistribution } from './engine/forecast.mjs';
 import { buildToday } from './engine/today.mjs';
 import { localDay, CHECKIN_SKILLS, LEVELS } from './db.mjs';
+import { AttemptLog } from './attempts.mjs';
 
 const KINDS = ['vocab-recall', 'vocab-produce', 'conj', 'connector', 'pick', 'rw', 'nom'];
 
@@ -38,6 +39,7 @@ const STUDY_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 
 export class Api {
   constructor(store) {
     this.store = store;
+    this.attempts = new AttemptLog(store.dataDir, store.db);
     this.verbCache = null;
     this.cardTokens = new Map();
     this.tokenCards = new Map();
@@ -73,7 +75,11 @@ export class Api {
   queue(query = {}) {
     const scope = Api.scope(query);
     const limit = clampInt(query.limit, 1, 200, 20);
-    const cards = this.store.queue({ ...scope, limit });
+    const preset = query.preset ? String(query.preset) : null;
+    if (preset && preset !== 'weak') throw new HttpError(400, `不認得的練習模式：${preset}`);
+    const cards = preset === 'weak'
+      ? this.store.queueWeak(limit, scope)
+      : this.store.queue({ ...scope, limit });
     return {
       cards: cards.map((c) => this.queueCard(c)),
       remaining: {
@@ -134,6 +140,7 @@ export class Api {
     const card = this.store.card(cardId);
     if (!card) throw new HttpError(404, `找不到卡片 ${body.cardId}`);
 
+    const suppliedRating = Number.isInteger(body.rating);
     let rating = body.rating;
     let result = null;
     let correct = null;
@@ -182,10 +189,13 @@ export class Api {
       correct: correct ?? (result ? result.correct : rating > 1),
       reason: result ? result.reason : null,
       ms: Number.isFinite(body.ms) ? Math.round(body.ms) : null,
+      selfRated: suppliedRating && (card.mode === 'self' || card.kind === 'rw'),
     });
 
     return {
       phase: 'done',
+      reviewId: state.eventId,
+      selfRated: suppliedRating && (card.mode === 'self' || card.kind === 'rw'),
       rating,
       grade: result,
       answer: card.kind === 'vocab-recall' ? card.front?.gloss ?? null : card.answer ?? null,
@@ -239,6 +249,8 @@ export class Api {
       errorProfile: this.store.errorProfile(scope),
       // 紀錄檔是整份 JSONL，不隨 scope 變——它量的是磁碟，不是題庫子集。
       journal: this.store.journalInfo(),
+      practice: this.attempts.summary({ days: clampInt(query.days, 7, 365, 120) }),
+      attemptsJournal: this.attempts.info(),
     };
   }
 
@@ -344,6 +356,7 @@ export class Api {
    */
   today() {
     const s = this.store.summary();
+    const practiceToday = this.attempts.today();
     return buildToday({
       byKind: this.store.byKind(),
       newLimit: this.store.dailyNewLimit,
@@ -353,7 +366,32 @@ export class Api {
       reviewsToday: s.todayReviews,
       streakDays: s.streakDays,
       checkins: this.store.checkinState(),
+      practiceToday,
     });
+  }
+
+  practice(body) {
+    try {
+      return this.attempts.practice(body ?? {});
+    } catch (err) {
+      throw new HttpError(400, err.message);
+    }
+  }
+
+  mock(body) {
+    try {
+      return this.attempts.mock(body ?? {});
+    } catch (err) {
+      throw new HttpError(400, err.message);
+    }
+  }
+
+  async correctReview(body) {
+    try {
+      return await this.store.correctReview({ id: String(body?.id ?? ''), rating: Number(body?.rating) });
+    } catch (err) {
+      throw new HttpError(400, err.message);
+    }
   }
 
   /**

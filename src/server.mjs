@@ -127,8 +127,14 @@ async function handleApi(api, req, res, url) {
       return send(res, 200, api.settings(null));
     case 'POST /api/review':
       return send(res, 200, api.review(await body(req)));
+    case 'POST /api/review-correction':
+      return send(res, 200, await api.correctReview(await body(req)));
     case 'POST /api/checkin':
       return send(res, 200, api.checkin(await body(req)));
+    case 'POST /api/practice':
+      return send(res, 200, api.practice(await body(req)));
+    case 'POST /api/mock':
+      return send(res, 200, api.mock(await body(req)));
     case 'POST /api/settings':
       return send(res, 200, api.settings(await body(req)));
     default:
@@ -183,7 +189,7 @@ async function serveStatic(res, pathname) {
   res.writeHead(200, {
     'content-type': type,
     'cache-control': 'no-cache',
-    'content-security-policy': "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'",
+    'content-security-policy': "default-src 'self'; img-src 'self' data:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'",
     'referrer-policy': 'no-referrer',
     'x-frame-options': 'DENY',
     'x-content-type-options': 'nosniff',

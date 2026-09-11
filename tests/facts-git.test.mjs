@@ -38,7 +38,7 @@ test('沒有任何 commit 的目錄回 null：查不了不等於有問題', { sk
   }
 });
 
-test('數得出追加了幾行、少了幾行，還沒進版控的打卡檔也算', { skip: !hasGit }, () => {
+test('數得出追加了幾行、少了幾行，還沒進版控的打卡與練習檔也算', { skip: !hasGit }, () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'cadence-git-'));
   try {
     git(dir, 'init', '-q');
@@ -51,9 +51,11 @@ test('數得出追加了幾行、少了幾行，還沒進版控的打卡檔也�
 
     appendFileSync(reviews, '{"a":3}\n');
     writeFileSync(path.join(dir, 'data', 'checkins.jsonl'), '{"skill":"CO"}\n{"skill":"PO"}\n');
+    writeFileSync(path.join(dir, 'data', 'attempts.jsonl'), '{"type":"practice"}\n');
     assert.deepEqual(uncommittedFacts(dir), [
       { file: 'data/reviews.jsonl', added: 1, removed: 0, untracked: false },
       { file: 'data/checkins.jsonl', added: 2, removed: 0, untracked: true },
+      { file: 'data/attempts.jsonl', added: 1, removed: 0, untracked: true },
     ]);
 
     // git add 了但沒 commit，一樣還沒備份。

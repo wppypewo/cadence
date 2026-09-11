@@ -1,7 +1,7 @@
 /**
  * 事實檔有幾行還沒進 git。
  *
- * data/reviews.jsonl 與 data/checkins.jsonl 是唯二不可重建的資料，
+ * data/reviews.jsonl、data/checkins.jsonl 與 data/attempts.jsonl 都不可重建，
  * 而 repo 是它們唯一的異地備份。App 只負責追加，不會替人 commit——
  * 所以作答了一個月、一次都沒 commit 的話，那一個月只存在這台電腦上，doctor 卻照樣全綠。
  * 這支讓 doctor 說得出「有幾行只在這台電腦上」。
@@ -14,7 +14,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
-export const FACT_FILES = ['data/reviews.jsonl', 'data/checkins.jsonl'];
+export const FACT_FILES = ['data/reviews.jsonl', 'data/checkins.jsonl', 'data/attempts.jsonl'];
 
 /**
  * @param {string} root repo 根目錄

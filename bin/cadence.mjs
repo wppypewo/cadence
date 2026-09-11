@@ -5,7 +5,7 @@
  * 指令：
  *   serve     啟動本機伺服器（預設 http://127.0.0.1:4173）
  *   build     從 vault 與 french-exam-generator 重建題庫
- *   reindex   從 data/reviews.jsonl 與 data/checkins.jsonl 重建 SQLite 索引
+ *   reindex   從三個 JSONL 重建 SQLite 索引
  *   stats     在終端機印出目前進度
  *   forecast  考前推演
  *   doctor    檢查資料來源、題庫、索引是否一致
@@ -20,8 +20,8 @@ const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 /**
  * 題庫、索引與作答紀錄放哪裡。預設是 repo 內的 `data/`。
  *
- * 開放覆寫的理由只有一個：`data/reviews.jsonl` 是這個 repo 唯一不可重建的檔案，
- * 而測試、示範、抓畫面都會寫進去。沒有這個開關的話，想跑一次不留痕跡的伺服器
+ * 開放覆寫是為了保護三個不可重建的 JSONL；測試、示範、抓畫面都會產生事件。
+ * 沒有這個開關的話，想跑一次不留痕跡的伺服器
  * 只能整包複製 repo 再改程式，那比較容易出錯，也容易忘記改回來。
  *
  * 覆寫時目錄要自己準備好（`bank/` 與 `reviews.jsonl`），這裡不代建——
@@ -41,7 +41,7 @@ const HELP = `cadence — 本地法文複習工作台
 
   serve     [--port 4173] [--no-open]   啟動本機伺服器
   build     [--verbose]                 重建題庫（讀 vault 與 french-exam-generator）
-  reindex                               從兩個 JSONL 重建 SQLite 索引
+  reindex                               從三個 JSONL 重建 SQLite 索引
   stats     [--json]                    印出目前進度
   forecast  --exam YYYY-MM-DD [--limit 60] [--new 15] [--target 0.85]
   doctor    [--json]                    檢查資料來源與索引
@@ -131,15 +131,22 @@ async function build(flags) {
 
 async function reindex() {
   const { Store } = await import('../src/db.mjs');
+  const { AttemptLog } = await import('../src/attempts.mjs');
   const store = new Store(DATA);
+  const attempts = new AttemptLog(DATA, store.db);
   const t0 = Date.now();
   const result = await store.reindex();
+  const practice = await attempts.reindex();
   store.close();
-  const extra = result.checkins ? `，打卡 ${result.checkins} 筆` : '';
-  process.stdout.write(`重建 ${result.applied} 筆紀錄${extra}，耗時 ${Date.now() - t0} ms。\n`);
-  if (result.skipped) {
-    process.stdout.write(`跳過 ${result.skipped} 行壞掉的紀錄：\n`);
-    for (const b of result.bad.slice(0, 10)) process.stdout.write(`  第 ${b.line} 行：${b.error}\n`);
+  const extra = [result.corrections ? `評分更正 ${result.corrections} 筆` : null,
+    result.checkins ? `打卡 ${result.checkins} 筆` : null, practice.applied ? `實作／模考 ${practice.applied} 筆` : null]
+    .filter(Boolean).join('，');
+  process.stdout.write(`重建 ${result.applied} 筆作答${extra ? `，${extra}` : ''}，耗時 ${Date.now() - t0} ms。\n`);
+  if (result.skipped || practice.skipped) {
+    process.stdout.write(`跳過 ${result.skipped + practice.skipped} 行壞掉的紀錄：\n`);
+    for (const b of [...result.bad, ...practice.bad.map((x) => ({ ...x, file: 'attempts.jsonl' }))].slice(0, 10)) {
+      process.stdout.write(`  ${b.file ? `${b.file} ` : ''}第 ${b.line} 行：${b.error}\n`);
+    }
     process.exitCode = 1;
   }
 }
@@ -218,7 +225,7 @@ async function forecast(flags) {
 
 async function doctor(flags) {
   const { checkSources } = await import('../src/build/sources.mjs');
-  const report = { sources: await checkSources(), bank: null, index: null, journal: null, checkins: null };
+  const report = { sources: await checkSources(), bank: null, index: null, journal: null, checkins: null, attempts: null };
 
   const bankFile = path.join(DATA, 'bank', 'cards.json');
   report.bank = existsSync(bankFile)
@@ -227,7 +234,9 @@ async function doctor(flags) {
 
   if (report.bank.exists) {
     const { Store } = await import('../src/db.mjs');
+    const { AttemptLog } = await import('../src/attempts.mjs');
     const store = new Store(DATA);
+    const attempts = new AttemptLog(DATA, store.db);
     report.bank = { ...report.bank, ...await store.auditBank(report.bank.meta) };
     report.index = {
       cards: store.cardCount(),
@@ -235,8 +244,10 @@ async function doctor(flags) {
       reviews: store.db.prepare('SELECT COUNT(*) n FROM reviews').get().n,
     };
     report.index.checkins = store.db.prepare('SELECT COUNT(*) n FROM checkins').get().n;
+    report.index.attempts = store.db.prepare('SELECT COUNT(*) n FROM practice_events').get().n;
     report.journal = await store.auditJournal();
     report.checkins = await store.auditCheckins();
+    report.attempts = await attempts.audit();
     store.close();
   }
 
@@ -254,11 +265,15 @@ async function doctor(flags) {
     const bad = report.checkins.bad.length ? `，另有 ${report.checkins.bad.length} 行無法重放` : '';
     problems.push(`打卡紀錄與索引內容不一致：折疊後 ${report.checkins.states} 天、索引 ${report.checkins.indexed} 天${bad}。跑 npm run reindex`);
   }
+  if (report.attempts && !report.attempts.inSync) {
+    const bad = report.attempts.bad.length ? `，另有 ${report.attempts.bad.length} 行無法重放` : '';
+    problems.push(`實作練習紀錄與索引內容不一致：JSONL 有效 ${report.attempts.valid} 筆、索引 ${report.attempts.indexed} 筆${bad}。跑 npm run reindex`);
+  }
 
   // 事實檔的版控狀態。只在 DATA 就是 repo 自己的 data/ 時查：
   // CADENCE_DATA 指到別處（測試、暫存區）時，那裡的檔本來就不歸這個 repo 管。
   // 沒 commit 只是提醒，不算問題、不改 exit code——作答完當下沒 commit 是常態；
-  // 行數變少才是問題，因為這兩個檔只增不改。
+  // 行數變少才是問題，因為這三個檔只增不改。
   const warnings = [];
   if (DATA === path.join(ROOT, 'data')) {
     const { uncommittedFacts } = await import('../src/facts-git.mjs');
@@ -283,7 +298,8 @@ async function doctor(flags) {
     if (report.index) process.stdout.write(`  索引       卡 ${report.index.cards.toLocaleString()}　狀態 ${report.index.states.toLocaleString()}　紀錄 ${report.index.reviews.toLocaleString()}\n`);
     if (report.journal) process.stdout.write(`${report.journal.inSync ? '✓' : '✗'} 複習紀錄   ${report.journal.lines} 行，${(report.journal.bytes / 1024).toFixed(1)} KB${report.journal.inSync ? '，逐筆一致' : '，內容不一致'}\n`);
     if (report.checkins?.exists || report.index?.checkins) process.stdout.write(`${report.checkins.inSync ? '✓' : '✗'} 打卡紀錄   ${report.checkins.lines} 行，索引 ${report.index.checkins} 天${report.checkins.inSync ? '，折疊後一致' : '，內容不一致'}\n`);
-    if (report.git && !report.git.length) process.stdout.write('✓ 版控       兩個事實檔都已 commit\n');
+    if (report.attempts?.exists || report.index?.attempts) process.stdout.write(`${report.attempts.inSync ? '✓' : '✗'} 實作紀錄   ${report.attempts.lines} 行，索引 ${report.index.attempts} 筆${report.attempts.inSync ? '，逐筆一致' : '，內容不一致'}\n`);
+    if (report.git && !report.git.length) process.stdout.write('✓ 版控       三個事實檔都已 commit\n');
     if (problems.length) process.stdout.write(`\n要處理的事：\n${problems.map((p) => `  · ${p}`).join('\n')}\n`);
     if (warnings.length) process.stdout.write(`\n提醒：\n${warnings.map((p) => `  · ${p}`).join('\n')}\n`);
   }
