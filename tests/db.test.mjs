@@ -290,7 +290,7 @@ test('queue 先給到期卡，剩餘額度按頻率補新卡', async () => {
   }
 });
 
-test('queue 保留優先序，但有其他題型時不連續塞超過兩張同類卡', async () => {
+test('新卡逐題型輪流取，題型內仍按頻率，開頭頻率高的題型排在每一輪前面', async () => {
   const mixed = [
     ...[100, 99, 98, 97, 96].map((freq, i) => card(`recall-${i}`, { freq })),
     card('conj-low', { kind: 'conj', mode: 'typed', freq: 10 }),
@@ -299,12 +299,79 @@ test('queue 保留優先序，但有其他題型時不連續塞超過兩張同�
   const [store, dir] = await open(mixed);
   try {
     const q = store.queue({ limit: mixed.length, newLimit: mixed.length });
+    // 第一輪三種各一張；另外兩種取完之後只剩 recall，只能連著出。
     assert.deepEqual(q.map((c) => c.id), [
-      'recall-0', 'recall-1', 'conj-low', 'recall-2', 'recall-3', 'connector-low', 'recall-4',
+      'recall-0', 'conj-low', 'connector-low', 'recall-1', 'recall-2', 'recall-3', 'recall-4',
     ]);
-    for (let i = 2; i < q.length; i += 1) {
-      assert.ok(!(q[i].kind === q[i - 1].kind && q[i].kind === q[i - 2].kind));
-    }
+  } finally {
+    cleanup(store, dir);
+  }
+});
+
+test('freq 0 的手寫題型也排得進新卡，不會被幾十張高頻卡擠到永遠輪不到', async () => {
+  // 真實題庫裡連接詞／挑連接詞／改寫三種的 freq 全是 0。舊版跨題型直接比頻率，
+  // 這三種排在一萬兩千多名之後——這個測試就是那個情況的縮小版。
+  const bank = [
+    ...Array.from({ length: 40 }, (_, i) => card(`recall-${i}`, { freq: 100 - i })),
+    card('connector-a', { kind: 'connector', mode: 'choice', level: 'B1', freq: 0 }),
+    card('pick-a', { kind: 'pick', mode: 'typed', level: 'B1', freq: 0 }),
+    card('rw-a', { kind: 'rw', mode: 'rewrite', level: 'B1', freq: 0 }),
+  ];
+  const [store, dir] = await open(bank);
+  try {
+    const q = store.queue({ limit: 8, newLimit: 8 });
+    const kinds = new Set(q.map((c) => c.kind));
+    for (const k of ['vocab-recall', 'connector', 'pick', 'rw']) assert.ok(kinds.has(k), `${k} 應該出現在前 8 張`);
+    const recalls = q.filter((c) => c.kind === 'vocab-recall').map((c) => c.id);
+    assert.deepEqual(recalls, recalls.slice().sort((a, b) => Number(a.split('-')[1]) - Number(b.split('-')[1])));
+    assert.equal(recalls[0], 'recall-0');
+  } finally {
+    cleanup(store, dir);
+  }
+});
+
+test('每日新卡上限設成 null 就不設上限，queue 用滿整批', async () => {
+  const [store, dir] = await open();
+  try {
+    const now = new Date();
+    store.review({ cardId: 'a1-recall-1', rating: 3, correct: true, at: now });
+    store.set('dailyNewLimit', null);
+    assert.equal(store.dailyNewLimit, null);
+    // 剩下四張沒學過的全部出來；舊寫法會把 null 當成 0 或 15。
+    assert.equal(store.queue({ limit: 10, now }).filter((c) => c.state === null).length, 4);
+    // 呼叫端明確傳 null 也一樣。
+    assert.equal(store.queue({ limit: 10, now, newLimit: null }).filter((c) => c.state === null).length, 4);
+  } finally {
+    cleanup(store, dir);
+  }
+});
+
+test('起始等級只擋新卡：低級新卡不出，已學過的低級卡照常到期，側欄明確勾選時以勾選為準', async () => {
+  const [store, dir] = await open();
+  try {
+    const now = new Date(2026, 8, 9, 12, 0);
+    store.review({ cardId: 'a1-recall-1', rating: 1, correct: false, at: now });
+    const tomorrow = new Date(now.getTime() + DAY_MS);
+    store.set('startLevel', 'A2');
+    assert.equal(store.startLevel, 'A2');
+
+    const q = store.queue({ limit: 10, now: tomorrow });
+    assert.equal(q[0].id, 'a1-recall-1');
+    assert.deepEqual(q.filter((c) => c.state === null).map((c) => c.level), ['A2', 'A2']);
+    assert.equal(store.newCount(), 2);
+
+    // 側欄只勾 A1：那是當下的明確指示，起始等級讓位。
+    const onlyA1 = store.queue({ limit: 10, now: tomorrow, levels: ['A1'] });
+    assert.deepEqual(onlyA1.filter((c) => c.state === null).map((c) => c.id).sort(), ['a1-conj-1', 'a1-recall-2']);
+
+    // byKind 的 fresh 扣掉起始等級以下的，total - seen 不扣。
+    const recall = store.byKind({}, tomorrow).find((r) => r.kind === 'vocab-recall');
+    assert.equal(recall.total - recall.seen, 2);
+    assert.equal(recall.fresh, 1);
+
+    // 不認得的值當成沒設，不會讓整個佇列空掉。
+    store.set('startLevel', 'C1');
+    assert.equal(store.startLevel, null);
   } finally {
     cleanup(store, dir);
   }
@@ -433,6 +500,7 @@ test('設定另存 JSON，刪掉可重建的 SQLite 後仍能恢復', async () =
     store.set('desiredRetention', 0.86);
     store.set('dailyNewLimit', 23);
     store.set('examDate', '2027-05-15');
+    store.set('startLevel', 'B1');
     assert.equal(existsSync(path.join(dir, 'settings.json')), true);
     store.close();
     store = null;
@@ -443,8 +511,18 @@ test('設定另存 JSON，刪掉可重建的 SQLite 後仍能恢復', async () =
       assert.equal(restored.desiredRetention, 0.86);
       assert.equal(restored.dailyNewLimit, 23);
       assert.equal(restored.get('examDate'), '2027-05-15');
+      assert.equal(restored.startLevel, 'B1');
+      // 「不設上限」存成 null，重建後要還是 null，不能變回預設的 15。
+      restored.set('dailyNewLimit', null);
     } finally {
       restored.close();
+    }
+    rmSync(path.join(dir, 'cadence.db'), { force: true });
+    const again = new Store(dir);
+    try {
+      assert.equal(again.dailyNewLimit, null);
+    } finally {
+      again.close();
     }
   } finally {
     if (store) store.close();

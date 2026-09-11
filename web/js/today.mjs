@@ -240,7 +240,12 @@ function countLine(task) {
   }
   if (task.newAvailable > 0) {
     line.append(h('span.sep', { text: '・' }));
-    line.append(h('span.part', { text: `可再學新卡最多 ${num(task.newAvailable)} 張` }));
+    // 不設上限時沒有共用額度，這個數就是這一科還剩幾張新卡，不必再寫「最多」。
+    line.append(h('span.part', {
+      text: task.newUnlimited
+        ? `還有 ${num(task.newAvailable)} 張新卡`
+        : `可再學新卡最多 ${num(task.newAvailable)} 張`,
+    }));
   }
   return line;
 }
@@ -306,14 +311,27 @@ function firstFence(text) {
 }
 
 function footer(data) {
-  const bits = [
-    `今天總共 ${num(data.dayTotal)} 張：到期 ${num(data.dueTotal)} 張，新卡最多 ${num(data.newAvailable)} 張。`,
-    `每日新卡上限 ${data.newLimit} 張，今天已用 ${data.newToday} 張，剩 ${data.newBudget} 張。`,
-    // 額度共用是上面每一列都不寫總數的原因，所以這句要留在這裡當總解釋。
-    '這個額度兩科共用：先打開哪一科，那一科就先把額度用掉。',
-  ];
-  if (data.pendingCards === 0 && data.newBudget === 0) {
+  const bits = data.newLimit === null
+    ? [
+      // 不設上限時「今天總共幾張」會把一萬多張沒學過的卡全算進去，那個數沒有意義，所以不寫。
+      `今天到期 ${num(data.dueTotal)} 張。`,
+      `新卡不設每日上限，今天已學 ${num(data.newToday)} 張，還有 ${num(data.newAvailable)} 張沒學過。`,
+      // 這是使用者自己選的，但代價要寫在看得到的地方。
+      '今天學的每一張新卡，幾天內都會回來變成到期卡；想知道累積起來有多少，到推演頁算一次。',
+    ]
+    : [
+      `今天總共 ${num(data.dayTotal)} 張：到期 ${num(data.dueTotal)} 張，新卡最多 ${num(data.newAvailable)} 張。`,
+      `每日新卡上限 ${data.newLimit} 張，今天已用 ${data.newToday} 張，剩 ${data.newBudget} 張。`,
+      // 額度共用是上面每一列都不寫總數的原因，所以這句要留在這裡當總解釋。
+      '這個額度兩科共用：先打開哪一科，那一科就先把額度用掉。',
+    ];
+  // pendingCards 為 0 已經代表每一科「到期 0、可學新卡 0」，不必再另外看額度。
+  if (data.pendingCards === 0) {
     bits.unshift('卡片的部分今天已經清空了。');
+  }
+  // 起始等級會讓某些新卡永遠不出現。不寫出來的話，A1 那一千多張會像是被弄丟了。
+  if (data.startLevel && data.startLevel !== 'A1') {
+    bits.push(`新卡從 ${data.startLevel} 起，更低等級的新卡不會出現；已經學過的照常複習。`);
   }
   // 卡片做完不等於今天做完：CO／PO 沒有卡片，PE 的卡片也練不到整篇作文。
   // 這句話放在頁尾，因為它問的是「今天還剩什麼」，那正是頁尾在回答的事。

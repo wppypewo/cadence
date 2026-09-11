@@ -27,7 +27,8 @@ export function forecastView(root, ctx) {
   form.append(
     field('考試日期', exam, null),
     field('每天最多做', limit, '含新卡'),
-    field('每天學新卡', fresh, null),
+    // 設定成不設上限時，這一格的預設 15 不是設定值，要講明，不然會被當成「照設定推演」。
+    field('每天學新卡', fresh, ctx.settings?.dailyNewLimit === null ? '設定是不設上限，這裡填預計每天學幾張' : null),
     field('目標答對率 %', target, '會反推需要的新卡量'),
     h('button.btn.btn-primary', { type: 'submit', text: '推演' }),
   );

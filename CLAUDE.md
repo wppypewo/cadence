@@ -13,7 +13,7 @@
 
 ```bash
 npm run lint   # node --check 全檔
-npm test       # 229 題，含 732 組 FSRS 黃金向量
+npm test       # 240 題，含 732 組 FSRS 黃金向量
 ```
 
 兩個都綠才算完成。動到 `src/engine/fsrs.mjs` 時，黃金向量測試紅了代表移植跑掉了，不要改測試去配合實作。

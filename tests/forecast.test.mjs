@@ -186,3 +186,11 @@ test('solveDailyNew：達不到目標時誠實回報，並給出實際能到的�
   assert.equal(r.recommended.dailyNew, r.ceiling.dailyNew);
   assert.ok(r.tried.some((t) => t.dailyNew === r.recommended.dailyNew));
 });
+
+test('locked 的卡（低於起始等級的新卡）不會被學，考試那天算成沒碰過', () => {
+  const cards = makeCards(50, 0, FROM).map((c, i) => (i < 30 ? { ...c, locked: true } : c));
+  const r = simulate(baseOpts({ cards, dailyNew: 10 }));
+  const learned = r.days.reduce((a, d) => a + d.learned, 0);
+  assert.equal(learned, 20);
+  assert.equal(r.buckets.untouched, 30);
+});

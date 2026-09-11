@@ -10,10 +10,9 @@ import { fileURLToPath } from 'node:url';
 import { grade, gradePick, gradeRewrite, gradeNom } from './engine/grade.mjs';
 import { simulate, solveDailyNew, ratingDistribution } from './engine/forecast.mjs';
 import { buildToday } from './engine/today.mjs';
-import { localDay, CHECKIN_SKILLS } from './db.mjs';
+import { localDay, CHECKIN_SKILLS, LEVELS } from './db.mjs';
 
 const KINDS = ['vocab-recall', 'vocab-produce', 'conj', 'connector', 'pick', 'rw', 'nom'];
-const LEVELS = ['A1', 'A2', 'B1'];
 
 /**
  * 可以被 /api/doc 讀出去的檔案，白名單寫死。
@@ -65,6 +64,7 @@ export class Api {
         desiredRetention: this.store.desiredRetention,
         dailyNewLimit: this.store.dailyNewLimit,
         examDate: this.store.get('examDate', null),
+        startLevel: this.store.startLevel,
       },
       meta: this.store.get('bankMeta', null),
     };
@@ -267,7 +267,9 @@ export class Api {
       secondsPerCard,
     };
 
-    const plan = simulate({ ...base, dailyNew: clampInt(query.new, 0, 200, this.store.dailyNewLimit) });
+    // 設定成不設上限時沒有「照設定推演」這回事，前端會請使用者自己填一個數；
+    // 真的沒填才退回 15，模擬需要一個數字。
+    const plan = simulate({ ...base, dailyNew: clampInt(query.new, 0, 200, this.store.dailyNewLimit ?? 15) });
     const solved = query.target
       ? solveDailyNew({ ...base, target: Number(query.target) })
       : null;
@@ -303,12 +305,17 @@ export class Api {
       params.push(...scope.levels);
     }
     const clause = where.length ? ` WHERE ${where.join(' AND ')}` : '';
-    return this.store.db
+    const rows = this.store.db
       .prepare(
-        `SELECT c.id, s.stability, s.difficulty, s.due
+        `SELECT c.id, c.level, s.stability, s.difficulty, s.due
          FROM cards c LEFT JOIN states s ON s.card_id = c.id${clause}`,
       )
       .all(...params);
+    // 起始等級以下、還沒學過的卡，出題時永遠不會拿出來。推演若把它們當成排隊中的新卡，
+    // 會以為考前學得完，實際上一張都不會學——標成 locked，引擎只算不學。
+    const fresh = this.store.freshScope(scope).levels;
+    if (scope.levels?.length || !fresh?.length) return rows;
+    return rows.map((r) => (r.stability == null && !fresh.includes(r.level) ? { ...r, locked: true } : r));
   }
 
   /** 作答時間中位數。用中位數而非平均，因為「開著視窗去吃飯」會把平均拉爛。 */
@@ -339,6 +346,7 @@ export class Api {
       byKind: this.store.byKind(),
       newLimit: this.store.dailyNewLimit,
       newToday: this.store.newIntroducedToday(),
+      startLevel: this.store.startLevel,
       examDate: this.store.get('examDate', null),
       reviewsToday: s.todayReviews,
       streakDays: s.streakDays,
@@ -384,18 +392,26 @@ export class Api {
         this.store.set('desiredRetention', r);
       }
       if (body.dailyNewLimit !== undefined) {
-        this.store.set('dailyNewLimit', clampInt(body.dailyNewLimit, 0, 200, 15));
+        // null 是「不設上限」，要原樣存下來。不能丟給 clampInt：Number(null) 是 0，
+        // 那會把「不設上限」存成「一張都不給」，剛好相反。
+        this.store.set('dailyNewLimit', body.dailyNewLimit === null ? null : clampInt(body.dailyNewLimit, 0, 200, 15));
       }
       if (body.examDate !== undefined) {
         const v = body.examDate;
         if (v !== null && !/^\d{4}-\d{2}-\d{2}$/.test(v)) throw new HttpError(400, '考試日期格式需為 YYYY-MM-DD');
         this.store.set('examDate', v);
       }
+      if (body.startLevel !== undefined) {
+        const v = body.startLevel;
+        if (v !== null && !LEVELS.includes(v)) throw new HttpError(400, `起始等級只能是 ${LEVELS.join('／')} 或留空`);
+        this.store.set('startLevel', v);
+      }
     }
     return {
       desiredRetention: this.store.desiredRetention,
       dailyNewLimit: this.store.dailyNewLimit,
       examDate: this.store.get('examDate', null),
+      startLevel: this.store.startLevel,
     };
   }
 

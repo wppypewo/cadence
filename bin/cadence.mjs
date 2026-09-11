@@ -255,8 +255,26 @@ async function doctor(flags) {
     problems.push(`打卡紀錄與索引內容不一致：折疊後 ${report.checkins.states} 天、索引 ${report.checkins.indexed} 天${bad}。跑 npm run reindex`);
   }
 
+  // 事實檔的版控狀態。只在 DATA 就是 repo 自己的 data/ 時查：
+  // CADENCE_DATA 指到別處（測試、暫存區）時，那裡的檔本來就不歸這個 repo 管。
+  // 沒 commit 只是提醒，不算問題、不改 exit code——作答完當下沒 commit 是常態；
+  // 行數變少才是問題，因為這兩個檔只增不改。
+  const warnings = [];
+  if (DATA === path.join(ROOT, 'data')) {
+    const { uncommittedFacts } = await import('../src/facts-git.mjs');
+    report.git = uncommittedFacts(ROOT);
+    for (const f of report.git ?? []) {
+      if (f.removed) {
+        problems.push(`${f.file} 比上一個 commit 少了 ${f.removed} 行。這個檔只增不改，先用 git diff 看是誰動的，不要直接 commit`);
+      }
+      if (f.added) {
+        warnings.push(`${f.file} 有 ${f.added} 行還沒 commit${f.untracked ? '（整個檔還沒進版控）' : ''}，這些紀錄目前只存在這台電腦上。git add ${f.file} 後 commit`);
+      }
+    }
+  }
+
   if (flags.json) {
-    process.stdout.write(`${JSON.stringify({ ...report, problems }, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify({ ...report, problems, warnings }, null, 2)}\n`);
   } else {
     for (const [k, v] of Object.entries(report.sources)) {
       process.stdout.write(`${v.ok ? '✓' : '✗'} ${k.padEnd(10)} ${v.detail}\n`);
@@ -265,7 +283,9 @@ async function doctor(flags) {
     if (report.index) process.stdout.write(`  索引       卡 ${report.index.cards.toLocaleString()}　狀態 ${report.index.states.toLocaleString()}　紀錄 ${report.index.reviews.toLocaleString()}\n`);
     if (report.journal) process.stdout.write(`${report.journal.inSync ? '✓' : '✗'} 複習紀錄   ${report.journal.lines} 行，${(report.journal.bytes / 1024).toFixed(1)} KB${report.journal.inSync ? '，逐筆一致' : '，內容不一致'}\n`);
     if (report.checkins?.exists || report.index?.checkins) process.stdout.write(`${report.checkins.inSync ? '✓' : '✗'} 打卡紀錄   ${report.checkins.lines} 行，索引 ${report.index.checkins} 天${report.checkins.inSync ? '，折疊後一致' : '，內容不一致'}\n`);
+    if (report.git && !report.git.length) process.stdout.write('✓ 版控       兩個事實檔都已 commit\n');
     if (problems.length) process.stdout.write(`\n要處理的事：\n${problems.map((p) => `  · ${p}`).join('\n')}\n`);
+    if (warnings.length) process.stdout.write(`\n提醒：\n${warnings.map((p) => `  · ${p}`).join('\n')}\n`);
   }
   if (problems.length) process.exitCode = 1;
 }

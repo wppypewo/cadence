@@ -78,9 +78,14 @@ export function simulate(opts) {
   // 卡片狀態的可變副本。不動呼叫端傳進來的物件。
   const seen = [];
   const fresh = [];
+  // locked：還沒學過、但低於起始等級，出題時永遠不會拿出來的卡。
+  // 它們留在分母裡（考試照樣會考），只是不排進新卡隊伍，考試那天算成沒學過。
+  let locked = 0;
   for (const c of opts.cards) {
     if (c.stability != null && c.difficulty != null) {
       seen.push({ id: c.id, s: c.stability, d: c.difficulty, due: startOfDay(new Date(c.due)).getTime(), last: new Date(c.due).getTime() });
+    } else if (c.locked) {
+      locked += 1;
     } else {
       fresh.push({ id: c.id, s: null, d: null, due: null, last: null });
     }
@@ -153,7 +158,7 @@ export function simulate(opts) {
   const examTime = exam.getTime();
   let expectedRecall = 0;
   let studiedCount = 0;
-  const buckets = { strong: 0, shaky: 0, weak: 0, untouched: fresh.length - freshIdx };
+  const buckets = { strong: 0, shaky: 0, weak: 0, untouched: fresh.length - freshIdx + locked };
   for (const card of seen) {
     if (card.s == null) continue;
     studiedCount += 1;

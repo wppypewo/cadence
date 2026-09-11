@@ -39,6 +39,8 @@ CREATE TABLE IF NOT EXISTS cards (
   payload  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS cards_kind ON cards(kind, level);
+-- 新卡逐題型各取前幾張（見 queue）。沒有它，每次出題 conj 那九千張都要整批排序一次。
+CREATE INDEX IF NOT EXISTS cards_fresh ON cards(kind, freq DESC, id);
 
 -- 每張卡的 FSRS 記憶狀態。完全由 reviews 推導，reindex 會整個重算。
 CREATE TABLE IF NOT EXISTS states (
@@ -164,7 +166,13 @@ function searchHeadword(card) {
   return f.word ?? f.verb ?? f.connector ?? f.base ?? card.answer ?? '';
 }
 
-const USER_SETTINGS = ['desiredRetention', 'dailyNewLimit', 'examDate'];
+const USER_SETTINGS = ['desiredRetention', 'dailyNewLimit', 'examDate', 'startLevel'];
+
+/**
+ * 題庫裡出現的等級，由低到高。api.mjs 驗證 query 與設定時 import 這一份，
+ * 起始等級的「以上」也靠這個順序算——兩邊各寫一份的話，哪天多一級就會對不上。
+ */
+export const LEVELS = ['A1', 'A2', 'B1'];
 
 export class Store {
   /**
@@ -223,6 +231,7 @@ export class Store {
       desiredRetention: this.get('desiredRetention', 0.9),
       dailyNewLimit: this.get('dailyNewLimit', 15),
       examDate: this.get('examDate', null),
+      startLevel: this.get('startLevel', null),
     };
     const temp = `${this.settingsPath}.tmp`;
     writeFileSync(temp, `${JSON.stringify(saved, null, 2)}\n`, 'utf8');
@@ -248,8 +257,30 @@ export class Store {
     return this.get('desiredRetention', 0.9);
   }
 
+  /** 每日新卡上限。null 代表不設上限——存成 null 而不是一個很大的數，畫面才知道要改說法。 */
   get dailyNewLimit() {
     return this.get('dailyNewLimit', 15);
+  }
+
+  /**
+   * 新卡從哪一級開始引入。null 代表從 A1 起、全部都學。
+   * 只管「還沒學過的卡要不要拿出來」，已經學過的低級卡照常到期、照常複習。
+   */
+  get startLevel() {
+    const v = this.get('startLevel', null);
+    return LEVELS.includes(v) ? v : null;
+  }
+
+  /**
+   * 挑新卡時實際要用的範圍：側欄明確勾了等級就照勾的，沒勾才套起始等級。
+   * 勾選是當下的明確指示，起始等級是長期偏好，前者蓋過後者——
+   * 否則「起始 B1」加上「側欄只勾 A1」會得到一個永遠空白、也不說為什麼的佇列。
+   */
+  freshScope(scope = {}) {
+    if (scope.levels?.length) return scope;
+    const start = this.startLevel;
+    if (!start) return scope;
+    return { ...scope, levels: LEVELS.slice(LEVELS.indexOf(start)) };
   }
 
   // ---- 題庫 -------------------------------------------------------------
@@ -701,6 +732,28 @@ function queueScan(limit) {
   return Math.min(2_000, Math.max(limit, limit * 8));
 }
 
+/**
+ * 每個題型各排好一條（題型內按頻率），再一輪一張輪流取。
+ * 開頭頻率高的題型排在每一輪的前面，所以最常見的詞仍然最先出現。
+ */
+function interleaveKinds(lanes, limit) {
+  const order = lanes
+    .filter((lane) => lane.length)
+    .sort((a, b) => (b[0].freq ?? 0) - (a[0].freq ?? 0) || a[0].kind.localeCompare(b[0].kind));
+  const out = [];
+  for (let i = 0; out.length < limit; i += 1) {
+    let took = false;
+    for (const lane of order) {
+      if (i >= lane.length) continue;
+      out.push(lane[i]);
+      took = true;
+      if (out.length >= limit) break;
+    }
+    if (!took) break;
+  }
+  return out;
+}
+
 Object.assign(Store.prototype, {
   /** 今天已經第一次見過的新卡數量，用來壓住每日新卡上限。 */
   newIntroducedToday(day = localDay()) {
@@ -721,9 +774,9 @@ Object.assign(Store.prototype, {
       .get(endOfLocalDay(now), ...params).n;
   },
 
-  /** 還沒複習過的卡數量。 */
+  /** 還沒複習過、而且會被拿出來當新卡的數量（起始等級以下的不算，見 freshScope）。 */
   newCount(scope = {}) {
-    const [clause, params] = scopeClause(scope);
+    const [clause, params] = scopeClause(this.freshScope(scope));
     return this.db
       .prepare(
         `SELECT COUNT(*) n FROM cards c LEFT JOIN states s ON s.card_id = c.id
@@ -756,19 +809,30 @@ Object.assign(Store.prototype, {
     const room = limit - due.length;
     if (room <= 0) return due;
 
-    const budget = Math.max(0, (opts.newLimit ?? this.dailyNewLimit) - this.newIntroducedToday());
+    // 呼叫端明確傳 newLimit: null 也代表不設上限，所以用 hasOwn 而不是 ??。
+    const cap = Object.hasOwn(opts, 'newLimit') ? opts.newLimit : this.dailyNewLimit;
+    const budget = cap === null ? Infinity : Math.max(0, cap - this.newIntroducedToday());
     if (budget <= 0) return due;
+    const want = Math.min(room, budget);
 
-    // 新卡按 FLELex 頻率由高到低——先學常見詞，投報率最高。
-    const freshCandidates = this.db
-      .prepare(
-        `SELECT c.payload FROM cards c LEFT JOIN states s ON s.card_id = c.id
-         WHERE s.card_id IS NULL${clause}
-         ORDER BY c.freq DESC, c.id ASC LIMIT ?`,
-      )
-      .all(...params, queueScan(Math.min(room, budget)))
-      .map((r) => ({ ...JSON.parse(r.payload), state: null }));
-    const fresh = limitKindRuns(freshCandidates, Math.min(room, budget), due);
+    // 新卡在題型內按 FLELex 頻率由高到低——先學常見詞，投報率最高。
+    // 但**跨題型不能直接比頻率**：連接詞、挑連接詞、改寫三種是手寫題，建卡時 freq 一律是 0。
+    // 舊版把全部題型混在一起排，那 213 張卡排在第 12,637 名之後，
+    // 每天 15 張的速度要兩年多才輪得到，等於永遠不會出現。所以改成每個題型各取一條再輪流。
+    const [freshClause, freshParams] = scopeClause(this.freshScope(opts));
+    const kinds = this.db
+      .prepare(`SELECT DISTINCT c.kind FROM cards c WHERE 1 = 1${freshClause}`)
+      .all(...freshParams)
+      .map((r) => r.kind);
+    const lane = this.db.prepare(
+      `SELECT c.payload FROM cards c LEFT JOIN states s ON s.card_id = c.id
+       WHERE s.card_id IS NULL AND c.kind = ?${freshClause}
+       ORDER BY c.freq DESC, c.id ASC LIMIT ?`,
+    );
+    const lanes = kinds.map((kind) => lane
+      .all(kind, ...freshParams, want)
+      .map((r) => ({ ...JSON.parse(r.payload), state: null })));
+    const fresh = limitKindRuns(interleaveKinds(lanes, want), want, due);
 
     return [...due, ...fresh];
   },
@@ -905,19 +969,25 @@ Object.assign(Store.prototype, {
   /** 每個 kind 的進度。 */
   byKind(scope = {}, now = new Date()) {
     const [clause, params] = scopeClause(scope);
+    // fresh 是「還沒學過、而且會被拿出來當新卡」的張數。設了起始等級時它比 total - seen 少，
+    // 今天頁要用這個數，不然會說還有三千張新卡，實際上一張 A1 都不會出現。
+    const levels = this.freshScope(scope).levels ?? [];
+    const narrowed = !scope.levels?.length && levels.length;
+    const freshCond = narrowed ? ` AND c.level IN (${levels.map(() => '?').join(',')})` : '';
     return this.db
       .prepare(
         `SELECT c.kind,
                 COUNT(*) total,
                 SUM(CASE WHEN s.card_id IS NOT NULL THEN 1 ELSE 0 END) seen,
                 SUM(CASE WHEN s.stability >= 21 THEN 1 ELSE 0 END) mature,
-                SUM(CASE WHEN s.due < ? THEN 1 ELSE 0 END) due
+                SUM(CASE WHEN s.due < ? THEN 1 ELSE 0 END) due,
+                SUM(CASE WHEN s.card_id IS NULL${freshCond} THEN 1 ELSE 0 END) fresh
          FROM cards c LEFT JOIN states s ON s.card_id = c.id
          WHERE 1 = 1${clause}
          GROUP BY c.kind ORDER BY c.kind`,
       )
-      .all(endOfLocalDay(now), ...params)
-      .map((r) => ({ kind: r.kind, total: r.total, seen: r.seen, mature: r.mature, due: r.due }));
+      .all(endOfLocalDay(now), ...(narrowed ? levels : []), ...params)
+      .map((r) => ({ kind: r.kind, total: r.total, seen: r.seen, mature: r.mature, due: r.due, fresh: r.fresh }));
   },
 
   /** 未來 N 天的到期量，讓人看得到自己給未來的自己排了多少工作。 */

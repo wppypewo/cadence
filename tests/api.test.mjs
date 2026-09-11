@@ -393,10 +393,16 @@ test('review 缺 cardId 是 400，卡片不存在是 404', async () => {
 test('settings 擋掉超出範圍的值，合法的值寫得進去', async () => {
   const [api, store, dir] = await open();
   try {
-    assert.deepEqual(api.settings(null), { desiredRetention: 0.9, dailyNewLimit: 15, examDate: null });
+    assert.deepEqual(api.settings(null), { desiredRetention: 0.9, dailyNewLimit: 15, examDate: null, startLevel: null });
 
-    const saved = api.settings({ desiredRetention: 0.85, dailyNewLimit: 30, examDate: '2026-12-01' });
-    assert.deepEqual(saved, { desiredRetention: 0.85, dailyNewLimit: 30, examDate: '2026-12-01' });
+    const saved = api.settings({ desiredRetention: 0.85, dailyNewLimit: 30, examDate: '2026-12-01', startLevel: 'A2' });
+    assert.deepEqual(saved, { desiredRetention: 0.85, dailyNewLimit: 30, examDate: '2026-12-01', startLevel: 'A2' });
+
+    // null 是不設上限。Number(null) 是 0，若誤丟給 clampInt 就會變成「一張都不給」。
+    assert.equal(api.settings({ dailyNewLimit: null }).dailyNewLimit, null);
+    assert.equal(api.settings({ dailyNewLimit: 20 }).dailyNewLimit, 20);
+    assert.equal(caught(() => api.settings({ startLevel: 'C1' })).status, 400);
+    assert.equal(api.settings({ startLevel: null }).startLevel, null);
     assert.equal(store.desiredRetention, 0.85);
 
     // 0.98 以上的目標記憶率會讓間隔塌成每天複習，擋掉比讓人踩進去好。
@@ -609,6 +615,46 @@ test('today：新卡額度扣掉今天已引入的量', async () => {
     assert.equal(t.newToday, 1);
     assert.equal(t.newBudget, 2);
     assert.equal(t.reviewsToday, 1);
+  } finally {
+    cleanup(store, dir);
+  }
+});
+
+test('today／queue：不設上限時額度欄位回 null，新卡數以還能學的張數為準', async () => {
+  const [api, store, dir] = await open();
+  try {
+    store.set('dailyNewLimit', null);
+    const t = api.today();
+    assert.equal(t.newLimit, null);
+    assert.equal(t.newBudget, null);
+    assert.equal(t.tasks[0].newUnlimited, true);
+    assert.equal(t.tasks[0].newAvailable, 1);
+    assert.equal(t.tasks[1].newAvailable, 6);
+    const q = api.queue({ limit: 20 });
+    assert.equal(q.newLimit, null);
+    assert.equal(q.cards.length, BANK.length);
+  } finally {
+    cleanup(store, dir);
+  }
+});
+
+test('起始等級：出題、今天頁與推演三處對同一批新卡的看法一致', async () => {
+  const [api, store, dir] = await open();
+  try {
+    store.set('startLevel', 'B1');
+    // BANK 裡 A1 兩張、A2 一張，其餘四張 B1。
+    const q = api.queue({ limit: 20 });
+    assert.deepEqual([...new Set(q.cards.map((c) => c.level))], ['B1']);
+    assert.equal(q.remaining.new, 4);
+    const t = api.today();
+    assert.equal(t.startLevel, 'B1');
+    assert.equal(t.tasks[0].newAvailable, 0);
+    assert.equal(t.tasks[1].newAvailable, 4);
+    // 推演：低於起始等級、沒學過的卡標成 locked，引擎不會把它們排進新卡隊伍。
+    const states = api.scopedStates({ kinds: [], levels: [] });
+    assert.deepEqual(states.filter((s) => s.locked).map((s) => s.id).sort(), ['c:etre:present:1', 'v:chien', 'v:ecole']);
+    // 側欄明確勾了等級就不標。
+    assert.equal(api.scopedStates({ kinds: [], levels: ['A1'] }).some((s) => s.locked), false);
   } finally {
     cleanup(store, dir);
   }

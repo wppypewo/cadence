@@ -197,6 +197,8 @@ function topBar(state) {
 }
 
 function remainText(r) {
+  // newLimit 為 null 是不設上限，寫成「3/null」或「3/∞」都不如直接說今天學了幾張。
+  if (r.newLimit === null) return `待複習 ${r.remaining.due}・今天新學 ${r.newToday} 張`;
   return `待複習 ${r.remaining.due}・新卡 ${r.newToday}/${r.newLimit}`;
 }
 
@@ -608,13 +610,16 @@ function verdictPanel(card, res, next) {
 
 function finished(state, ctx, reload) {
   const r = state.remaining;
-  const nothingLeft = r && r.remaining.due === 0 && (r.newToday >= r.newLimit || r.remaining.new === 0);
+  // 不設上限（newLimit 為 null）時額度永遠用不完，只剩「新卡學光了」這一種收工方式。
+  const capHit = r && r.newLimit !== null && r.newToday >= r.newLimit;
+  const noneLeft = r && r.remaining.new === 0;
+  const nothingLeft = r && r.remaining.due === 0 && (capHit || noneLeft);
   return h('div.card.empty', {},
     icon('check'),
     h('h2', { text: state.done ? `這一輪做完了，共 ${state.done} 張` : '現在沒有到期的卡' }),
     h('p', {
       text: nothingLeft
-        ? '今天的新卡額度也用完了。休息比硬撐有效——FSRS 的排程已經替明天算好了。'
+        ? `${noneLeft ? '這個範圍裡的新卡也都學過了。' : '今天的新卡額度也用完了。'}休息比硬撐有效——FSRS 的排程已經替明天算好了。`
         : '還有卡可以練，按下面繼續。',
     }),
     h('div.study-actions', {},

@@ -217,3 +217,32 @@ test('day 是本地日期，不是 UTC 日期', () => {
   const t = buildToday({ ...BASE, now: new Date('2026-09-09T00:30:00') });
   assert.equal(t.day, '2026-09-09');
 });
+
+test('newLimit 為 null 是不設上限：newAvailable 等於還能學的張數，newBudget 回 null', () => {
+  const t = buildToday({ ...BASE, newLimit: null, newToday: 40, now: new Date('2026-09-09T10:00:00') });
+  assert.equal(t.newLimit, null);
+  // Infinity 經過 JSON 會變成 null；這裡直接給 null，前端只要看一種值。
+  assert.equal(t.newBudget, null);
+  assert.equal(t.tasks[0].newUnlimited, true);
+  assert.equal(t.tasks[0].newAvailable, 3549 - 100);
+  // PE：conj 9033、connector 0、nom 92、pick 73、rw 88、vocab-produce 3464。
+  assert.equal(t.tasks[1].newAvailable, 12750);
+  assert.equal(t.newAvailable, 3449 + 12750);
+});
+
+test('沒傳 newLimit 仍當 0，漏給不會被解讀成不設上限', () => {
+  const { newLimit, ...rest } = BASE;
+  const t = buildToday({ ...rest, now: new Date('2026-09-09T10:00:00') });
+  assert.equal(t.newBudget, 0);
+  assert.equal(t.tasks[0].newAvailable, 0);
+  assert.equal(t.tasks[0].newUnlimited, false);
+});
+
+test('byKind 帶 fresh 時新卡數以它為準：起始等級擋掉的卡不算進可學的新卡', () => {
+  const byKind = BY_KIND.map((r) => ({ ...r, fresh: r.kind === 'vocab-recall' ? 500 : r.total - r.seen }));
+  const t = buildToday({ ...BASE, byKind, newLimit: null, startLevel: 'B1', now: new Date('2026-09-09T10:00:00') });
+  assert.equal(t.tasks[0].unseen, 3449);
+  assert.equal(t.tasks[0].fresh, 500);
+  assert.equal(t.tasks[0].newAvailable, 500);
+  assert.equal(t.startLevel, 'B1');
+});

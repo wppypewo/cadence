@@ -148,6 +148,11 @@ button, input, select { font: inherit; color: inherit; }
 .field { display: flex; flex-direction: column; gap: var(--s1); }
 .field label { font-size: var(--t-sm); font-weight: 500; }
 .field .hint { font-size: var(--t-xs); color: var(--text-faint); }
+/* 欄位旁的附屬勾選框（例：每天新卡上限旁的「不設上限」）。字級比欄位標題小一階，
+   讀起來是數字框的修飾，不是另一個欄位。 */
+.inline-check { display: inline-flex; align-items: center; gap: var(--s1); font-size: var(--t-sm); white-space: nowrap; }
+.inline-check input { accent-color: var(--accent); }
+.input:disabled { opacity: .55; cursor: not-allowed; }
 
 .input {
   min-height: 40px; padding: 0 var(--s3);

@@ -51,7 +51,7 @@ const THEME_KEY = 'cadence.theme';
 
 const state = {
   scope: loadScope(),
-  settings: { desiredRetention: 0.9, dailyNewLimit: 15, examDate: null },
+  settings: { desiredRetention: 0.9, dailyNewLimit: 15, examDate: null, startLevel: null },
   meta: null,
   page: null,
   cleanup: null,
@@ -318,10 +318,25 @@ function openSettings() {
   syncRet();
   retention.addEventListener('input', syncRet);
 
+  // 上限存成 null 代表不設上限。數字框留著、只是停用，取消勾選時回到原本的數，不必重打。
+  const noCapNow = state.settings.dailyNewLimit === null;
   const fresh = h('input.input', {
     type: 'number', min: '0', max: '200', step: '1',
-    value: String(state.settings.dailyNewLimit),
+    value: String(state.settings.dailyNewLimit ?? 15),
+    disabled: noCapNow,
   });
+  const noCap = h('input', { type: 'checkbox', checked: noCapNow });
+  noCap.addEventListener('change', () => { fresh.disabled = noCap.checked; });
+  const freshRow = h('div.range-row', {},
+    fresh,
+    h('label.inline-check', {}, noCap, h('span', { text: '不設上限' })),
+  );
+
+  // 值留空代表 A1 起、全部都學，對應後端的 null。
+  const start = h('select.input', {},
+    ...[['', 'A1 起（全部都學）'], ['A2', 'A2 起（A1 的新卡不出）'], ['B1', 'B1 起（只出 B1 的新卡）']]
+      .map(([value, text]) => h('option', { value, text, selected: (state.settings.startLevel ?? '') === value })),
+  );
   const exam = h('input.input', { type: 'date', value: state.settings.examDate ?? '' });
 
   const err = h('p.field-error', { text: '', hidden: true });
@@ -331,8 +346,11 @@ function openSettings() {
     field('目標記憶率', h('div.range-row', {}, retention, retOut),
       '排程時要維持的答對率。調高複習變密、總量變大；調低省時間但忘得多。FSRS 預設 0.90。'),
 
-    field('每天新卡上限', fresh,
-      '一天最多引入幾張沒學過的卡。今天學的每一張，未來幾週都會回來找你。'),
+    field('每天新卡上限', freshRow,
+      '一天最多引入幾張沒學過的卡。今天學的每一張，未來幾週都會回來找你——不設上限時，到期量會跟著學的量一起變大，推演頁算得出會多多少。'),
+
+    field('新卡從哪一級開始', start,
+      '只影響還沒學過的卡；已經學過的低級卡照常到期、照常複習。側欄勾了等級時以側欄為準。'),
 
     field('考試日期', exam,
       '推演頁的預設日期。留空表示還沒有確定的考試。'),
@@ -348,8 +366,9 @@ function openSettings() {
     try {
       await saveSettings({
         desiredRetention: Number(retention.value),
-        dailyNewLimit: Number(fresh.value),
+        dailyNewLimit: noCap.checked ? null : Number(fresh.value),
         examDate: exam.value || null,
+        startLevel: start.value || null,
       });
       dismiss();
       // 今天與推演直接顯示考試日期或新卡額度，儲存後若不重畫會繼續顯示舊值。

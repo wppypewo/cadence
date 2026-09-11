@@ -96,7 +96,8 @@ export function daysToExam(examDate, now = new Date()) {
  *
  * @param {Object}   input
  * @param {Array}    input.byKind    store.byKind() 的輸出：{kind,total,seen,mature,due}
- * @param {number}   input.newLimit  每日新卡上限（store.dailyNewLimit）
+ * @param {number|null} input.newLimit  每日新卡上限（store.dailyNewLimit），null 為不設上限
+ * @param {string?}  [input.startLevel] 新卡從哪一級開始（store.startLevel），只拿來顯示
  * @param {number}   input.newToday  今天已經引入的新卡數
  * @param {string?}  input.examDate  'YYYY-MM-DD' 或 null
  * @param {number}   input.reviewsToday 今天已作答次數
@@ -112,7 +113,11 @@ export function buildToday(input) {
   // 新卡上限是**全域共用**的一個數字，不是每科一份。
   // 這裡刻意不把它拆成四份：拆法沒有任何依據，而且拆了會騙人——
   // 實際上先打開哪一科，那一科就把當天的新卡額度吃光。把這件事直說。
-  const newBudget = Math.max(0, (input.newLimit ?? 0) - (input.newToday ?? 0));
+  //
+  // newLimit 為 null 代表使用者設定成不設上限；沒傳（undefined）則照舊當 0。
+  // 兩者分開是刻意的：null 是一個選擇，undefined 是呼叫端漏給，後者不該被解讀成「無限」。
+  const unlimited = input.newLimit === null;
+  const newBudget = unlimited ? Infinity : Math.max(0, (input.newLimit ?? 0) - (input.newToday ?? 0));
 
   const tasks = SKILLS.map((s) => {
     const kinds = SKILL_KINDS[s.id];
@@ -146,19 +151,24 @@ export function buildToday(input) {
     const seen = sum('seen');
     const due = sum('due');
     const unseen = total - seen;
+    // 會被拿出來當新卡的張數。設了起始等級時比 unseen 少（低於起始等級的新卡不出）；
+    // 舊的 byKind 沒有 fresh 欄，就退回 unseen。
+    const fresh = rows.every((r) => r.fresh != null) ? sum('fresh') : unseen;
     return {
       id: s.id, zh: s.zh, fr: s.fr, hint: s.hint,
       mode: 'cards', kinds, tracked: true,
       // doc 為 null 代表這一科只有卡片。PE 有值，因為卡片練不到整篇寫作。
       doc: s.doc ?? null,
       ...check,
-      total, seen, unseen, due, mature: sum('mature'),
+      total, seen, unseen, fresh, due, mature: sum('mature'),
       // 這一科最多能拿到多少新卡。額度是共用的，所以兩科的 newAvailable 會重疊——
       // 它答的是「先開這一科的話能學幾張新的」，不是「這一科分到幾張」。
-      newAvailable: Math.min(newBudget, unseen),
+      // 不設上限時沒有共用的問題，這個數就是這一科還有幾張新卡。
+      newAvailable: Math.min(newBudget, fresh),
+      newUnlimited: unlimited,
       // 同理，count 是「先開這一科」的單科上限，**不可以跨科相加**。
       // 想要今天的總量請用下面的 dayTotal。
-      count: due + Math.min(newBudget, unseen),
+      count: due + Math.min(newBudget, fresh),
     };
   });
 
@@ -167,16 +177,18 @@ export function buildToday(input) {
   // 而相加出來的答案是錯的——新卡那一段會被重複計算。
   const cardTasks = tasks.filter((t) => t.mode === 'cards');
   const dueTotal = cardTasks.reduce((a, t) => a + t.due, 0);
-  const unseenTotal = cardTasks.reduce((a, t) => a + t.unseen, 0);
+  const freshTotal = cardTasks.reduce((a, t) => a + t.fresh, 0);
 
   return {
     day: localISODay(now),
     dueTotal,
-    newAvailable: Math.min(newBudget, unseenTotal),
-    dayTotal: dueTotal + Math.min(newBudget, unseenTotal),
-    newBudget,
-    newLimit: input.newLimit ?? 0,
+    newAvailable: Math.min(newBudget, freshTotal),
+    dayTotal: dueTotal + Math.min(newBudget, freshTotal),
+    // Infinity 經過 JSON 會變成 null，這裡直接給 null，與 newLimit 的 null 同義。
+    newBudget: unlimited ? null : newBudget,
+    newLimit: unlimited ? null : (input.newLimit ?? 0),
     newToday: input.newToday ?? 0,
+    startLevel: input.startLevel ?? null,
     reviewsToday: input.reviewsToday ?? 0,
     streakDays: input.streakDays ?? 0,
     examDate: input.examDate ?? null,
