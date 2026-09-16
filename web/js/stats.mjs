@@ -10,7 +10,7 @@
 
 import { h, icon, clear, pct, num } from './dom.mjs';
 import { api } from './net.mjs';
-import { bars, heatmap, reasonBars } from './charts.mjs';
+import { bars, heatmap, line, reasonBars } from './charts.mjs';
 
 /**
  * 題型的中文名。**這個物件的鍵序就是各類別進度的顯示順序**，
@@ -74,7 +74,7 @@ export function statsView(root, ctx) {
       stat('已掌握', s.matureCards, `共 ${num(s.totalCards)} 張・穩定度 ≥ 21 天`),
       stat('學過', s.seenCards, `未學 ${num(s.newCards)} 張`),
       stat('今天到期', s.dueNow, s.dueNow ? '去做掉它' : '沒有欠帳'),
-      stat('連續天數', s.streakDays, s.streakDays ? '每天至少答一題就算一天' : '今天答一題就開始算'),
+      stat('連續天數', s.streakDays, s.streakDays ? '卡片、實作或打卡都算活動' : '今天留下一筆活動就開始算'),
       stat('今天', s.todayReviews, accuracy === null ? '還沒開始' : `正確率 ${pct(accuracy)}`),
       stat('累計作答', s.totalReviews, `紀錄檔 ${fmtBytes(d.journal.bytes)}`),
     ));
@@ -83,7 +83,7 @@ export function statsView(root, ctx) {
     const practice = h('div.body');
     const skillGrid = h('div.practice-stats');
     for (const item of d.practice.bySkill) {
-      const performance = item.average === null ? '尚無分數' : `平均 ${pct(item.average)}`;
+      const performance = item.average === null ? '尚無分數' : `平均 ${pct(item.average)}・${item.attempts} 次樣本`;
       skillGrid.append(h('article.practice-stat', {},
         h('div', {},
           h('strong', { text: item.skill }),
@@ -106,7 +106,7 @@ export function statsView(root, ctx) {
       }
       practice.append(h('h3.section-label', { text: '最近實作' }), recent);
     }
-    body.append(panel('四科實作', `最近 120 天・紀錄檔 ${fmtBytes(d.attemptsJournal.bytes)}`, practice));
+    body.append(panel('四科實作', `最近 ${d.periodDays} 天・紀錄檔 ${fmtBytes(d.attemptsJournal.bytes)}`, practice));
 
     const mock = h('div.body');
     const latestMock = d.practice.mocks[0];
@@ -119,6 +119,10 @@ export function statsView(root, ctx) {
         h('div.mock-parts', {}, ...Object.entries(latestMock.scores).map(([skill, value]) =>
           h('span.chip', { text: `${skill} ${value.score}/${value.maxScore}` }))),
       ));
+      const trend = [...d.practice.mocks].reverse().map((item) => ({
+        x: item.day.slice(5), label: item.day, a: Math.round((item.total / item.maxTotal) * 100),
+      }));
+      if (trend.length > 1) mock.append(line(trend, { height: 150, title: '模考總分百分比趨勢', cap: '模考總分百分比；每個點是一份完整模考' }));
       const history = h('div.mock-history');
       for (const item of d.practice.mocks.slice(0, 6)) {
         history.append(h('div', {},

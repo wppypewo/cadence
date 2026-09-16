@@ -123,8 +123,16 @@ async function handleApi(api, req, res, url) {
       return send(res, 200, api.forecast(q));
     case 'GET /api/search':
       return send(res, 200, api.search(q));
+    case 'GET /api/outlook':
+      return send(res, 200, api.outlook());
+    case 'GET /api/sentence':
+      return send(res, 200, api.sentence(q));
+    case 'GET /api/weekly':
+      return send(res, 200, api.weekly());
     case 'GET /api/settings':
       return send(res, 200, api.settings(null));
+    case 'GET /api/backup':
+      return send(res, 200, api.backup());
     case 'POST /api/review':
       return send(res, 200, api.review(await body(req)));
     case 'POST /api/review-correction':

@@ -317,12 +317,53 @@ test('同一個字的看字回想與中翻法不會排在相鄰位置', async ()
   bank.push(card('conj-x', { kind: 'conj', mode: 'typed', freq: 1 }));
   const [store, dir] = await open(bank);
   try {
-    const q = store.queue({ limit: bank.length, newLimit: bank.length });
+    // 中翻法要等看字回想答過才放（見下一題），所以要看到 p、r 同場，得先把 r 答一輪、隔天再排：
+    // 那時 r 是到期卡、p 是新卡，舊版就是在這種情況下把同一個字排在一起。
+    const now = new Date(2026, 8, 9, 12, 0);
+    for (const w of ['aller', 'venir', 'faire']) {
+      store.review({ cardId: `v:${w}|VER|r`, rating: 1, correct: false, at: now });
+    }
+    const tomorrow = new Date(now.getTime() + DAY_MS);
+    const q = store.queue({ limit: bank.length, newLimit: bank.length, now: tomorrow });
     assert.equal(q.length, bank.length);
     const key = (c) => c.id.replace(/\|[rp]$/, '');
     for (let i = 1; i < q.length; i += 1) {
       assert.notEqual(key(q[i]), key(q[i - 1]), `${q[i - 1].id} 與 ${q[i].id} 相鄰`);
     }
+  } finally {
+    cleanup(store, dir);
+  }
+});
+
+test('中翻法新卡要等同一個字的看字回想答過才出，新卡數也照這個算', async () => {
+  const bank = [
+    card('v:aller|VER|r', { freq: 50 }),
+    card('v:aller|VER|p', { kind: 'vocab-produce', mode: 'typed', freq: 50 }),
+    card('v:venir|VER|r', { freq: 49 }),
+    card('v:venir|VER|p', { kind: 'vocab-produce', mode: 'typed', freq: 49 }),
+    // 沒有 |r 的中翻法不擋，否則它永遠出不來。
+    card('v:seul|ADJ|p', { kind: 'vocab-produce', mode: 'typed', freq: 10 }),
+  ];
+  const [store, dir] = await open(bank);
+  try {
+    const now = new Date(2026, 8, 9, 12, 0);
+    const ids = (q) => q.filter((c) => c.state === null).map((c) => c.id).sort();
+    assert.deepEqual(ids(store.queue({ limit: 10, newLimit: 10, now })),
+      ['v:aller|VER|r', 'v:seul|ADJ|p', 'v:venir|VER|r']);
+    assert.equal(store.newCount(), 3);
+
+    // 答錯也算「見過」：擋的是第一次見面就考拼寫，不是要先答對。
+    store.review({ cardId: 'v:aller|VER|r', rating: 1, correct: false, at: now });
+    assert.deepEqual(ids(store.queue({ limit: 10, newLimit: 10, now })),
+      ['v:aller|VER|p', 'v:seul|ADJ|p', 'v:venir|VER|r']);
+    assert.equal(store.newCount(), 3);
+
+    // 側欄只勾中翻法也照擋，byKind 的 fresh 同一個口徑。
+    const onlyP = store.queue({ limit: 10, newLimit: 10, now, kinds: ['vocab-produce'] });
+    assert.deepEqual(ids(onlyP), ['v:aller|VER|p', 'v:seul|ADJ|p']);
+    const produce = store.byKind({}, now).find((r) => r.kind === 'vocab-produce');
+    assert.equal(produce.total - produce.seen, 3);
+    assert.equal(produce.fresh, 2);
   } finally {
     cleanup(store, dir);
   }
@@ -434,6 +475,18 @@ test('streak 連續才算，斷一天就歸零', async () => {
     assert.equal(store.streak({}, new Date(now.getTime() + 3 * DAY_MS)), 0);
     // 沒有任何紀錄時是 0，不是 1。
     assert.equal(store.streak({ kinds: ['connector'] }, now), 0);
+  } finally {
+    cleanup(store, dir);
+  }
+});
+
+test('統計的連續天數不看側欄範圍：範圍外的題型有答題也算一天', async () => {
+  const [store, dir] = await open();
+  try {
+    const now = new Date();
+    store.review({ cardId: 'a1-recall-1', rating: 3, correct: true, at: now });
+    // 側欄只勾 connector，今天答的是 vocab-recall。
+    assert.equal(store.summary({ kinds: ['connector'] }, now).streakDays, 1);
   } finally {
     cleanup(store, dir);
   }

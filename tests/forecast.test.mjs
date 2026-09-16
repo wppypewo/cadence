@@ -194,3 +194,14 @@ test('locked 的卡（低於起始等級的新卡）不會被學，考試那天�
   assert.equal(learned, 20);
   assert.equal(r.buckets.untouched, 30);
 });
+
+test('有前置認讀的產出卡會在認讀卡學過後才進新卡隊伍', () => {
+  const result = simulate({
+    cards: [{ id: 'ami|p', prerequisite: 'ami|r' }, { id: 'ami|r' }],
+    from: FROM, examDate: new Date(2026, 8, 11),
+    dailyLimit: 1, dailyNew: 1, desiredRetention: 0.9,
+  });
+  assert.equal(result.days[0].learned, 1);
+  assert.equal(result.days[1].learned, 1);
+  assert.equal(result.studiedByExam, 2);
+});

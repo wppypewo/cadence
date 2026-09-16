@@ -88,6 +88,9 @@ web/
 | GET | `/api/forecast` | 考前推演 |
 | GET | `/api/search` | 查字 |
 | GET | `/api/verb/:word` | 完整變位表 |
+| GET | `/api/outlook` | 今天頁的推演句：照最近 7 天的平均題數推到考試那天記得幾張，另算完全停下來的對照。沒設考試日期回 `{examDate: null}` |
+| GET | `/api/sentence` | 今天頁「這句你認得幾個字」。預設依日期固定一句，`i` 指定第幾句；改寫題的句子要那張卡答過才放進來，免得先看到解答 |
+| GET | `/api/weekly` | 最近 7 天第一次跨過穩定度 21 天的卡 |
 | GET | `/api/settings` | 讀設定 |
 | POST | `/api/review` | 記一次作答 |
 | POST | `/api/review-correction` | 以追加事件更正剛才一筆人工評分，重放後不增加作答次數 |

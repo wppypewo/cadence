@@ -52,6 +52,7 @@ export class AttemptLog {
         ? null : integer(input.wordCount, 0, 20_000, '字數'),
       text: optionalText(input.text, 20_000, '練習文字'),
       notes: optionalText(input.notes, 4_000, '練習筆記'),
+      details: optionalDetails(input.details),
     };
     return this.append(entry);
   }
@@ -78,6 +79,7 @@ export class AttemptLog {
       at: now.toISOString(),
       day,
       source: optionalText(input.source, 120, '模考來源'),
+      baseline: input.baseline === true,
       scores,
       total,
       maxTotal,
@@ -123,7 +125,30 @@ export class AttemptLog {
           : null,
       };
     });
-    return { bySkill, recent: practices.slice(0, 20), mocks: mocks.slice(0, 10) };
+    return { periodDays: days, bySkill, recent: practices.slice(0, 20), mocks: mocks.slice(0, 10) };
+  }
+
+  /** 卡片、手動完成與四科實作都算一次學習活動。 */
+  activityStreak(now = new Date()) {
+    const days = this.db.prepare(
+      `SELECT day FROM (
+         SELECT day FROM reviews
+         UNION SELECT day FROM checkins WHERE done = 1
+         UNION SELECT day FROM practice_events
+       ) ORDER BY day DESC LIMIT 400`,
+    ).all().map((row) => row.day);
+    if (!days.length) return 0;
+    const today = localDay(now);
+    const yesterday = localDay(new Date(now.getTime() - 86_400_000));
+    if (days[0] !== today && days[0] !== yesterday) return 0;
+    let streak = 1;
+    for (let i = 1; i < days.length; i += 1) {
+      const newer = new Date(`${days[i - 1]}T00:00:00Z`).getTime();
+      const older = new Date(`${days[i]}T00:00:00Z`).getTime();
+      if (newer - older !== 86_400_000) break;
+      streak += 1;
+    }
+    return streak;
   }
 
   today(now = new Date()) {
@@ -217,6 +242,7 @@ function validateEntry(entry) {
     optionalText(entry.source, 120, '題目或來源');
     optionalText(entry.text, 20_000, '練習文字');
     optionalText(entry.notes, 4_000, '練習筆記');
+    optionalDetails(entry.details);
     return;
   }
   if (!entry.scores) throw new Error('模考缺少四科分數');
@@ -232,6 +258,15 @@ function validateEntry(entry) {
   if (entry.total !== total || entry.maxTotal !== maxTotal) throw new Error('模考總分與四科不一致');
   optionalText(entry.source, 120, '模考來源');
   optionalText(entry.notes, 4_000, '模考檢討');
+  if (entry.baseline !== undefined && typeof entry.baseline !== 'boolean') throw new Error('基準模考標記格式錯誤');
+}
+
+function optionalDetails(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'object' || Array.isArray(value)) throw new Error('練習細節格式錯誤');
+  const text = JSON.stringify(value);
+  if (text.length > 8_000) throw new Error('練習細節不能超過 8000 字');
+  return JSON.parse(text);
 }
 
 function validDay(value) {

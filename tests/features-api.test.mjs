@@ -13,7 +13,7 @@ function fixture() {
     'INSERT INTO cards(id,kind,mode,level,freq,tags,answer,accept,search,headword,payload) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
   );
   for (const card of [
-    { id: 'self', kind: 'vocab-recall', mode: 'self', level: 'A1', freq: 2, front: { word: 'école', gloss: '學校' } },
+    { id: 'self', kind: 'vocab-recall', mode: 'self', level: 'A2', freq: 2, front: { word: 'école', gloss: '學校' } },
     { id: 'typed', kind: 'conj', mode: 'typed', level: 'A2', freq: 1, answer: 'vais', accept: ['vais'], front: { verb: 'aller' } },
   ]) insert.run(card.id, card.kind, card.mode, card.level, card.freq, '[]', card.answer ?? null, JSON.stringify(card.accept ?? []), '', '', JSON.stringify(card));
   const api = new Api(store);

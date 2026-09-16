@@ -2,8 +2,10 @@
  * 「今天」頁。整個工具的入口：雙擊啟動器之後第一眼看到的東西。
  *
  * 它要回答的只有一個問題——**現在坐下來，先做哪一件事**。
- * 所以這一頁不放圖表、不放歷史、不放任何「看起來很認真」但不會讓人動手的東西。
+ * 所以這一頁不放圖表、不放任何「看起來很認真」但不會讓人動手的東西。
  * 四列，一列一科，每列右邊是一顆可以馬上按下去的按鈕。
+ * 任務列下方另有兩塊（讀一句、最近 7 天穩了），放在頁尾之後、字級比任務列小：
+ * 它們回答的是「做這些有沒有用」，不能排在「先做哪一件事」前面。
  * 每一列刻意不報「今天這一科共幾張」：新卡額度是全站共用的，
  * 兩科各報一個含新卡的總數，讀的人相加就會得到一個不存在的數字。
  * 單科只寫自己的到期量，共用的部分統一由頁尾那一行交代。
@@ -51,17 +53,33 @@ export function todayView(root, ctx) {
     // 打卡之後只換掉那一列的狀態與頁尾，不整頁重畫：說明文件展開著的時候
     // 重畫會把它收起來，而按打卡的那一刻通常正是照著文件做完的那一刻。
     let foot = footer(data);
+    const rows = [];
     const refresh = (next) => {
       const fresh = footer(next);
       foot.replaceWith(fresh);
       foot = fresh;
+      // 主鍵跟著移：CO 打完卡那列變淡之後，實心鍵要換到下一個還沒做的列，
+      // 不然整頁一顆主鍵都沒有，要重新整理才會出現。
+      const lead = pickLead(next.tasks);
+      for (const r of rows) r.setLead(r.task.id === lead?.task.id ? lead.action : null);
     };
     const lead = pickLead(data.tasks);
     for (const task of data.tasks) {
-      list.append(taskRow(task, ctx, refresh, task === lead?.task ? lead.action : null));
+      const r = taskRow(task, ctx, refresh, task === lead?.task ? lead.action : null);
+      rows.push(r);
+      list.append(r.row);
     }
     box.append(list);
     box.append(foot);
+
+    // 下面三塊各自再撈一次，不併進 /api/today：推演要跑兩次模擬，
+    // 等它算完才出列表的話，打開這一頁到能按下「練 N 張」會多等將近 0.1 秒。
+    const alive = () => !dead;
+    const cast = box.querySelector('.today-cast');
+    if (cast) fillOutlook(cast, alive);
+    box.append(h('section.today-more', { 'aria-label': '讀一句與最近穩了的卡' },
+      readingCard(alive),
+      weeklyCard(alive)));
   }
 }
 
@@ -86,8 +104,163 @@ function header(data) {
     countdown,
     h('p.today-sub', { text: sub }),
     h('p.today-run', { text: runLine(data) }),
+    // 先佔住一行，模擬算完再換字；不佔的話那一行晚到會把下面的任務列整排往下推。
+    left !== null && left >= 0 ? h('p.today-cast', { text: '正在推演考試那天記得幾張…' }) : null,
   );
 }
+
+/**
+ * 「照這個節奏，考試那天大約記得幾張」。
+ *
+ * 跟連續天數不同，這個數字會因為少做而往下掉——隔一天沒做，7 天平均就少七分之一。
+ * 同時寫出「完全停下來剩幾張」：只有一個數字的話，讀的人不知道現在做的事值多少。
+ */
+async function fillOutlook(el, alive) {
+  let o;
+  try {
+    o = await api.outlook();
+  } catch (err) {
+    if (alive()) el.textContent = `推演失敗：${err.message}`;
+    return;
+  }
+  if (!alive()) return;
+  if (!o.examDate) {
+    el.remove();
+    return;
+  }
+  if (o.pace === 0) {
+    el.replaceChildren(
+      `最近 ${o.window} 天沒有作答。照這樣到 ${o.examDate}，大約只記得 `,
+      h('strong.num', { text: num(o.stoppedRecall) }),
+      ' 張。',
+    );
+    return;
+  }
+  el.replaceChildren(
+    `照最近 ${o.window} 天的節奏（平均每天 ${num(o.pace)} 題），${o.examDate} 那天大約記得 `,
+    h('strong.num', { text: num(o.expectedRecall) }),
+    ` 張；完全停下來只剩 ${num(o.stoppedRecall)} 張。`,
+  );
+  el.title = `A2＋B1 共 ${num(o.cardsInScope)} 張卡的模擬，細節在推演頁。`;
+}
+
+const WORD_TIER = {
+  mature: '穩了',
+  seen: '學過',
+  fresh: '還沒學',
+};
+
+/**
+ * 「這句你認得幾個字」。把詞彙量換成讀一句法文時的實際感受——CE 考的就是這件事。
+ *
+ * 分母只算題庫收了的字。de／le／vous 這類虛詞題庫沒收，算進去的話分數永遠偏低，
+ * 而且低的原因跟學了多少無關；排除了就要在畫面上說，不然 6／13 會被讀成整句只有 13 個字。
+ */
+function readingCard(alive) {
+  const card = h('article.card.reading');
+  let index;
+  load();
+  return card;
+
+  async function load(i) {
+    let data;
+    try {
+      data = await api.sentence(i);
+    } catch (err) {
+      if (alive()) card.replaceChildren(h('p.more-err', { text: `句子載入失敗：${err.message}` }));
+      return;
+    }
+    if (!alive()) return;
+    if (!data.sentence) {
+      card.replaceChildren(h('h2.more-title', { text: '這句你認得幾個字' }),
+        h('p.more-note', { text: '題庫裡沒有可以讀的句子。' }));
+      return;
+    }
+    index = data.index;
+    const { tokens, counts, src } = data.sentence;
+    const line = h('p.reading-line', { lang: 'fr' });
+    for (const t of tokens) {
+      if (!t.status) line.append(t.text);
+      else if (t.status === 'outside') line.append(h('span.w', { dataset: { tier: 'outside' }, text: t.text }));
+      else {
+        // 游標停上去看得到還原成哪個字：souhaiteriez 算的是 souhaiter 那張卡。
+        const tip = t.word === t.text.toLowerCase() ? WORD_TIER[t.status] : `${t.word}・${WORD_TIER[t.status]}`;
+        line.append(h('span.w', { dataset: { tier: t.status }, title: tip, text: t.text }));
+      }
+    }
+    const next = h('button.btn.btn-quiet.btn-sm', { type: 'button', text: '換一句' });
+    next.addEventListener('click', () => {
+      next.disabled = true;
+      load(index + 1);
+    });
+    card.replaceChildren(
+      h('div.more-head', {},
+        h('h2.more-title', { text: '這句你認得幾個字' }),
+        next),
+      h('p.reading-score', {},
+        h('span.num.n', { text: `${num(counts.seen)}／${num(counts.inBank)}` }),
+        h('span.u', { text: counts.mature > 0 ? `個字學過，其中 ${counts.mature} 個穩了` : '個字學過' })),
+      line,
+      h('ul.reading-legend', {},
+        ['mature', 'seen', 'fresh'].map((tier) => h('li', {}, h('span.w', { dataset: { tier }, text: 'mot' }), WORD_TIER[tier])),
+        h('li', {}, h('span.w', { dataset: { tier: 'outside' }, text: 'mot' }), '題庫沒收，不計分')),
+      h('p.more-note', {
+        text: [
+          counts.outside > 0 ? `這句有 ${counts.outside} 個字題庫沒收（多半是冠詞、代名詞、介系詞），沒有算進分母。` : '',
+          src ? `出處：${src}。` : '',
+          `第 ${index + 1} 句，共 ${data.total} 句。`,
+        ].join(''),
+      }),
+    );
+  }
+}
+
+/**
+ * 最近 7 天「第一次穩了」的卡。其他地方看到的都是「還欠多少」，只有這裡是「學會了什麼」。
+ * 用滾動 7 天而不是日曆週：週一打開時日曆週幾乎一定是空的。
+ */
+function weeklyCard(alive) {
+  const card = h('article.card.weekly', {}, h('h2.more-title', { text: '最近 7 天穩了' }));
+  load();
+  return card;
+
+  async function load() {
+    let data;
+    try {
+      data = await api.weekly();
+    } catch (err) {
+      if (alive()) card.append(h('p.more-err', { text: `載入失敗：${err.message}` }));
+      return;
+    }
+    if (!alive()) return;
+    const range = `${data.from.slice(5)}～${data.to.slice(5)}`;
+    const body = data.items.length === 0
+      ? [h('p.more-empty', { text: `${range} 沒有卡第一次跨過 21 天。` })]
+      : [
+        h('p.reading-score', {},
+          h('span.num.n', { text: num(data.items.length) }),
+          h('span.u', { text: `張，${range}` })),
+        h('ol.weekly-list', {}, data.items.map((it) => h('li', {},
+          h('span.weekly-label', { lang: 'fr', text: it.label }),
+          h('span.weekly-sub', { text: [KIND_LABEL[it.kind], it.sub].filter(Boolean).join('・') }),
+          h('span.weekly-day.num', { text: it.day.slice(5) })))),
+      ];
+    card.append(...body,
+      h('p.more-note', {
+        text: `穩了＝穩定度 ≥ 21 天，照模型三週後還記得的機率仍有九成。目前一共穩了 ${num(data.matureTotal)} 張。`,
+      }));
+  }
+}
+
+const KIND_LABEL = {
+  'vocab-recall': '看字回想',
+  'vocab-produce': '中翻法',
+  conj: '動詞變位',
+  connector: '連接詞',
+  pick: '挑連接詞',
+  rw: '改寫整句',
+  nom: '名詞化',
+};
 
 function runLine(data) {
   const bits = [];
@@ -108,7 +281,13 @@ function pickLead(tasks) {
   return null;
 }
 
+/** 回傳 { row, task, setLead }：打卡之後主鍵會換列，按鈕樣式要能從外面改。 */
 function taskRow(task, ctx, refresh, leadAction = null) {
+  let lead = leadAction;
+  let cardsBtn = null;
+  let practiceBtn = null;
+  let checkBtn = null;
+  let status = null;
   const row = h('article.task', { dataset: { skill: task.id, mode: task.mode } });
 
   row.append(h('div.task-code', {}, h('span', { text: task.id })));
@@ -122,35 +301,37 @@ function taskRow(task, ctx, refresh, leadAction = null) {
   // 按鈕由上而下依重要性排：卡片、打卡、說明。
   // PE 三顆都有，順序等於「今天最該按哪一顆」。
   const act = h('div.task-act');
+  const secondary = h('div.task-secondary');
 
   if (task.mode === 'cards') {
     main.append(countLine(task));
     main.append(h('p.task-hint', { text: task.hint }));
-    act.append(task.count > 0
-      ? h(leadAction === 'cards' ? 'button.btn.btn-primary' : 'button.btn', {
+    cardsBtn = task.count > 0
+      ? h(lead === 'cards' ? 'button.btn.btn-primary' : 'button.btn', {
         type: 'button',
         // 按鈕上只放「到期」那個數字。到期卡是這一科自己的，加得起來；
         // 新卡額度兩科共用，寫進按鈕會讓人以為 CE 的 8 張和 PE 的 8 張是十六張。
         text: buttonText(task),
-        onclick: () => ctx.startReview({ kinds: task.kinds, guided: leadAction === 'cards' }),
+        onclick: () => ctx.startReview({ kinds: task.kinds, guided: lead === 'cards' }),
       })
       : h('button.btn.btn-quiet', {
         type: 'button',
         text: '再多練一些',
         onclick: () => ctx.startReview({ kinds: task.kinds }),
-      }));
+      });
+    (task.count > 0 ? act : secondary).append(cardsBtn);
   } else {
     // 文件型（CO／PO）：先寫「今天做什麼」，再寫打卡狀態。
     // 倒過來的話，狀態會比指示更搶眼，但今天還沒做的時候，該讀的是「要做什麼」。
     main.append(h('p.task-do', { text: task.hint }));
   }
 
-  const practiceBtn = h(leadAction === 'practice' ? 'button.btn.btn-primary' : 'button.btn', {
+  practiceBtn = h(lead === 'practice' ? 'button.btn.btn-primary' : 'button.btn', {
     type: 'button',
     text: practiceWords(task.id),
-    onclick: () => ctx.openPractice(task.id, { guided: leadAction === 'practice' }),
+    onclick: () => ctx.openPractice(task.id, { guided: lead === 'practice' }),
   });
-  act.append(practiceBtn);
+  ((task.mode !== 'cards' || task.count === 0) ? act : secondary).append(practiceBtn);
 
   if (!task.checkable && task.practiced) {
     main.append(h('p.task-check', {},
@@ -161,12 +342,12 @@ function taskRow(task, ctx, refresh, leadAction = null) {
   }
 
   if (task.checkable) {
-    const status = h('p.task-check');
+    status = h('p.task-check');
     main.append(status);
-    const checkBtn = h('button.btn', { type: 'button' });
-    checkBtn.addEventListener('click', () => toggleCheck(task, row, checkBtn, status, ctx, refresh, 'quiet'));
-    paintCheck(task, row, checkBtn, status, 'quiet');
-    act.append(checkBtn);
+    checkBtn = h('button.btn', { type: 'button' });
+    checkBtn.addEventListener('click', () => toggleCheck(task, row, checkBtn, status, ctx, refresh, weight));
+    paintCheck(task, row, checkBtn, status, weight());
+    secondary.append(checkBtn);
   }
 
   if (task.doc) {
@@ -174,13 +355,30 @@ function taskRow(task, ctx, refresh, leadAction = null) {
     main.append(panel);
     const openBtn = h('button.btn.btn-quiet', { type: 'button', text: '打開說明' });
     openBtn.addEventListener('click', () => toggleDoc(task, panel, openBtn));
-    act.append(openBtn);
+    secondary.append(openBtn);
+  }
+
+  if (secondary.childNodes.length) {
+    act.append(h('details.task-more', {}, h('summary', { text: '其他方式' }), secondary));
   }
 
   row.append(main);
   row.append(act);
 
-  return row;
+  const setLead = (next) => {
+    lead = next;
+    if (task.mode === 'cards' && task.count > 0) cardsBtn.classList.toggle('btn-primary', next === 'cards');
+    practiceBtn.classList.toggle('btn-primary', next === 'practice');
+    if (checkBtn) paintCheck(task, row, checkBtn, status, weight());
+  };
+  return { row, task, setLead };
+
+  // CO／PO 的打卡是那一列唯一的完成訊號，所以是主要按鈕；
+  // PE 那一列的主要按鈕是卡片，打卡再畫成 primary 就變成兩顆主鍵在搶同一個位置。
+  // 文件列只有目前的主鍵列是實心（見 pickLead），其餘是一般外框鍵，仍看得出要按。
+  function weight() {
+    return 'quiet';
+  }
 }
 
 function practiceWords(skill) {
@@ -265,7 +463,7 @@ async function toggleCheck(task, row, btn, status, ctx, refresh, weight) {
     // 用伺服器回來的那一份覆蓋手上的 task，不自己把 done 反過來寫：
     // recent 與 lastDay 只有後端算得出來，猜的話畫面會跟事實檔分岔。
     Object.assign(task, data.tasks.find((t) => t.id === task.id));
-    paintCheck(task, row, btn, status, weight);
+    paintCheck(task, row, btn, status, weight());
     refresh(data);
   } catch (err) {
     ctx.toast(err.message, 'bad');

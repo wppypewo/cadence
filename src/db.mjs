@@ -94,6 +94,9 @@ CREATE TABLE IF NOT EXISTS settings (
 
 const DAY_MS = 86_400_000;
 
+/** 「穩了」的界線：穩定度 ≥ 21 天，照 FSRS 推算三週後還記得的機率仍有 90%。 */
+export const MATURE_DAYS = 21;
+
 /**
  * 可以手動打卡的科目，從 engine/today.mjs 的那張科目表算出來，這裡只轉出去。
  *
@@ -302,6 +305,7 @@ export class Store {
       throw new Error(`找不到題庫 ${file}。先跑 npm run build。`);
     }
     const cards = JSON.parse(await readFile(file, 'utf8'));
+    this.lexiconCache = null;
     const insert = this.db.prepare(
       'INSERT INTO cards(id, kind, mode, level, freq, tags, answer, accept, search, headword, payload) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
     );
@@ -810,6 +814,16 @@ const siblingKey = (card) => (card.kind === 'vocab-recall' || card.kind === 'voc
   : card.id);
 
 /**
+ * 中翻法的新卡要等同一個字的看字回想答過至少一次才放出來（2026-09-11 使用者決定）。
+ * 實測第一次見到的字直接考中翻法，答對率只有 38–40%：還沒認得這個字就要拼出來。
+ * 接在 WHERE 後面用，c 是 cards。同一個字若根本沒有 |r 卡，不擋，否則那張 |p 永遠出不來。
+ * 側欄只勾中翻法時也照擋——順序是這個決定本身，不是範圍的問題。
+ */
+const PRODUCE_GATE = ` AND (c.kind <> 'vocab-produce' OR c.id NOT LIKE '%|p'
+  OR EXISTS (SELECT 1 FROM states g WHERE g.card_id = substr(c.id, 1, length(c.id) - 1) || 'r')
+  OR NOT EXISTS (SELECT 1 FROM cards g2 WHERE g2.id = substr(c.id, 1, length(c.id) - 1) || 'r'))`;
+
+/**
  * 仍以到期時間／頻率為主序，只在同題型已連續兩張時往後找最近的其他題型。
  * 這樣不會把新卡插到到期卡前面，也不會讓二十張一輪被九千張變位卡整批佔滿。
  * 另外避開最近 SIBLING_WINDOW 張裡出現過的同一個字；找不到才依序退讓：
@@ -894,7 +908,7 @@ Object.assign(Store.prototype, {
     return this.db
       .prepare(
         `SELECT COUNT(*) n FROM cards c LEFT JOIN states s ON s.card_id = c.id
-         WHERE s.card_id IS NULL${clause}`,
+         WHERE s.card_id IS NULL${clause}${PRODUCE_GATE}`,
       )
       .get(...params).n;
   },
@@ -940,7 +954,7 @@ Object.assign(Store.prototype, {
       .map((r) => r.kind);
     const lane = this.db.prepare(
       `SELECT c.payload FROM cards c LEFT JOIN states s ON s.card_id = c.id
-       WHERE s.card_id IS NULL AND c.kind = ?${freshClause}
+       WHERE s.card_id IS NULL AND c.kind = ?${freshClause}${PRODUCE_GATE}
        ORDER BY c.freq DESC, c.id ASC LIMIT ?`,
     );
     const lanes = kinds.map((kind) => lane
@@ -1002,7 +1016,9 @@ Object.assign(Store.prototype, {
          WHERE s.stability >= 21${clause}`,
       )
       .get(...params).n;
-    const streak = this.streak(scope, now);
+    // 連續天數不吃 scope：「今天有沒有練」是人的事，不是題型的事。
+    // 吃 scope 時，側欄縮到只剩看字回想，今天答了 21 題連接詞仍顯示 0 天（2026-09-11 實測）。
+    const streak = this.streak({}, now);
     return {
       totalCards: total,
       seenCards: seen,
@@ -1103,6 +1119,7 @@ Object.assign(Store.prototype, {
     const [clause, params] = scopeClause(scope);
     // fresh 是「還沒學過、而且會被拿出來當新卡」的張數。設了起始等級時它比 total - seen 少，
     // 今天頁要用這個數，不然會說還有三千張新卡，實際上一張 A1 都不會出現。
+    // 中翻法還沒放出來的（見 PRODUCE_GATE）同理不算。
     const levels = this.freshScope(scope).levels ?? [];
     const narrowed = !scope.levels?.length && levels.length;
     const freshCond = narrowed ? ` AND c.level IN (${levels.map(() => '?').join(',')})` : '';
@@ -1113,7 +1130,7 @@ Object.assign(Store.prototype, {
                 SUM(CASE WHEN s.card_id IS NOT NULL THEN 1 ELSE 0 END) seen,
                 SUM(CASE WHEN s.stability >= 21 THEN 1 ELSE 0 END) mature,
                 SUM(CASE WHEN s.due < ? THEN 1 ELSE 0 END) due,
-                SUM(CASE WHEN s.card_id IS NULL${freshCond} THEN 1 ELSE 0 END) fresh
+                SUM(CASE WHEN s.card_id IS NULL${freshCond}${PRODUCE_GATE} THEN 1 ELSE 0 END) fresh
          FROM cards c LEFT JOIN states s ON s.card_id = c.id
          WHERE 1 = 1${clause}
          GROUP BY c.kind ORDER BY c.kind`,
@@ -1141,6 +1158,143 @@ Object.assign(Store.prototype, {
     }
     const out = [...buckets.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([day, count]) => ({ day, count }));
     return { backlog, days: out };
+  },
+
+  // ---- 讀句子、穩了的卡 ------------------------------------------------
+
+  /**
+   * 題庫收了哪些字、每個變位形是哪個動詞。今天頁「這句你認得幾個字」用。
+   *
+   * 算一次約一萬兩千列，存在 instance 上；loadBank() 換題庫時清掉。
+   * 字只取看字回想卡：那一頁問的是「讀得懂」，對應的就是看法文說中文那個方向。
+   *
+   * 變位卡的答案有 1,514 張是兩個字（ai été、me suis levé）。前面那幾個是助動詞或代名詞，
+   * 它們自己的變位卡會提供，這裡只取最後一個字（過去分詞）對到這個動詞；
+   * 而且先收單字答案再收複合答案，免得 ai 被 avoir été 那張搶去對到 être。
+   */
+  lexicon() {
+    if (this.lexiconCache) return this.lexiconCache;
+    const words = new Set(
+      this.db
+        .prepare("SELECT DISTINCT lower(headword) w FROM cards WHERE kind = 'vocab-recall' AND headword IS NOT NULL")
+        .all()
+        .map((r) => r.w),
+    );
+    const verbs = new Map();
+    const conj = this.db.prepare("SELECT headword, answer FROM cards WHERE kind = 'conj' AND answer IS NOT NULL").all();
+    for (const compound of [false, true]) {
+      for (const r of conj) {
+        const parts = r.answer.toLowerCase().split(/[\s']+/).filter(Boolean);
+        if ((parts.length > 1) !== compound) continue;
+        const form = parts.at(-1);
+        if (!verbs.has(form)) verbs.set(form, r.headword.toLowerCase());
+      }
+    }
+    this.lexiconCache = {
+      has: (w) => words.has(w),
+      verbOf: (form) => verbs.get(form) ?? null,
+    };
+    return this.lexiconCache;
+  },
+
+  /**
+   * 每個字學到哪。同一個字可能有好幾張看字回想卡（不同詞性），任一張穩了就算穩了、
+   * 任一張答過就算學過——讀句子時不會先判斷詞性。
+   */
+  wordStatus() {
+    const rows = this.db
+      .prepare(
+        `SELECT lower(c.headword) w, MAX(s.stability) stability
+         FROM states s JOIN cards c ON c.id = s.card_id
+         WHERE c.kind = 'vocab-recall' GROUP BY lower(c.headword)`,
+      )
+      .all();
+    const best = new Map(rows.map((r) => [r.w, r.stability]));
+    return (word) => {
+      if (!best.has(word)) return 'fresh';
+      return best.get(word) >= MATURE_DAYS ? 'mature' : 'seen';
+    };
+  },
+
+  /**
+   * 可以拿來讀的法文句子。
+   *
+   * 挑連接詞的題目本身就是一句法文，空格藏著答案，放出來不洩題。
+   * 改寫整句的法文句子是**解答**，只有那張卡已經答過才放——否則今天頁先讓你讀完解答，
+   * 複習頁再考同一題，那題就廢了。
+   */
+  readingSentences() {
+    const rows = this.db
+      .prepare(
+        `SELECT c.id, c.kind, c.payload, s.card_id IS NOT NULL seen
+         FROM cards c LEFT JOIN states s ON s.card_id = c.id
+         WHERE c.kind IN ('pick', 'rw') ORDER BY c.kind, c.id`,
+      )
+      .all();
+    const out = [];
+    for (const r of rows) {
+      const card = JSON.parse(r.payload);
+      if (r.kind === 'pick' && card.front?.prompt) {
+        out.push({ id: r.id, kind: r.kind, text: card.front.prompt, src: card.front.src ?? null });
+      } else if (r.kind === 'rw' && r.seen && card.answer) {
+        out.push({ id: r.id, kind: r.kind, text: card.answer, src: card.front?.src ?? null });
+      }
+    }
+    return out;
+  },
+
+  /**
+   * 最近 days 天內「第一次跨過穩定度 21 天」、而且現在仍在 21 天以上的卡。
+   *
+   * reviews 表沒存每次作答後的穩定度，只能拿那張卡的作答照順序重跑一次 FSRS 找出跨線那一天。
+   * 重跑用的是 reviews 表而不是 JSONL：評分更正已經反映在表上，跟 states 算出來的是同一條路徑。
+   * 候選只有現在穩定度 ≥ 21 的卡，所以要重跑的量很小（2026-09-16 真實資料只有 1 張）。
+   *
+   * 中途忘記又重新穩回來的卡，算的是**第一次**跨線：它在窗口之前就穩過一次，這週不是「剛學會」。
+   */
+  maturedRecently({ days = 7, now = new Date() } = {}) {
+    const from = new Date(now);
+    from.setDate(from.getDate() - (days - 1));
+    const fromDay = localDay(from);
+    const candidates = this.db
+      .prepare(
+        `SELECT s.card_id, s.stability, c.kind, c.headword, c.answer, c.payload
+         FROM states s JOIN cards c ON c.id = s.card_id
+         WHERE s.stability >= ?`,
+      )
+      .all(MATURE_DAYS);
+    const history = this.db.prepare('SELECT at, day, rating, elapsed FROM reviews WHERE card_id = ? ORDER BY seq');
+    const out = [];
+    for (const c of candidates) {
+      let prev = null;
+      let crossed = null;
+      for (const r of history.all(c.card_id)) {
+        prev = this.scheduler.review(prev, r.rating, r.elapsed);
+        if (prev.stability >= MATURE_DAYS) {
+          crossed = r;
+          break;
+        }
+      }
+      if (!crossed || crossed.day < fromDay) continue;
+      out.push({
+        id: c.card_id,
+        kind: c.kind,
+        headword: c.headword,
+        answer: c.answer,
+        card: JSON.parse(c.payload),
+        day: crossed.day,
+        at: crossed.at,
+        stability: c.stability,
+      });
+    }
+    return out.sort((a, b) => (a.at < b.at ? 1 : -1));
+  },
+
+  /** 最近 days 天（含今天）一共答了幾題。今天頁的推演拿它當「照這個節奏」的節奏。 */
+  reviewsSince({ days = 7, now = new Date() } = {}) {
+    const from = new Date(now);
+    from.setDate(from.getDate() - (days - 1));
+    return this.db.prepare('SELECT COUNT(*) n FROM reviews WHERE day >= ?').get(localDay(from)).n;
   },
 
   /** 所有有狀態的卡，forecast 模擬用。只取數字，不取 payload。 */

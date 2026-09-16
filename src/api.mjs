@@ -10,10 +10,13 @@ import { fileURLToPath } from 'node:url';
 import { grade, gradePick, gradeRewrite, gradeNom } from './engine/grade.mjs';
 import { simulate, solveDailyNew, ratingDistribution } from './engine/forecast.mjs';
 import { buildToday } from './engine/today.mjs';
-import { localDay, CHECKIN_SKILLS, LEVELS } from './db.mjs';
+import { localDay, CHECKIN_SKILLS, MATURE_DAYS } from './db.mjs';
+import { readCheck } from './engine/lexicon.mjs';
 import { AttemptLog } from './attempts.mjs';
+import { backupBundle, backupStatus } from './backup.mjs';
 
 const KINDS = ['vocab-recall', 'vocab-produce', 'conj', 'connector', 'pick', 'rw', 'nom'];
+export const ACTIVE_LEVELS = ['A2', 'B1'];
 
 /**
  * 可以被 /api/doc 讀出去的檔案，白名單寫死。
@@ -54,26 +57,34 @@ export class Api {
       if (bad.length) throw new HttpError(400, `不認得的參數：${bad.join(', ')}`);
       return list;
     };
-    return { kinds: pick(query.kinds, KINDS), levels: pick(query.levels, LEVELS) };
+    return { kinds: pick(query.kinds, KINDS), levels: pick(query.levels, ACTIVE_LEVELS) };
+  }
+
+  /** A1 留在查字與歷史裡；學習、統計和推演只看 A2/B1。 */
+  static activeScope(scope = {}) {
+    return { ...scope, levels: scope.levels?.length ? scope.levels : ACTIVE_LEVELS };
   }
 
   summary() {
-    const s = this.store.summary();
+    const scope = Api.activeScope();
+    const s = this.store.summary(scope);
     return {
       ...s,
-      byKind: this.store.byKind(),
+      byKind: this.store.byKind(scope),
+      streakDays: this.attempts.activityStreak(),
+      backup: backupStatus(this.store.dataDir),
       settings: {
         desiredRetention: this.store.desiredRetention,
         dailyNewLimit: this.store.dailyNewLimit,
         examDate: this.store.get('examDate', null),
-        startLevel: this.store.startLevel,
+        startLevel: null,
       },
       meta: this.store.get('bankMeta', null),
     };
   }
 
   queue(query = {}) {
-    const scope = Api.scope(query);
+    const scope = Api.activeScope(Api.scope(query));
     const limit = clampInt(query.limit, 1, 200, 20);
     const preset = query.preset ? String(query.preset) : null;
     if (preset && preset !== 'weak') throw new HttpError(400, `不認得的練習模式：${preset}`);
@@ -235,12 +246,15 @@ export class Api {
   }
 
   stats(query = {}) {
-    const scope = Api.scope(query);
+    const days = clampInt(query.days, 7, 365, 120);
+    const scope = Api.activeScope(Api.scope(query));
+    const summary = this.store.summary(scope);
     return {
       scope,
-      summary: this.store.summary(scope),
+      periodDays: days,
+      summary: { ...summary, streakDays: this.attempts.activityStreak() },
       byKind: this.store.byKind(scope),
-      daily: this.store.daily(clampInt(query.days, 7, 365, 120), scope),
+      daily: this.store.daily(days, scope),
       upcoming: this.store.upcoming(clampInt(query.upcoming, 7, 180, 30), scope),
       weakest: this.store.weakest(clampInt(query.weakest, 1, 100, 24), scope).map((w) => ({
         ...w,
@@ -249,7 +263,7 @@ export class Api {
       errorProfile: this.store.errorProfile(scope),
       // 紀錄檔是整份 JSONL，不隨 scope 變——它量的是磁碟，不是題庫子集。
       journal: this.store.journalInfo(),
-      practice: this.attempts.summary({ days: clampInt(query.days, 7, 365, 120) }),
+      practice: this.attempts.summary({ days }),
       attemptsJournal: this.attempts.info(),
     };
   }
@@ -265,7 +279,7 @@ export class Api {
     const today = new Date();
     if (exam < new Date(`${localDay(today)}T00:00:00`)) throw new HttpError(400, '考試日期已經過了');
 
-    const scope = Api.scope(query);
+    const scope = Api.activeScope(Api.scope(query));
     const cards = this.scopedStates(scope);
     const rows = this.store.db.prepare('SELECT rating FROM reviews WHERE correct = 1').all();
     const ratings = ratingDistribution(rows);
@@ -321,15 +335,21 @@ export class Api {
     const clause = where.length ? ` WHERE ${where.join(' AND ')}` : '';
     const rows = this.store.db
       .prepare(
-        `SELECT c.id, c.level, s.stability, s.difficulty, s.due
+        `SELECT c.id, c.kind, c.level, s.stability, s.difficulty, s.due,
+                EXISTS (SELECT 1 FROM states g
+                  WHERE g.card_id = substr(c.id, 1, length(c.id) - 1) || 'r') recall_seen,
+                EXISTS (SELECT 1 FROM cards g2
+                  WHERE g2.id = substr(c.id, 1, length(c.id) - 1) || 'r') recall_exists
          FROM cards c LEFT JOIN states s ON s.card_id = c.id${clause}`,
       )
       .all(...params);
     // 起始等級以下、還沒學過的卡，出題時永遠不會拿出來。推演若把它們當成排隊中的新卡，
     // 會以為考前學得完，實際上一張都不會學——標成 locked，引擎只算不學。
-    const fresh = this.store.freshScope(scope).levels;
-    if (scope.levels?.length || !fresh?.length) return rows;
-    return rows.map((r) => (r.stability == null && !fresh.includes(r.level) ? { ...r, locked: true } : r));
+    return rows.map(({ recall_seen, recall_exists, ...row }) => {
+      const produceLocked = row.stability == null && row.kind === 'vocab-produce'
+        && row.id.endsWith('|p') && recall_exists === 1 && recall_seen === 0;
+      return produceLocked ? { ...row, prerequisite: `${row.id.slice(0, -1)}r` } : row;
+    });
   }
 
   /** 作答時間中位數。用中位數而非平均，因為「開著視窗去吃飯」會把平均拉爛。 */
@@ -355,19 +375,106 @@ export class Api {
    * 被側欄的題型篩選改掉就失去意義了。
    */
   today() {
-    const s = this.store.summary();
+    const scope = Api.activeScope();
+    const s = this.store.summary(scope);
     const practiceToday = this.attempts.today();
     return buildToday({
-      byKind: this.store.byKind(),
+      byKind: this.store.byKind(scope),
       newLimit: this.store.dailyNewLimit,
       newToday: this.store.newIntroducedToday(),
-      startLevel: this.store.startLevel,
+      startLevel: null,
       examDate: this.store.get('examDate', null),
       reviewsToday: s.todayReviews,
-      streakDays: s.streakDays,
+      streakDays: this.attempts.activityStreak(),
       checkins: this.store.checkinState(),
       practiceToday,
     });
+  }
+
+  /**
+   * 今天頁那一行推演：照最近 7 天的節奏一路做到考試，那天大約記得幾張；完全停下來又剩幾張。
+   *
+   * 不併進 /api/today：一次模擬約 30ms、範圍內一萬張卡撈狀態約 60ms，
+   * 併進去的話每次打開今天頁、每按一次打卡都要多等這段時間。分開撈，列表先出來。
+   *
+   * 節奏用「答題數 ÷ 7」而不是「有練的日子的平均」：隔一天沒做，這個數字就該掉，
+   * 那正是這一行存在的理由。結果以（日期、作答總數、設定）為鍵快取，答了一題才重算。
+   */
+  outlook() {
+    const examDate = this.store.get('examDate', null);
+    const exam = examDate ? new Date(`${examDate}T00:00:00`) : null;
+    const now = new Date();
+    if (!exam || Number.isNaN(exam.getTime()) || exam < new Date(`${localDay(now)}T00:00:00`)) {
+      return { examDate: null };
+    }
+    const reviewsTotal = this.store.db.prepare('SELECT COUNT(*) n FROM reviews').get().n;
+    const key = [localDay(now), examDate, reviewsTotal, this.store.desiredRetention, this.store.dailyNewLimit].join('|');
+    if (this.outlookCache?.key === key) return this.outlookCache.value;
+
+    const windowReviews = this.store.reviewsSince({ days: OUTLOOK_WINDOW, now });
+    const pace = Math.round(windowReviews / OUTLOOK_WINDOW);
+    const base = {
+      cards: this.scopedStates(Api.activeScope()),
+      from: now,
+      examDate: exam,
+      desiredRetention: this.store.desiredRetention,
+      ratings: ratingDistribution(this.store.db.prepare('SELECT rating FROM reviews WHERE correct = 1').all()),
+      secondsPerCard: this.medianSeconds(),
+    };
+    // 新卡設成不設上限時，新卡就吃掉整個節奏裡複習沒用完的額度，模擬裡本來就是這樣分的。
+    const dailyNew = Math.min(this.store.dailyNewLimit ?? pace, pace);
+    const going = simulate({ ...base, dailyLimit: pace, dailyNew });
+    const stopped = simulate({ ...base, dailyLimit: 0, dailyNew: 0 });
+    const value = {
+      examDate,
+      daysUntilExam: going.daysUntilExam,
+      window: OUTLOOK_WINDOW,
+      windowReviews,
+      pace,
+      cardsInScope: going.cardsInScope,
+      expectedRecall: Math.round(going.expectedRecall),
+      studiedByExam: going.studiedByExam,
+      stoppedRecall: Math.round(stopped.expectedRecall),
+    };
+    this.outlookCache = { key, value };
+    return value;
+  }
+
+  /**
+   * 「這句你認得幾個字」。句子依日期固定挑一句，重新整理不會換；?i= 可以指定第幾句（換一句用）。
+   */
+  sentence(query = {}) {
+    const pool = this.store.readingSentences();
+    if (!pool.length) return { total: 0, sentence: null };
+    const seed = [...localDay()].reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) % 100_003, 7);
+    const wanted = query.i === undefined ? seed : Number.parseInt(query.i, 10);
+    if (!Number.isInteger(wanted)) throw new HttpError(400, 'i 需要是整數');
+    const index = ((wanted % pool.length) + pool.length) % pool.length;
+    const pick = pool[index];
+    const { tokens, counts } = readCheck(pick.text, this.store.lexicon(), this.store.wordStatus());
+    return {
+      total: pool.length,
+      index,
+      sentence: { id: pick.id, kind: pick.kind, src: pick.src, tokens, counts },
+    };
+  }
+
+  /** 最近 7 天第一次跨過穩定度 21 天的卡。 */
+  weekly() {
+    const now = new Date();
+    const from = new Date(now);
+    from.setDate(from.getDate() - (WEEKLY_WINDOW - 1));
+    const items = this.store.maturedRecently({ days: WEEKLY_WINDOW, now }).map((row) => ({
+      id: row.id,
+      kind: row.kind,
+      day: row.day,
+      stability: Math.round(row.stability),
+      ...maturedLabel(row),
+    }));
+    const matureTotal = this.store.db
+      .prepare('SELECT COUNT(*) n FROM states WHERE stability >= ?')
+      .get(MATURE_DAYS).n;
+    return { window: WEEKLY_WINDOW, from: localDay(from), to: localDay(now), items, matureTotal };
   }
 
   practice(body) {
@@ -384,6 +491,10 @@ export class Api {
     } catch (err) {
       throw new HttpError(400, err.message);
     }
+  }
+
+  backup() {
+    return backupBundle(this.store.dataDir);
   }
 
   async correctReview(body) {
@@ -443,15 +554,15 @@ export class Api {
       }
       if (body.startLevel !== undefined) {
         const v = body.startLevel;
-        if (v !== null && !LEVELS.includes(v)) throw new HttpError(400, `起始等級只能是 ${LEVELS.join('／')} 或留空`);
-        this.store.set('startLevel', v);
+        if (v !== null) throw new HttpError(400, 'A1 已退出日常學習，起始等級不再需要設定');
+        this.store.set('startLevel', null);
       }
     }
     return {
       desiredRetention: this.store.desiredRetention,
       dailyNewLimit: this.store.dailyNewLimit,
       examDate: this.store.get('examDate', null),
-      startLevel: this.store.startLevel,
+      startLevel: null,
     };
   }
 
@@ -532,6 +643,39 @@ export class Api {
 }
 
 const DEFAULT_SECONDS = 8;
+
+/** 推演節奏取最近幾天的平均。 */
+const OUTLOOK_WINDOW = 7;
+/**
+ * 「這週穩了」看最近幾天。用滾動 7 天而不是週一起算的日曆週：
+ * 日曆週在週一幾乎永遠是空的，那天打開今天頁只會看到一塊空白。
+ */
+const WEEKLY_WINDOW = 7;
+
+/**
+ * 穩了的卡怎麼顯示。每種題型「那張卡在考什麼」不同，一律印 headword 的話
+ * 變位卡只會出現一整排 être，改寫題會印出整句解答。
+ */
+function maturedLabel(row) {
+  const f = row.card.front ?? {};
+  switch (row.kind) {
+    case 'vocab-recall':
+    case 'vocab-produce':
+      return { label: f.word, sub: f.gloss || null };
+    case 'conj':
+      return { label: `${f.pronoun} ${row.answer}`, sub: `${f.verb}・${f.tenseZh}` };
+    case 'nom':
+      return { label: `${f.base} → ${row.answer}`, sub: f.gloss || null };
+    case 'connector':
+      return { label: f.connector, sub: f.zh || null };
+    case 'pick':
+      return { label: row.answer, sub: f.src || null };
+    case 'rw':
+      return { label: f.tool, sub: f.prompt || null };
+    default:
+      return { label: row.headword ?? row.id, sub: null };
+  }
+}
 
 /** 去掉候選方案裡的完整模擬結果，只留摘要欄位。 */
 function dropResult(entry) {

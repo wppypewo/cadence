@@ -40,6 +40,17 @@
 .pass-list .inline-check { min-height: 36px; }
 .pass-list input { width: 18px; height: 18px; accent-color: var(--accent); }
 .score-fields, .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s4); }
+.assessment { display: flex; flex-direction: column; gap: var(--s3); margin: 0; padding: 0; border: 0; }
+.assessment legend { margin-bottom: var(--s2); font-size: var(--t-sm); font-weight: 600; }
+.mistake-tags { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s4); }
+.rubric-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2); }
+.rubric-row { display: grid; grid-template-columns: minmax(0, 1fr) 5rem; align-items: center; gap: var(--s3); }
+.rubric-total { align-self: flex-end; font-size: var(--t-xl); font-weight: 600; }
+.baseline-flow { display: grid; gap: 1px; padding: 0; overflow: hidden; background: var(--border); }
+.baseline-step { display: grid; grid-template-columns: 2rem minmax(0, 1fr) auto; align-items: center; gap: var(--s3); padding: var(--s3) var(--s4); background: var(--surface); }
+.baseline-step > .num { color: var(--accent); font-weight: 600; }
+.baseline-step > div { display: flex; flex-direction: column; }
+.baseline-step small { color: var(--text-muted); }
 
 .mock-fieldset { margin: 0; padding: 0; border: 0; }
 .mock-fieldset legend { margin-bottom: var(--s2); font-size: var(--t-sm); font-weight: 500; }
@@ -67,6 +78,64 @@
 
 .today-sub { font-size: var(--t-sm); color: var(--text-muted); }
 .today-run { font-size: var(--t-xs); color: var(--text-faint); }
+
+/*
+ * 推演那一行。字級比倒數小得多：倒數是「還有多久」，這行是「照現在這樣會怎樣」，
+ * 後者要讀完整句才有意義，放大反而像口號。只把會隨節奏掉下去的那個數字加粗。
+ * min-height 讓「正在推演…」與算完的句子佔同一行高，任務列不會被往下推。
+ */
+.today-cast { min-height: 1.6em; margin-top: var(--s2); font-size: var(--t-sm); color: var(--text-muted); }
+.today-cast strong { color: var(--text); font-weight: 600; }
+
+/*
+ * 任務列下方的兩塊。只做電腦版，所以直接兩欄；字級一律比任務列低一層，
+ * 它們回答「做這些有沒有用」，不能搶「先做哪一件事」的位置。
+ */
+.today-more {
+  display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  align-items: start; gap: var(--s4); margin-top: var(--s3);
+}
+.today-more .card { display: flex; flex-direction: column; gap: var(--s3); padding: var(--s4); min-height: 180px; }
+.more-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); }
+.more-title { font-size: var(--t-md); }
+.more-note { font-size: var(--t-xs); color: var(--text-faint); max-width: 60ch; }
+.more-empty { font-size: var(--t-sm); color: var(--text-muted); }
+.more-err { font-size: var(--t-sm); color: var(--bad); }
+
+.reading-score { display: flex; align-items: baseline; gap: var(--s2); font-size: var(--t-sm); }
+.reading-score .n { font-size: var(--t-xl); font-weight: 600; }
+.reading-score .u { color: var(--text-muted); }
+
+/* 法文句子是這一塊的主角，照全檔的原則用法文字體、比介面大。 */
+.reading-line { font-family: var(--font-fr); font-size: var(--t-xl); line-height: 1.9; }
+
+/*
+ * 四層不能只靠顏色分：穩了＝加粗＋主色、學過＝實線底線、還沒學＝點線底線、題庫外＝淡字無線。
+ * 對比度（surface 上，淺／深）：--accent 7.22／7.55、--text-faint 5.45／5.23（文字 4.5:1）；
+ * 底線是非文字圖形，要 3:1：--accent-mid 3.77／3.17、--border-strong 3.72／3.12。
+ */
+.w { text-underline-offset: 0.28em; text-decoration-thickness: 2px; }
+.w[data-tier="mature"] { color: var(--accent); font-weight: 600; }
+.w[data-tier="seen"] { color: var(--text); text-decoration-line: underline; text-decoration-color: var(--accent-mid); }
+.w[data-tier="fresh"] { color: var(--text-muted); text-decoration-line: underline; text-decoration-style: dotted; text-decoration-color: var(--border-strong); }
+.w[data-tier="outside"] { color: var(--text-faint); }
+
+.reading-legend {
+  display: flex; flex-wrap: wrap; gap: var(--s1) var(--s4);
+  margin: 0; padding: 0; list-style: none;
+  font-size: var(--t-xs); color: var(--text-muted);
+}
+.reading-legend li { display: inline-flex; align-items: baseline; gap: var(--s1); }
+.reading-legend .w { font-family: var(--font-fr); font-size: var(--t-sm); }
+
+.weekly-list { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.weekly-list li {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline;
+  column-gap: var(--s3); padding: var(--s2) 0; border-top: 1px solid var(--border);
+}
+.weekly-label { font-family: var(--font-fr); font-size: var(--t-lg); color: var(--accent); font-weight: 600; }
+.weekly-sub { grid-column: 1; font-size: var(--t-xs); color: var(--text-muted); overflow-wrap: anywhere; }
+.weekly-day { grid-column: 2; grid-row: 1; font-size: var(--t-xs); color: var(--text-faint); }
 
 .tasks { display: flex; flex-direction: column; gap: var(--s3); }
 
@@ -143,6 +212,8 @@
 .task[data-mode="doc"][data-done="1"] .task-code { border-color: var(--ok); color: var(--ok); }
 
 .task-act { display: flex; flex-direction: column; gap: var(--s2); }
+.task-more summary { color: var(--text-muted); font-size: var(--t-xs); cursor: pointer; text-align: right; }
+.task-secondary { display: flex; flex-direction: column; gap: var(--s2); margin-top: var(--s2); }
 
 /* 文件面板。展開後接在同一列的內文下方，不另開頁——換頁就會忘記自己本來要幹嘛。 */
 .doc { display: flex; flex-direction: column; gap: var(--s2); margin-top: var(--s2); }
@@ -213,6 +284,9 @@
   .task { grid-template-columns: auto minmax(0, 1fr); }
   .task-act { grid-column: 1 / -1; }
   .task-act .btn { width: 100%; }
+  .rubric-grid { grid-template-columns: 1fr; }
+  .baseline-step { grid-template-columns: 2rem minmax(0, 1fr); }
+  .baseline-step .btn { grid-column: 1 / -1; }
 }
 
 /* ---- 複習 ------------------------------------------------------------- */
@@ -436,6 +510,10 @@
 
 .study-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s3); }
 .study-actions .spacer { flex: 1; }
+.session-followup { max-width: 56ch; text-align: left; }
+.session-followup strong { display: block; margin-bottom: var(--s2); }
+.session-followup ol { padding-left: var(--s5); color: var(--text-muted); }
+.session-followup li + li { margin-top: var(--s1); }
 /* 不折行。窄螢幕上寧可整句換到下一列，也不要斷成「Enter 送／出」。 */
 .kbd-hint { font-size: var(--t-xs); color: var(--text-faint); white-space: nowrap; }
 kbd {

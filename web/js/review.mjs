@@ -71,6 +71,7 @@ export function reviewView(root, ctx) {
     loading: true,
     error: null,
     preset,
+    focus: new Map(),
   };
 
   const body = h('div');
@@ -165,6 +166,10 @@ export function reviewView(root, ctx) {
       state.verdict = { ...res, answered: answer };
       state.done += 1;
       if (res.rating === 1) state.again += 1;
+      if (res.rating === 1) {
+        const key = res.grade?.reason ?? card.kind;
+        state.focus.set(key, (state.focus.get(key) ?? 0) + 1);
+      }
       state.ms += ms;
       announce(verdictText(res, answer));
       render();
@@ -745,6 +750,7 @@ function finished(state, ctx, reload) {
       icon('check'),
       h('h2.landing', { tabindex: -1, text: state.done ? '弱點這一批做完了' : '目前沒有弱點卡' }),
       state.done ? h('p', { text: sessionLine(state) }) : h('p', { text: '這個範圍裡沒有答錯過的卡。' }),
+      state.done ? followUps(state) : null,
       h('div.study-actions', {},
         h('button.btn.btn-primary', { text: '回統計', onclick: () => ctx.go('stats') }),
         ctx.guided ? h('button.btn', { text: '回今天', onclick: () => ctx.go('today') }) : null,
@@ -771,6 +777,25 @@ function finished(state, ctx, reload) {
       h('button.btn', { text: '看統計', onclick: () => ctx.go('stats') }),
     ),
   );
+}
+
+function followUps(state) {
+  const advice = {
+    accent: '重做漏重音的字，逐字唸出重音位置。',
+    wrong: '把拼錯的答案遮住，再完整寫一次。',
+    empty: '挑兩張不會的卡，先認讀再回想。',
+    family: '複習性數與詞形變化，再做一題同型題。',
+    elision: '口頭說一次省音前後的完整片語。',
+    missing: '圈出題目指定的連接詞與語氣，再改寫一次。',
+    article: '把名詞連同冠詞一起寫兩次。',
+    'vocab-recall': '先看法文說出中文，再確認答案。',
+    'vocab-produce': '先看中文完整拼出法文，再核對重音。',
+    conj: '把同一動詞的人稱變化口頭跑一輪。',
+  };
+  const picked = [...state.focus].sort((a, b) => b[1] - a[1]).slice(0, 2)
+    .map(([key]) => advice[key]).filter(Boolean);
+  while (picked.length < 2) picked.push(picked.length ? '明天先做今天仍答錯的卡。' : '挑一張最卡的題，說出錯因後再答一次。');
+  return h('div.session-followup', {}, h('strong', { text: '接下來兩件事' }), h('ol', {}, ...picked.map((text) => h('li', { text }))));
 }
 
 /**

@@ -34,6 +34,7 @@ export function practiceView(root, ctx) {
   const title = h('input.input', { type: 'text', maxlength: 120, placeholder: sourcePlaceholder(skill) });
   const score = h('input.input', { type: 'number', min: 0, max: 100, step: 0.5, inputmode: 'decimal' });
   const maxScore = h('input.input', { type: 'number', min: 0.5, max: 100, step: 0.5, inputmode: 'decimal', value: '25' });
+  const assessment = assessmentTool(skill, score, maxScore);
   const notes = h('textarea.input.practice-notes', { maxlength: 4000, placeholder: '哪裡卡住、下次要改什麼（選填）' });
   const save = h('button.btn.btn-primary', { type: 'button', text: '儲存這次練習', onclick: saveAttempt });
   const status = h('p.field-error', { role: 'alert', hidden: true });
@@ -51,10 +52,11 @@ export function practiceView(root, ctx) {
     specific.node,
     h('form.card.practice-form', { onsubmit: (ev) => { ev.preventDefault(); saveAttempt(); } },
       h('div.field', {}, h('label', { text: '題目或來源' }), title),
-      h('div.score-fields', {},
+      h('div.score-fields', { hidden: assessment.usesRubric },
         h('div.field', {}, h('label', { text: '得分（選填）' }), score),
         h('div.field', {}, h('label', { text: '滿分' }), maxScore),
       ),
+      assessment.node,
       h('div.field', {}, h('label', { text: '練習筆記' }), notes),
       status,
       h('div.practice-actions', {}, save),
@@ -117,6 +119,7 @@ export function practiceView(root, ctx) {
         notes: notes.value.trim() || null,
         text: specific.text(),
         wordCount: specific.wordCount(),
+        details: assessment.details(),
       };
       const result = await api.practice(body);
       specific.clearDraft();
@@ -238,6 +241,68 @@ export function practiceView(root, ctx) {
     if (recordingUrl) URL.revokeObjectURL(recordingUrl);
     if (sourceUrl) URL.revokeObjectURL(sourceUrl);
   }
+}
+
+const MISTAKES = {
+  CE: ['詞彙', '細節', '推論', '干擾選項', '時間不足'],
+  CO: ['數字／時間', '連音／聲音', '語速', '細節', '干擾選項'],
+};
+
+const RUBRICS = {
+  PE: [
+    ['task', '完成題目要求', [0, 1, 3, 5]],
+    ['cohesion', '連貫與銜接', [0, 1, 3, 5]],
+    ['register', '語域合宜', [0, 1, 3, 5]],
+    ['lexicon', '詞彙', [0, 1, 3, 5]],
+    ['grammar', '文法與句型', [0, 1, 3, 5]],
+  ],
+  PO: [
+    ['intro', '自我介紹／引導訪談', [0, 1, 2.5, 4]],
+    ['interaction', '互動練習', [0, 1, 2.5, 4]],
+    ['opinion', '表達觀點', [0, 1, 2.5, 4]],
+    ['lexicon', '詞彙', [0, 1, 3, 5]],
+    ['grammar', '文法與句型', [0, 1, 2.5, 4]],
+    ['pronunciation', '發音與流暢度', [0, 1, 2.5, 4]],
+  ],
+};
+
+function assessmentTool(skill, score, maxScore) {
+  const rubric = RUBRICS[skill];
+  if (rubric) {
+    const selects = new Map();
+    const total = h('output.num.rubric-total', { text: '0 / 25', 'aria-live': 'polite' });
+    const rows = h('div.rubric-grid');
+    const update = () => {
+      const value = [...selects.values()].reduce((sum, input) => sum + Number(input.value), 0);
+      score.value = String(value);
+      maxScore.value = '25';
+      total.textContent = `${value} / 25`;
+    };
+    for (const [key, label, values] of rubric) {
+      const input = h('select.input', { onchange: update }, ...values.map((value) => h('option', { value: String(value), text: String(value) })));
+      selects.set(key, input);
+      rows.append(h('label.rubric-row', {}, h('span', { text: label }), input));
+    }
+    update();
+    return {
+      usesRubric: true,
+      node: h('fieldset.assessment', {}, h('legend', { text: 'DELF 評分規準' }), rows, total,
+        h('p.hint', { text: '各項分開評，總分自動換算為 25 分。這是一次練習的證據，不代表整體程度。' })),
+      details: () => ({ rubric: Object.fromEntries([...selects].map(([key, input]) => [key, Number(input.value)])) }),
+    };
+  }
+  const tags = new Map();
+  const list = h('div.mistake-tags');
+  for (const label of MISTAKES[skill] ?? []) {
+    const input = h('input', { type: 'checkbox' });
+    tags.set(label, input);
+    list.append(h('label.inline-check', {}, input, h('span', { text: label })));
+  }
+  return {
+    usesRubric: false,
+    node: h('fieldset.assessment', {}, h('legend', { text: '這次失分在哪裡' }), list),
+    details: () => ({ mistakes: [...tags].filter(([, input]) => input.checked).map(([label]) => label) }),
+  };
 }
 
 function savedPanel(result, ctx) {

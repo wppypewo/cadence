@@ -28,6 +28,9 @@ async function call(method, path, { query, body } = {}) {
 export const api = {
   summary: () => call('GET', '/api/summary'),
   today: () => call('GET', '/api/today'),
+  outlook: () => call('GET', '/api/outlook'),
+  sentence: (i) => call('GET', '/api/sentence', { query: i === undefined ? {} : { i } }),
+  weekly: () => call('GET', '/api/weekly'),
   doc: (id) => call('GET', '/api/doc', { query: { id } }),
   queue: (q) => call('GET', '/api/queue', { query: q }),
   reveal: (id) => call('GET', '/api/reveal', { query: { id } }),
@@ -35,6 +38,7 @@ export const api = {
   forecast: (q) => call('GET', '/api/forecast', { query: q }),
   search: (q) => call('GET', '/api/search', { query: { q } }),
   settings: () => call('GET', '/api/settings'),
+  backup: () => call('GET', '/api/backup'),
   saveSettings: (body) => call('POST', '/api/settings', { body }),
   review: (body) => call('POST', '/api/review', { body }),
   correctReview: (body) => call('POST', '/api/review-correction', { body }),

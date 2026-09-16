@@ -9,6 +9,7 @@ import { AttemptLog } from '../src/attempts.mjs';
 function fixture() {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'cadence-attempts-'));
   const db = new DatabaseSync(path.join(dir, 'test.db'));
+  db.exec('CREATE TABLE reviews(day TEXT); CREATE TABLE checkins(day TEXT, done INTEGER);');
   const log = new AttemptLog(dir, db);
   return { dir, db, log, close: () => { db.close(); rmSync(dir, { recursive: true, force: true }); } };
 }
@@ -24,6 +25,18 @@ test('四科練習先寫 attempts.jsonl，再出現在查詢鏡像', () => {
     assert.equal(readFileSync(path.join(f.dir, 'attempts.jsonl'), 'utf8').trim(), JSON.stringify(row));
     assert.deepEqual(f.log.today(new Date('2026-09-11T12:00:00+08:00')).PE, row);
     assert.equal(f.log.summary().bySkill.find((x) => x.skill === 'PE').attempts, 1);
+    assert.equal(f.log.summary({ days: 30 }).periodDays, 30);
+  } finally { f.close(); }
+});
+
+test('練習可保存分科細節，連續天數合併三種活動', () => {
+  const f = fixture();
+  try {
+    const first = f.log.practice({ skill: 'CE', durationSec: 600, details: { mistakes: ['推論'] } }, new Date('2026-09-10T10:00:00+08:00'));
+    const second = f.log.practice({ skill: 'PE', durationSec: 900, details: { rubric: { task: 3 } } }, new Date('2026-09-11T10:00:00+08:00'));
+    assert.deepEqual(first.details.mistakes, ['推論']);
+    assert.equal(second.details.rubric.task, 3);
+    assert.equal(f.log.activityStreak(new Date('2026-09-11T12:00:00+08:00')), 2);
   } finally { f.close(); }
 });
 

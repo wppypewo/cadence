@@ -49,7 +49,7 @@ const KINDS = [
   { id: 'rw', label: '改寫整句' },
   { id: 'nom', label: '名詞化' },
 ];
-const LEVELS = ['A1', 'A2', 'B1'];
+const LEVELS = ['A2', 'B1'];
 
 const STORE_KEY = 'cadence.scope';
 const THEME_KEY = 'cadence.theme';
@@ -139,6 +139,7 @@ function buildShell() {
 
   const foot = h('div.rail-foot', {},
     h('div.rail-actions', {},
+      h('button.btn.btn-quiet.btn-sm', { type: 'button', text: '匯出備份', onclick: exportBackup }),
       h('button.btn.btn-quiet.btn-sm', { type: 'button', text: '設定', onclick: openSettings }),
       themeButton(),
     ),
@@ -349,9 +350,26 @@ function setBadge(due) {
 
 function metaLine(summary) {
   const total = summary.totalCards ?? 0;
-  const built = state.meta?.builtAt ? state.meta.builtAt.slice(0, 10) : null;
-  return [`題庫 ${total.toLocaleString('zh-Hant')} 張`, built ? `建於 ${built}` : null]
+  const pending = summary.backup?.pendingFacts;
+  const backup = pending === 0 ? '事實已進版控' : Number.isInteger(pending) ? `${pending} 筆待備份` : null;
+  return [`A2–B1・${total.toLocaleString('zh-Hant')} 張`, backup]
     .filter(Boolean).join('・');
+}
+
+async function exportBackup() {
+  try {
+    const data = await api.backup();
+    const blob = new Blob([`${JSON.stringify(data, null, 2)}\n`], { type: 'application/json' });
+    const href = URL.createObjectURL(blob);
+    const link = h('a', { href, download: `cadence-backup-${data.exportedAt.slice(0, 10)}.json` });
+    document.body.append(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(href);
+    toast('備份已下載', 'ok');
+  } catch (err) {
+    toast(`匯出失敗：${err.message}`, 'bad');
+  }
 }
 
 /* ── 設定 ─────────────────────────────────────────────────────── */
@@ -392,11 +410,6 @@ function openSettings() {
     h('label.inline-check', {}, noCap, h('span', { text: '不設上限' })),
   );
 
-  // 值留空代表 A1 起、全部都學，對應後端的 null。
-  const start = h('select.input', {},
-    ...[['', 'A1 起（全部都學）'], ['A2', 'A2 起（A1 的新卡不出）'], ['B1', 'B1 起（只出 B1 的新卡）']]
-      .map(([value, text]) => h('option', { value, text, selected: (state.settings.startLevel ?? '') === value })),
-  );
   const exam = h('input.input', { type: 'date', value: state.settings.examDate ?? '' });
 
   const err = h('p.field-error', { text: '', hidden: true });
@@ -408,9 +421,6 @@ function openSettings() {
 
     field('每天新卡上限', freshRow,
       '一天最多引入幾張沒學過的卡。今天學的每一張，未來幾週都會回來找你——不設上限時，到期量會跟著學的量一起變大，推演頁算得出會多多少。'),
-
-    field('新卡從哪一級開始', start,
-      '只影響還沒學過的卡；已經學過的低級卡照常到期、照常複習。側欄勾了等級時以側欄為準。'),
 
     field('考試日期', exam,
       '推演頁的預設日期。留空表示還沒有確定的考試。'),
@@ -428,7 +438,7 @@ function openSettings() {
         desiredRetention: Number(retention.value),
         dailyNewLimit: noCap.checked ? null : Number(fresh.value),
         examDate: exam.value || null,
-        startLevel: start.value || null,
+        startLevel: null,
       });
       dismiss();
       // 今天與推演直接顯示考試日期或新卡額度，儲存後若不重畫會繼續顯示舊值。

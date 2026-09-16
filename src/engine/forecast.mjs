@@ -54,7 +54,7 @@ export function ratingDistribution(rows, minSample = 50) {
  * 一次考前推演。
  *
  * @param {object} opts
- * @param {Array<{id:string, stability?:number, difficulty?:number, due?:string}>} opts.cards
+ * @param {Array<{id:string, stability?:number, difficulty?:number, due?:string,locked?:boolean,prerequisite?:string}>} opts.cards
  *        在範圍內的卡。沒有 state 的卡就是還沒學過的新卡。
  * @param {Date}   opts.from        起算日
  * @param {Date}   opts.examDate    考試日
@@ -87,14 +87,22 @@ export function simulate(opts) {
     } else if (c.locked) {
       locked += 1;
     } else {
-      fresh.push({ id: c.id, s: null, d: null, due: null, last: null });
+      fresh.push({ id: c.id, prerequisite: c.prerequisite ?? null, s: null, d: null, due: null, last: null });
     }
   }
   // 到期早的先做。逾期越久的卡遺忘越深，優先處理。
   seen.sort((a, b) => a.due - b.due);
 
   const days = [];
-  let freshIdx = 0;
+  const seenIds = new Set(seen.map((card) => card.id));
+  const available = [];
+  const pending = new Map();
+  for (const card of fresh) {
+    if (!card.prerequisite || seenIds.has(card.prerequisite)) available.push(card);
+    else pending.set(card.prerequisite, [...(pending.get(card.prerequisite) ?? []), card]);
+  }
+  let availableIdx = 0;
+  let freshRemaining = fresh.length;
   let backlogPeak = 0;
   let totalReviews = 0;
   let totalLapses = 0;
@@ -125,17 +133,24 @@ export function simulate(opts) {
 
     // 剩餘額度拿來學新卡。新卡當天必定是第一次見，用 Good 起手；
     // 這一步不抽樣，因為初次評分反映的是使用者當下的自我判斷，不是記憶狀態。
-    const room = Math.min(dailyLimit - doing.length, dailyNew, fresh.length - freshIdx);
+    const room = Math.min(dailyLimit - doing.length, dailyNew);
     let learned = 0;
-    for (let i = 0; i < room; i += 1) {
-      const card = fresh[freshIdx];
-      freshIdx += 1;
+    while (availableIdx < available.length && learned < room) {
+      const card = available[availableIdx];
+      availableIdx += 1;
+      freshRemaining -= 1;
       const next = scheduler.review(null, RATING.GOOD, 0);
       card.s = next.stability;
       card.d = next.difficulty;
       card.last = dayStart;
       card.due = dayStart + next.intervalDays * DAY_MS;
       seen.push(card);
+      seenIds.add(card.id);
+      const unlocked = pending.get(card.id);
+      if (unlocked) {
+        available.push(...unlocked);
+        pending.delete(card.id);
+      }
       learned += 1;
     }
 
@@ -158,7 +173,7 @@ export function simulate(opts) {
   const examTime = exam.getTime();
   let expectedRecall = 0;
   let studiedCount = 0;
-  const buckets = { strong: 0, shaky: 0, weak: 0, untouched: fresh.length - freshIdx + locked };
+  const buckets = { strong: 0, shaky: 0, weak: 0, untouched: freshRemaining + locked };
   for (const card of seen) {
     if (card.s == null) continue;
     studiedCount += 1;

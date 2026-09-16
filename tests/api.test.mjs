@@ -16,12 +16,12 @@ import { Api, HttpError } from '../src/api.mjs';
 
 const BANK = [
   {
-    id: 'v:ecole', kind: 'vocab-produce', mode: 'typed', level: 'A1', freq: 9,
+    id: 'v:ecole', kind: 'vocab-produce', mode: 'typed', level: 'A2', freq: 9,
     tags: ['vocab'], answer: 'école', accept: ['école'], note: '陰性名詞',
     front: { word: 'école', gloss: '學校' },
   },
   {
-    id: 'v:chien', kind: 'vocab-recall', mode: 'self', level: 'A1', freq: 8,
+    id: 'v:chien', kind: 'vocab-recall', mode: 'self', level: 'A2', freq: 8,
     tags: ['vocab'], answer: '狗', accept: null,
     front: { word: 'chien', gloss: '狗', en: ['dog'], glossSource: 'manual' },
   },
@@ -94,8 +94,8 @@ function cleanup(store, dir) {
 
 test('scope 只收白名單內的值，其餘直接 400', () => {
   assert.deepEqual(Api.scope({}), { kinds: [], levels: [] });
-  assert.deepEqual(Api.scope({ kinds: 'conj,connector', levels: 'A1' }), {
-    kinds: ['conj', 'connector'], levels: ['A1'],
+  assert.deepEqual(Api.scope({ kinds: 'conj,connector', levels: 'A2' }), {
+    kinds: ['conj', 'connector'], levels: ['A2'],
   });
   // 空白與空項要被吃掉，不要變成查不到東西的 IN ('')。
   assert.deepEqual(Api.scope({ kinds: ' conj , ,' }).kinds, ['conj']);
@@ -105,6 +105,7 @@ test('scope 只收白名單內的值，其餘直接 400', () => {
   assert.equal(err.status, 400);
   assert.match(err.message, /drop-table/);
   assert.equal(caught(() => Api.scope({ levels: 'C1' })).status, 400);
+  assert.equal(caught(() => Api.scope({ levels: 'A1' })).status, 400);
 });
 
 test('出題不帶答案，統計裡的弱點卡才帶', async () => {
@@ -398,13 +399,14 @@ test('settings 擋掉超出範圍的值，合法的值寫得進去', async () =>
   try {
     assert.deepEqual(api.settings(null), { desiredRetention: 0.9, dailyNewLimit: 15, examDate: null, startLevel: null });
 
-    const saved = api.settings({ desiredRetention: 0.85, dailyNewLimit: 30, examDate: '2026-12-01', startLevel: 'A2' });
-    assert.deepEqual(saved, { desiredRetention: 0.85, dailyNewLimit: 30, examDate: '2026-12-01', startLevel: 'A2' });
+    const saved = api.settings({ desiredRetention: 0.85, dailyNewLimit: 30, examDate: '2026-12-01', startLevel: null });
+    assert.deepEqual(saved, { desiredRetention: 0.85, dailyNewLimit: 30, examDate: '2026-12-01', startLevel: null });
 
     // null 是不設上限。Number(null) 是 0，若誤丟給 clampInt 就會變成「一張都不給」。
     assert.equal(api.settings({ dailyNewLimit: null }).dailyNewLimit, null);
     assert.equal(api.settings({ dailyNewLimit: 20 }).dailyNewLimit, 20);
     assert.equal(caught(() => api.settings({ startLevel: 'C1' })).status, 400);
+    assert.equal(caught(() => api.settings({ startLevel: 'A1' })).status, 400);
     assert.equal(api.settings({ startLevel: null }).startLevel, null);
     assert.equal(store.desiredRetention, 0.85);
 
@@ -431,7 +433,7 @@ test('stats 的每個數字都吃 scope，紀錄檔資訊不吃', async () => {
     assert.equal(all.errorProfile.length, 1);
 
     const conj = api.stats({ kinds: 'conj' });
-    assert.deepEqual(conj.scope, { kinds: ['conj'], levels: [] });
+    assert.deepEqual(conj.scope, { kinds: ['conj'], levels: ['A2', 'B1'] });
     assert.equal(conj.summary.totalCards, 1);
     assert.equal(conj.byKind.length, 1);
     assert.equal(conj.weakest.length, 1);
@@ -641,26 +643,35 @@ test('today／queue：不設上限時額度欄位回 null，新卡數以還能�
   }
 });
 
-test('起始等級：出題、今天頁與推演三處對同一批新卡的看法一致', async () => {
-  const [api, store, dir] = await open();
+test('A1 退出日常流程，但查字與既有歷史仍保留', async () => {
+  const a1 = { id: 'a1:bonjour', kind: 'vocab-recall', mode: 'self', level: 'A1', freq: 99, tags: ['vocab'], front: { word: 'bonjour', gloss: '你好' } };
+  const [api, store, dir] = await open([...BANK, a1]);
   try {
-    store.set('startLevel', 'B1');
-    // BANK 裡 A1 兩張、A2 一張，其餘四張 B1。
     const q = api.queue({ limit: 20 });
-    assert.deepEqual([...new Set(q.cards.map((c) => c.level))], ['B1']);
-    assert.equal(q.remaining.new, 4);
+    assert.equal(q.cards.some((card) => card.level === 'A1'), false);
+    assert.equal(q.remaining.new, BANK.length);
     const t = api.today();
-    assert.equal(t.startLevel, 'B1');
-    assert.equal(t.tasks[0].newAvailable, 0);
-    assert.equal(t.tasks[1].newAvailable, 4);
-    // 推演：低於起始等級、沒學過的卡標成 locked，引擎不會把它們排進新卡隊伍。
-    const states = api.scopedStates({ kinds: [], levels: [] });
-    assert.deepEqual(states.filter((s) => s.locked).map((s) => s.id).sort(), ['c:etre:present:1', 'v:chien', 'v:ecole']);
-    // 側欄明確勾了等級就不標。
-    assert.equal(api.scopedStates({ kinds: [], levels: ['A1'] }).some((s) => s.locked), false);
+    assert.equal(t.startLevel, null);
+    assert.equal(api.summary().totalCards, BANK.length);
+    assert.equal(api.search({ q: 'bonjour' }).hits[0].card.level, 'A1');
+    api.review({ cardId: a1.id, rating: 3 });
+    assert.ok(api.search({ q: 'bonjour' }).hits[0].state);
   } finally {
     cleanup(store, dir);
   }
+});
+
+test('推演遵守中翻法解鎖門檻', async () => {
+  const pair = [
+    { id: 'v:ami|r', kind: 'vocab-recall', mode: 'self', level: 'A2', freq: 2, tags: ['vocab'], front: { word: 'ami', gloss: '朋友' } },
+    { id: 'v:ami|p', kind: 'vocab-produce', mode: 'typed', level: 'A2', freq: 2, tags: ['vocab'], answer: 'ami', accept: ['ami'], front: { gloss: '朋友' } },
+  ];
+  const [api, store, dir] = await open(pair);
+  try {
+    assert.equal(api.scopedStates(Api.activeScope()).find((card) => card.id.endsWith('|p')).prerequisite, 'v:ami|r');
+    api.review({ cardId: 'v:ami|r', rating: 3 });
+    assert.equal(api.scopedStates(Api.activeScope()).find((card) => card.id.endsWith('|p')).prerequisite, undefined);
+  } finally { cleanup(store, dir); }
 });
 
 test('doc：只認白名單的三個代號，路徑不可能被塞進來', async () => {
