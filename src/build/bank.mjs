@@ -12,7 +12,7 @@
 
 import { mkdir, writeFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
-import { SOURCES, exists, readJson, loadGlosses, resolveGloss } from './sources.mjs';
+import { SOURCES, exists, readJson, loadGlosses, resolveGloss, sourceFingerprint } from './sources.mjs';
 import { loadVerbiste, conjugate, compound, PRONOUNS, IMPERATIVE_PRONOUNS, AUX_DUAL_NOTE } from './verbiste.mjs';
 import { loadConnectors, MOOD_LABELS, MOOD_ZH } from './connectors.mjs';
 import { CONNECTOR_GLOSS } from './connector-gloss.mjs';
@@ -369,6 +369,7 @@ export async function build(outDir, log = () => {}) {
   const meta = {
     builtAt: new Date().toISOString(),
     sources: SOURCES,
+    sourceFingerprint: await sourceFingerprint(),
     counts: {
       cards: cards.length,
       vocabRecall: vocabCards.filter((c) => c.kind === 'vocab-recall').length,

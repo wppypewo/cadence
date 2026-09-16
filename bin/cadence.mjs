@@ -13,7 +13,7 @@
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 
@@ -224,7 +224,7 @@ async function forecast(flags) {
 }
 
 async function doctor(flags) {
-  const { checkSources } = await import('../src/build/sources.mjs');
+  const { checkSources, sourceFingerprint } = await import('../src/build/sources.mjs');
   const report = { sources: await checkSources(), bank: null, index: null, journal: null, checkins: null, attempts: null };
 
   const bankFile = path.join(DATA, 'bank', 'cards.json');
@@ -238,6 +238,11 @@ async function doctor(flags) {
     const store = new Store(DATA);
     const attempts = new AttemptLog(DATA, store.db);
     report.bank = { ...report.bank, ...await store.auditBank(report.bank.meta) };
+    try {
+      report.bank.sourceCurrent = report.bank.meta.sourceFingerprint === await sourceFingerprint();
+    } catch {
+      report.bank.sourceCurrent = false;
+    }
     report.index = {
       cards: store.cardCount(),
       states: store.db.prepare('SELECT COUNT(*) n FROM states').get().n,
@@ -256,6 +261,9 @@ async function doctor(flags) {
   if (!report.bank.exists) problems.push('題庫不存在，跑 npm run build');
   else if (!report.bank.inSync) {
     problems.push(`題庫與索引內容不一致（題庫 ${report.bank.cards} 張、meta ${report.bank.metaCards} 張、索引 ${report.bank.indexed} 張）。跑 npm run build`);
+  }
+  if (report.bank.exists && report.bank.inSync && !report.bank.sourceCurrent) {
+    problems.push('題庫落後於上游法文資料；啟動 cadence 會自動同步，或跑 npm run build');
   }
   if (report.journal && !report.journal.inSync) {
     const bad = report.journal.bad.length ? `，另有 ${report.journal.bad.length} 行無法重放` : '';
@@ -294,7 +302,8 @@ async function doctor(flags) {
     for (const [k, v] of Object.entries(report.sources)) {
       process.stdout.write(`${v.ok ? '✓' : '✗'} ${k.padEnd(10)} ${v.detail}\n`);
     }
-    process.stdout.write(`${report.bank.exists && report.bank.inSync ? '✓' : '✗'} 題庫       ${report.bank.exists ? `${report.bank.cards.toLocaleString()} 張，建於 ${report.bank.meta.builtAt.slice(0, 16).replace('T', ' ')}${report.bank.inSync ? '，與索引內容一致' : '，與索引內容不一致'}` : report.bank.hint}\n`);
+    const bankOk = report.bank.exists && report.bank.inSync && report.bank.sourceCurrent;
+    process.stdout.write(`${bankOk ? '✓' : '✗'} 題庫       ${report.bank.exists ? `${report.bank.cards.toLocaleString()} 張，建於 ${report.bank.meta.builtAt.slice(0, 16).replace('T', ' ')}${report.bank.inSync ? '，與索引內容一致' : '，與索引內容不一致'}${report.bank.sourceCurrent ? '，來源內容最新' : '，上游來源已變動'}` : report.bank.hint}\n`);
     if (report.index) process.stdout.write(`  索引       卡 ${report.index.cards.toLocaleString()}　狀態 ${report.index.states.toLocaleString()}　紀錄 ${report.index.reviews.toLocaleString()}\n`);
     if (report.journal) process.stdout.write(`${report.journal.inSync ? '✓' : '✗'} 複習紀錄   ${report.journal.lines} 行，${(report.journal.bytes / 1024).toFixed(1)} KB${report.journal.inSync ? '，逐筆一致' : '，內容不一致'}\n`);
     if (report.checkins?.exists || report.index?.checkins) process.stdout.write(`${report.checkins.inSync ? '✓' : '✗'} 打卡紀錄   ${report.checkins.lines} 行，索引 ${report.index.checkins} 天${report.checkins.inSync ? '，折疊後一致' : '，內容不一致'}\n`);
@@ -317,13 +326,36 @@ async function openStore() {
 }
 
 async function ensureBank() {
-  if (existsSync(path.join(DATA, 'bank', 'cards.json'))) return;
-  process.stdout.write('題庫還沒建過，現在建……\n');
+  const bankDir = path.join(DATA, 'bank');
+  const cardsFile = path.join(bankDir, 'cards.json');
+  const metaFile = path.join(bankDir, 'meta.json');
+  let message = '題庫還沒建過，現在建……';
+  if (existsSync(cardsFile) && existsSync(metaFile)) {
+    try {
+      const meta = JSON.parse(readFileSync(metaFile, 'utf8'));
+      const { sourceFingerprint } = await import('../src/build/sources.mjs');
+      const current = await sourceFingerprint();
+      if (meta.sourceFingerprint === current) return;
+      message = meta.sourceFingerprint
+        ? '上游法文資料有更新，現在同步重建題庫……'
+        : '題庫是舊格式，現在補上來源追蹤並重建……';
+    } catch {
+      message = '題庫狀態讀取失敗，現在重新建置……';
+    }
+  }
+  process.stdout.write(`${message}\n`);
   const { build: buildBank } = await import('../src/build/bank.mjs');
-  const result = await buildBank(path.join(DATA, 'bank'));
+  const result = await buildBank(bankDir);
   // missing 是 {name, dir} 陣列，直接 join 會印出 [object Object]。
   if (!result.ok) throw new Error(`題庫建不起來：${result.missing.map((m) => m.name).join('、')}`);
-  process.stdout.write(`建好了：${result.counts.cards.toLocaleString()} 張卡。\n`);
+  const { Store } = await import('../src/db.mjs');
+  const store = new Store(DATA);
+  try {
+    await store.loadBank();
+  } finally {
+    store.close();
+  }
+  process.stdout.write(`同步完成：${result.counts.cards.toLocaleString()} 張卡。\n`);
 }
 
 function openBrowser(url) {

@@ -5,7 +5,8 @@
  * 結構，不再碰路徑，換機器或搬目錄時只需要改這裡（或設環境變數）。
  */
 
-import { readFile, access } from 'node:fs/promises';
+import { readFile, access, readdir } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import path from 'node:path';
 
@@ -99,6 +100,38 @@ const REQUIRED = {
     'french-rewrite-drill-bank.md',
   ],
 };
+
+/**
+ * 列出會實際影響題庫內容的全部輸入。路徑本身不進指紋，搬家不該強迫重建；
+ * 來源代號與相對路徑會進，避免兩個來源的同名檔互相抵銷。
+ */
+export async function sourceInputs() {
+  const inputs = [];
+  for (const [source, files] of Object.entries(REQUIRED)) {
+    for (const relative of files) inputs.push({ source, relative, file: path.join(SOURCES[source], relative) });
+  }
+  const glosses = (await readdir(SOURCES.fexgen))
+    .filter((name) => /^gloss_.*\.json$/.test(name))
+    .sort();
+  for (const relative of glosses) inputs.push({ source: 'fexgen', relative, file: path.join(SOURCES.fexgen, relative) });
+  return inputs;
+}
+
+/** 可注入檔案清單的底層版本，測試不用碰使用者的三個 repo。 */
+export async function fingerprintInputs(inputs) {
+  const hash = createHash('sha256');
+  const ordered = [...inputs].sort((a, b) => `${a.source}/${a.relative}`.localeCompare(`${b.source}/${b.relative}`));
+  for (const input of ordered) {
+    hash.update(`${input.source}/${input.relative}\0`);
+    hash.update(await readFile(input.file));
+    hash.update('\0');
+  }
+  return hash.digest('hex');
+}
+
+export async function sourceFingerprint() {
+  return fingerprintInputs(await sourceInputs());
+}
 
 /**
  * 檢查三個來源是否還在原地。
