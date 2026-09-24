@@ -117,6 +117,8 @@ async function handleApi(api, req, res, url) {
       return send(res, 200, api.queue(q));
     case 'GET /api/reveal':
       return send(res, 200, api.reveal(q));
+    case 'GET /api/preview':
+      return send(res, 200, api.preview(q));
     case 'GET /api/stats':
       return send(res, 200, api.stats(q));
     case 'GET /api/forecast':

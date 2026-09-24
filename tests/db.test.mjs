@@ -753,3 +753,29 @@ test('打卡檔壞掉的行只跳過那一行，並標明是哪個檔', async ()
     cleanup(store, dir);
   }
 });
+
+test('變位新卡：動詞輪替，一次一個時態的 6 格，學過的不影響其他動詞的位置', async () => {
+  const conj = (verb, tense, person, freq) => card(`c:${verb}|${tense}|${person}`, { kind: 'conj', mode: 'type', level: 'B1', freq });
+  const bank = [];
+  for (const [verb, freq] of [['être', 30], ['avoir', 20], ['faire', 10]]) {
+    // 故意照字母序放：舊版照 id 排會先出 cond。
+    for (const tense of ['cond', 'fut', 'imp', 'pc', 'pres', 'subj']) {
+      for (let p = 0; p < 6; p += 1) bank.push(conj(verb, tense, p, freq));
+    }
+  }
+  const [store, dir] = await open(bank);
+  try {
+    const blocks = (cards) => [...new Set(cards.map((c) => c.id.split('|').slice(0, 2).join('|')))];
+    const q = store.queue({ limit: 36, newLimit: null });
+    assert.deepEqual(blocks(q), ['c:être|pres', 'c:être|pc', 'c:avoir|pres', 'c:être|imp', 'c:avoir|pc', 'c:faire|pres']);
+    assert.deepEqual(q.slice(0, 6).map((c) => c.id.at(-1)), ['0', '1', '2', '3', '4', '5']);
+
+    // être 現在式學完之後，下一輪仍是 être 複合過去式與 avoir 現在式並排，
+    // 而不是 être 一路做到虛擬式才輪到 avoir。
+    for (let p = 0; p < 6; p += 1) store.review({ cardId: `c:être|pres|${p}`, rating: 3, correct: true });
+    const next = store.queue({ limit: 18, newLimit: null, now: new Date() }).filter((c) => !c.state);
+    assert.deepEqual(blocks(next), ['c:être|pc', 'c:avoir|pres', 'c:être|imp']);
+  } finally {
+    cleanup(store, dir);
+  }
+});

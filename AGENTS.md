@@ -22,7 +22,7 @@
 
 ```bash
 npm run lint   # node --check 全檔 ＋ bash -n cadence.command
-npm test       # 268 題，含 732 組 FSRS 黃金向量
+npm test       # 270 題，含 732 組 FSRS 黃金向量
 npm run doctor # 四個外部來源、題庫、索引三邊對帳
 ```
 

@@ -84,6 +84,7 @@ web/
 | GET | `/api/doc` | 讀 `study/` 底下的文件。`id` 只認白名單的三個代號，不接受路徑 |
 | GET | `/api/queue` | 今天的複習佇列 |
 | GET | `/api/reveal` | 使用者翻面後才取回看字回想題的釋義 |
+| GET | `/api/preview` | 名詞化與改寫整句的新卡第一次出現時先看解答。只讀，學過的卡回 400 |
 | GET | `/api/stats` | 統計頁全部資料 |
 | GET | `/api/forecast` | 考前推演 |
 | GET | `/api/search` | 查字 |

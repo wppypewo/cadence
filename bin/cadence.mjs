@@ -153,16 +153,21 @@ async function reindex() {
 
 async function stats(flags) {
   const store = await openStore();
-  const s = store.summary();
-  const kinds = store.byKind();
-  const errors = store.errorProfile();
+  // 範圍跟網頁共用 Api.activeScope：不套的話 A1 的到期卡也算進來，
+  // 實測同一份資料終端機印 92 張到期、今天頁只有 26 張，兩邊對不起來。
+  const { Api } = await import('../src/api.mjs');
+  const scope = Api.activeScope();
+  const s = store.summary(scope);
+  const kinds = store.byKind(scope);
+  const errors = store.errorProfile(scope);
   if (flags.json) {
-    process.stdout.write(`${JSON.stringify({ summary: s, byKind: kinds, errors }, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify({ scope, summary: s, byKind: kinds, errors }, null, 2)}\n`);
     store.close();
     return;
   }
   const pct = (a, b) => (b ? `${((a / b) * 100).toFixed(1)}%` : '—');
   process.stdout.write(
+    '範圍 與今天頁相同：A1 單字不出新卡，變位不分等級，學過的 A1 卡照常到期\n' +
     `題庫 ${s.totalCards.toLocaleString()} 張　已見過 ${s.seenCards.toLocaleString()}（${pct(s.seenCards, s.totalCards)}）\n` +
     `到期 ${s.dueNow.toLocaleString()} 張　已鞏固 ${s.matureCards.toLocaleString()}（穩定度 ≥ 21 天）\n` +
     `累計作答 ${s.totalReviews.toLocaleString()} 次　今天 ${s.todayReviews} 次（對 ${s.todayCorrect}）　連續 ${s.streakDays} 天\n\n`,

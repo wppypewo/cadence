@@ -433,7 +433,7 @@ test('stats 的每個數字都吃 scope，紀錄檔資訊不吃', async () => {
     assert.equal(all.errorProfile.length, 1);
 
     const conj = api.stats({ kinds: 'conj' });
-    assert.deepEqual(conj.scope, { kinds: ['conj'], levels: ['A2', 'B1'] });
+    assert.deepEqual(conj.scope, { kinds: ['conj'], levels: [], active: true });
     assert.equal(conj.summary.totalCards, 1);
     assert.equal(conj.byKind.length, 1);
     assert.equal(conj.weakest.length, 1);
@@ -643,19 +643,33 @@ test('today／queue：不設上限時額度欄位回 null，新卡數以還能�
   }
 });
 
-test('A1 退出日常流程，但查字與既有歷史仍保留', async () => {
+test('A1 單字不出新卡，但 A1 變位照出、學過的 A1 卡照常到期', async () => {
   const a1 = { id: 'a1:bonjour', kind: 'vocab-recall', mode: 'self', level: 'A1', freq: 99, tags: ['vocab'], front: { word: 'bonjour', gloss: '你好' } };
-  const [api, store, dir] = await open([...BANK, a1]);
+  const a1conj = {
+    id: 'c:avoir|pres|0', kind: 'conj', mode: 'typed', level: 'A1', freq: 50, tags: ['conj'],
+    answer: 'ai', accept: ['ai'], front: { infinitive: 'avoir', tense: '現在式', person: 'je' },
+  };
+  const [api, store, dir] = await open([...BANK, a1, a1conj]);
   try {
     const q = api.queue({ limit: 20 });
-    assert.equal(q.cards.some((card) => card.level === 'A1'), false);
-    assert.equal(q.remaining.new, BANK.length);
-    const t = api.today();
-    assert.equal(t.startLevel, null);
-    assert.equal(api.summary().totalCards, BANK.length);
+    assert.equal(q.cards.some((card) => card.level === 'A1' && card.kind !== 'conj'), false);
+    assert.equal(q.cards.some((card) => card.kind === 'conj' && card.level === 'A1'), true);
+    assert.equal(q.remaining.new, BANK.length + 1);
+    assert.equal(api.today().startLevel, null);
+    assert.equal(api.summary().totalCards, BANK.length + 1);
     assert.equal(api.search({ q: 'bonjour' }).hits[0].card.level, 'A1');
+
+    // 以前學過的 A1 單字卡：到期了就要回到佇列，不能因為等級被藏起來。
     api.review({ cardId: a1.id, rating: 3 });
     assert.ok(api.search({ q: 'bonjour' }).hits[0].state);
+    assert.equal(api.summary().totalCards, BANK.length + 2);
+    const later = new Date(Date.now() + 400 * 86_400_000);
+    const due = store.queue({ ...Api.activeScope(), limit: 20, now: later, newLimit: 0 });
+    assert.ok(due.some((card) => card.id === a1.id));
+
+    // 側欄明確勾了 A2 就只照勾的，A1 變位也不出。
+    const onlyA2 = api.queue({ limit: 20, levels: 'A2' });
+    assert.equal(onlyA2.cards.some((card) => card.level === 'A1'), false);
   } finally {
     cleanup(store, dir);
   }
@@ -759,6 +773,31 @@ test('打卡不吃前端傳來的日期：事實檔只寫得進今天', async ()
     const po = api.today().tasks.find((x) => x.id === 'PO');
     // 日期由伺服器決定，補打舊日期這件事沒有被順手開出來。
     assert.equal(po.lastDay, localDay(new Date()));
+  } finally {
+    cleanup(store, dir);
+  }
+});
+
+test('preview：名詞化與改寫整句的新卡先看解答，只讀、學過就不給', async () => {
+  const [api, store, dir] = await open();
+  try {
+    const rw = api.preview({ id: 'rw:III|2' });
+    assert.ok(rw.answer);
+    assert.equal(rw.must, undefined);
+    const nom = api.preview({ id: 'n:absent|ADJ' });
+    assert.ok(nom.answer);
+    // 看解答不算作答：沒有排程狀態、紀錄檔沒有多一行。
+    assert.equal(store.state('n:absent|ADJ'), null);
+    assert.equal(store.db.prepare('SELECT COUNT(*) n FROM reviews').get().n, 0);
+
+    // queue 發出去的是代號，preview 也要認得代號。
+    const token = api.queue({ limit: 20, kinds: 'nom' }).cards[0].id;
+    assert.equal(api.preview({ id: token }).answer, nom.answer);
+
+    assert.equal(caught(() => api.preview({ id: 'v:chien' })).status, 400);
+    assert.equal(caught(() => api.preview({ id: 'nope' })).status, 404);
+    api.review({ cardId: 'n:absent|ADJ', answer: nom.answer });
+    assert.equal(caught(() => api.preview({ id: 'n:absent|ADJ' })).status, 400);
   } finally {
     cleanup(store, dir);
   }

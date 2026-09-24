@@ -10,13 +10,13 @@ import { fileURLToPath } from 'node:url';
 import { grade, gradePick, gradeRewrite, gradeNom } from './engine/grade.mjs';
 import { simulate, solveDailyNew, ratingDistribution } from './engine/forecast.mjs';
 import { buildToday } from './engine/today.mjs';
-import { localDay, CHECKIN_SKILLS, MATURE_DAYS } from './db.mjs';
+import { localDay, CHECKIN_SKILLS, MATURE_DAYS, ACTIVE_LEVELS, scopeClause } from './db.mjs';
 import { readCheck } from './engine/lexicon.mjs';
 import { AttemptLog } from './attempts.mjs';
 import { backupBundle, backupStatus } from './backup.mjs';
 
 const KINDS = ['vocab-recall', 'vocab-produce', 'conj', 'connector', 'pick', 'rw', 'nom'];
-export const ACTIVE_LEVELS = ['A2', 'B1'];
+export { ACTIVE_LEVELS };
 
 /**
  * 可以被 /api/doc 讀出去的檔案，白名單寫死。
@@ -60,9 +60,12 @@ export class Api {
     return { kinds: pick(query.kinds, KINDS), levels: pick(query.levels, ACTIVE_LEVELS) };
   }
 
-  /** A1 留在查字與歷史裡；學習、統計和推演只看 A2/B1。 */
+  /**
+   * 學習、統計和推演用的範圍。A1 單字不出新卡，但變位題與學過的 A1 卡照常，
+   * 條件寫在 db.mjs 的 ACTIVE_CLAUSE；側欄明確勾了等級時只照勾的。
+   */
   static activeScope(scope = {}) {
-    return { ...scope, levels: scope.levels?.length ? scope.levels : ACTIVE_LEVELS };
+    return { ...scope, levels: scope.levels ?? [], active: true };
   }
 
   summary() {
@@ -121,6 +124,25 @@ export class Api {
       // 四個評分各會排到幾天後，印在評分鍵上。只算不寫，不碰 reviews.jsonl。
       intervals: this.store.previewIntervals(cardId),
     };
+  }
+
+  /**
+   * 名詞化與改寫整句的新卡，第一次出現時先給看解答（2026-09-24 使用者決定）。
+   * 實測這兩種題第一次見就要憑空寫出來，答錯的多半不是忘了，是從來沒學過規則。
+   *
+   * 只讀，不寫任何紀錄：看過解答不算作答，排程從之後那次真正的考試才開始。
+   * 只放行「還沒有排程狀態」的卡——學過的卡拿得到解答就等於考前偷看。
+   */
+  preview(query = {}) {
+    const cardId = this.resolveCard(String(query.id ?? ''));
+    const card = this.store.card(cardId);
+    if (!card) throw new HttpError(404, `找不到卡片 ${query.id ?? ''}`);
+    if (card.kind !== 'nom' && card.kind !== 'rw') {
+      throw new HttpError(400, '只有名詞化與改寫整句的新卡可以先看解答');
+    }
+    if (this.store.state(cardId)) throw new HttpError(400, '這張卡已經學過，不能先看解答');
+    // must 不給：那是批改用的比對片段（例如 sans qu 同時接住 que／qu'），印出來反而看不懂。
+    return { answer: card.answer ?? null, note: card.note ?? null };
   }
 
   /**
@@ -322,17 +344,8 @@ export class Api {
 
   /** 範圍內每張卡的 FSRS 狀態。沒練過的卡沒有狀態，模擬時當新卡。 */
   scopedStates(scope) {
-    const where = [];
-    const params = [];
-    if (scope.kinds?.length) {
-      where.push(`c.kind IN (${scope.kinds.map(() => '?').join(',')})`);
-      params.push(...scope.kinds);
-    }
-    if (scope.levels?.length) {
-      where.push(`c.level IN (${scope.levels.map(() => '?').join(',')})`);
-      params.push(...scope.levels);
-    }
-    const clause = where.length ? ` WHERE ${where.join(' AND ')}` : '';
+    const [where, params] = scopeClause(scope);
+    const clause = ` WHERE 1 = 1${where}`;
     const rows = this.store.db
       .prepare(
         `SELECT c.id, c.kind, c.level, s.stability, s.difficulty, s.due,

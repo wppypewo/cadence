@@ -187,6 +187,18 @@ const USER_SETTINGS = ['desiredRetention', 'dailyNewLimit', 'examDate', 'startLe
  */
 export const LEVELS = ['A1', 'A2', 'B1'];
 
+/**
+ * 日常學習的單字等級。A1 的單字已經會了，不再出新卡（2026-09-24 使用者決定）。
+ * 但這條只管「新單字」：變位題不看動詞等級——être、avoir 被 FLELex 標成 A1，
+ * 照等級切的話最常用的動詞一個都練不到；已經學過的 A1 卡也照常到期，
+ * 否則實測有 66 張到期卡從 09-12 起就一直藏著沒出現。
+ */
+export const ACTIVE_LEVELS = ['A2', 'B1'];
+
+/** scope.active 時接在 WHERE 後面的條件。c 是 cards。 */
+const ACTIVE_CLAUSE = `(c.kind = 'conj' OR c.level IN (${ACTIVE_LEVELS.map(() => '?').join(',')})
+  OR EXISTS (SELECT 1 FROM states x WHERE x.card_id = c.id))`;
+
 export class Store {
   /**
    * @param {string} dataDir 專案的 data/ 目錄
@@ -790,7 +802,7 @@ function binaryCompare(a, b) {
 // 的物件；交給 SQLite 走索引，記憶體佔用與題庫大小無關。
 
 /** 建立 kind / level 的 WHERE 片段。回傳 [sql, params]。 */
-function scopeClause(scope = {}) {
+export function scopeClause(scope = {}) {
   const where = [];
   const params = [];
   if (scope.kinds?.length) {
@@ -800,6 +812,11 @@ function scopeClause(scope = {}) {
   if (scope.levels?.length) {
     where.push(`c.level IN (${scope.levels.map(() => '?').join(',')})`);
     params.push(...scope.levels);
+  }
+  // 側欄明確勾了等級就只照勾的；沒勾才套日常範圍（見 ACTIVE_LEVELS）。
+  if (scope.active && !scope.levels?.length) {
+    where.push(ACTIVE_CLAUSE);
+    params.push(...ACTIVE_LEVELS);
   }
   return [where.length ? ` AND ${where.join(' AND ')}` : '', params];
 }
@@ -822,6 +839,37 @@ const siblingKey = (card) => (card.kind === 'vocab-recall' || card.kind === 'voc
 const PRODUCE_GATE = ` AND (c.kind <> 'vocab-produce' OR c.id NOT LIKE '%|p'
   OR EXISTS (SELECT 1 FROM states g WHERE g.card_id = substr(c.id, 1, length(c.id) - 1) || 'r')
   OR NOT EXISTS (SELECT 1 FROM cards g2 WHERE g2.id = substr(c.id, 1, length(c.id) - 1) || 'r'))`;
+
+/**
+ * 變位新卡的順序（2026-09-24 使用者決定「動詞輪替，一次一個時態」）。
+ *
+ * 舊版照 freq DESC, id ASC 排：同一個動詞的 36 張卡 freq 相同，於是按 id 的字母序出——
+ * être 第一張是條件式（cond 排在 pres 前面），而且要把 être 六個時態全做完才輪到 avoir。
+ *
+ * 現在的排序鍵是「動詞頻率排名 + 時態序」，時態序依 CONJ_TENSES。同一個鍵值裡先高頻動詞。
+ * 效果是一條對角線：être 現在式 → être 複合過去式、avoir 現在式 → être 未完成過去式、avoir 複合過去式、
+ * faire 現在式……每一輪多一個新動詞，已經開始的動詞各往下推一個時態，一次一個時態的 6 格。
+ *
+ * 兩個數都是**絕對**的：排名算的是範圍內所有動詞（含已學完的），時態序也不看還剩哪些。
+ * 若改用「剩下的」重算，être 做完現在式後它的下一個時態又變成序 0，
+ * 永遠排在 avoir 前面，結果退化成一個動詞整組做完才換下一個。
+ * scope 片段出現兩次（動詞排名一次、撈卡一次），參數也要傳兩份。
+ */
+const CONJ_TENSES = ['pres', 'pc', 'imp', 'fut', 'cond', 'subj'];
+// id 不是 c:動詞|時態|人稱 的（測試卡、手寫卡）整個 id 當一個動詞，排序就退回照頻率。
+const CONJ_VERB = "CASE WHEN c.id LIKE 'c:%|%' THEN substr(c.id, 3, instr(c.id, '|') - 3) ELSE c.id END";
+const CONJ_TENSE_IDX = `CASE ${CONJ_TENSES.map((t, i) => `WHEN c.id LIKE 'c:%|${t}|%' THEN ${i}`).join(' ')} ELSE ${CONJ_TENSES.length} END`;
+const CONJ_FRESH_SQL = (clause) => `
+  WITH v AS (
+    SELECT ${CONJ_VERB} verb, ROW_NUMBER() OVER (ORDER BY MAX(c.freq) DESC, ${CONJ_VERB} ASC) rk
+    FROM cards c WHERE c.kind = 'conj'${clause} GROUP BY verb
+  )
+  SELECT c.payload FROM cards c
+  JOIN v ON v.verb = ${CONJ_VERB}
+  LEFT JOIN states s ON s.card_id = c.id
+  WHERE s.card_id IS NULL AND c.kind = 'conj'${clause}
+  ORDER BY v.rk + ${CONJ_TENSE_IDX}, v.rk, ${CONJ_TENSE_IDX}, c.id
+  LIMIT ?`;
 
 /**
  * 仍以到期時間／頻率為主序，只在同題型已連續兩張時往後找最近的其他題型。
@@ -957,9 +1005,11 @@ Object.assign(Store.prototype, {
        WHERE s.card_id IS NULL AND c.kind = ?${freshClause}${PRODUCE_GATE}
        ORDER BY c.freq DESC, c.id ASC LIMIT ?`,
     );
-    const lanes = kinds.map((kind) => lane
-      .all(kind, ...freshParams, want)
-      .map((r) => ({ ...JSON.parse(r.payload), state: null })));
+    const conjLane = this.db.prepare(CONJ_FRESH_SQL(freshClause));
+    const lanes = kinds.map((kind) => (kind === 'conj'
+      ? conjLane.all(...freshParams, ...freshParams, want)
+      : lane.all(kind, ...freshParams, want)
+    ).map((r) => ({ ...JSON.parse(r.payload), state: null })));
     const fresh = limitKindRuns(interleaveKinds(lanes, want), want, due);
 
     return [...due, ...fresh];

@@ -72,6 +72,11 @@ export function reviewView(root, ctx) {
     error: null,
     preset,
     focus: new Map(),
+    // 名詞化與改寫整句的新卡，這次進頁面已經看過解答的 id。跨批保留：
+    // 看過之後的那次考試才是第一次作答，不能因為換批又先給看一次。
+    previewed: new Set(),
+    // 正在顯示的那張「先看解答」：{ id, data, error }。解答另外抓，佇列裡沒有。
+    study: null,
   };
 
   const body = h('div');
@@ -100,6 +105,41 @@ export function reviewView(root, ctx) {
     }
     state.loading = false;
     render();
+  }
+
+  function loadPreview(card) {
+    state.study = { id: card.id, data: null, error: null };
+    api.preview(card.id).then(
+      (data) => {
+        if (state.study?.id !== card.id) return;
+        state.study.data = data;
+        render();
+      },
+      (err) => {
+        if (state.study?.id !== card.id) return;
+        // 拿不到解答（例如別的分頁剛考過這張）就直接考，不要卡在一個按不下去的畫面。
+        state.previewed.add(card.id);
+        state.study = null;
+        ctx.toast(`讀不到解答，直接作答：${err.message}`, 'bad');
+        render();
+      },
+    );
+  }
+
+  /**
+   * 看完解答，這張移到這一批後面幾張再考。緊接著考只是抄剛才那一眼，
+   * 隔幾張才是從記憶裡拿。這一步不送任何東西給伺服器，reviews.jsonl 一行都不會多。
+   */
+  function seenPreview() {
+    const card = current();
+    if (!card || !state.study?.data) return;
+    state.previewed.add(card.id);
+    state.study = null;
+    const [moved] = state.cards.splice(state.idx, 1);
+    state.cards.splice(Math.min(state.idx + PREVIEW_GAP, state.cards.length), 0, moved);
+    state.startedAt = performance.now();
+    render();
+    announce('這張稍後再考');
   }
 
   function keepGoing() {
@@ -170,8 +210,11 @@ export function reviewView(root, ctx) {
         const key = res.grade?.reason ?? card.kind;
         state.focus.set(key, (state.focus.get(key) ?? 0) + 1);
       }
-      state.ms += ms;
-      announce(verdictText(res, answer));
+      // 加總時單張封頂，送給伺服器的仍是原始 ms。卡片開著人走開，計時會一直跑：
+      // 實測有一張 pick 記到 25 分鐘，一張就能把「作答時間共 n 分鐘」灌大好幾倍。
+      // 上限跟統計頁取中位數時的 120 秒一致。
+      state.ms += Math.min(ms, SESSION_MS_CAP);
+      announce(verdictText(card, res, answer));
       render();
       // 上方那行「待複習 n・新卡 x/y」是作答後才會變的，隨佇列一起抓的那份已經過期。
       // 側欄的數字問的是同一支端點，借它回來的結果就地補上，不另外再打一次請求。
@@ -210,6 +253,12 @@ export function reviewView(root, ctx) {
       body.querySelector('.empty h2')?.focus();
       return;
     }
+    if (needsPreview(card, state)) {
+      if (state.study?.id !== card.id) loadPreview(card);
+      body.append(h('div.study', {}, topBar(state), studyFace(card, state.study, seenPreview)));
+      focusInput(body);
+      return;
+    }
     body.append(h('div.study', {},
       topBar(state),
       face(card, state, submit),
@@ -232,6 +281,10 @@ export function reviewView(root, ctx) {
     if (t?.closest?.('dialog[open]') || t?.matches?.('input, textarea, select, [contenteditable="true"]')) return;
     const card = current();
     if (!card) return;
+    if (needsPreview(card, state)) {
+      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); seenPreview(); }
+      return;
+    }
     if (state.verdict) {
       if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); next(); }
       return;
@@ -265,6 +318,44 @@ export function reviewView(root, ctx) {
 }
 
 // ---- 版面片段 ------------------------------------------------------------
+
+/** 先看解答的卡，看完之後往後挪幾張再考。 */
+const PREVIEW_GAP = 4;
+
+/**
+ * 名詞化與改寫整句的新卡第一次出現時先給看解答（2026-09-24 使用者決定）。
+ * 這兩種題考的是規則（-eur 陰性、alors que 接直陳式），沒學過規則就要憑空寫，
+ * 答錯記下來的不是「忘了」，排程會把它當成一張很難的卡。
+ */
+function needsPreview(card, state) {
+  return (card.kind === 'nom' || card.kind === 'rw') && !card.state && !state.previewed.has(card.id);
+}
+
+function studyFace(card, study, seen) {
+  const f = card.front ?? {};
+  const box = h('div.card-face');
+  box.append(h('div.face-tags', {},
+    h('span.chip.chip-accent', { text: KIND_ZH[card.kind] ?? card.kind }),
+    h('span.chip', { text: '新卡・先看解答' }),
+  ));
+  box.append(prompt(card, f));
+
+  const panel = h('div.study-answer');
+  const d = study?.data;
+  if (!d) {
+    panel.append(h('p.verdict-note', { text: '讀取解答中…' }));
+  } else {
+    panel.append(h('div.cue', { text: '解答' }));
+    panel.append(h(card.kind === 'rw' ? 'div.rw-answer.fr' : 'div.verdict-answer.fr', { lang: 'fr', text: d.answer ?? '' }));
+    if (d.note) panel.append(h('p.verdict-note', { text: d.note }));
+    panel.append(h('p.verdict-note', { text: '這次不計分。隔幾張之後會正式考這一題。' }));
+  }
+  box.append(panel);
+  box.append(h('button.btn.btn-primary.answer-target', {
+    type: 'button', onclick: seen, disabled: !d, text: '看過了，稍後再考',
+  }));
+  return box;
+}
 
 function topBar(state) {
   const total = state.cards.length;
@@ -617,18 +708,28 @@ function tone(res) {
   return 'bad';
 }
 
-function verdictText(res, answered) {
+/**
+ * 錯法的中文。選擇題的 wrong 另外講：按錯選項不是拼寫問題，
+ * 原本共用「拼錯了」，連接詞卡答錯時畫面說的是一件沒發生的事。
+ */
+function reasonText(card, reason) {
+  if (card?.mode === 'choice' && reason === 'wrong') return '選錯了';
+  return REASON_ZH[reason] ?? reason ?? '';
+}
+
+function verdictText(card, res, answered) {
   if (!res.grade) return `記為「${RATING_ZH[res.rating]}」，下次 ${relDays(res.state.intervalDays)}`;
-  if (res.grade.miss) return `${headText(res)}。下次 ${relDays(res.state.intervalDays)}`;
-  const r = REASON_ZH[res.grade.reason] ?? res.grade.reason;
-  return `${r}。正確答案 ${res.answer}${answered ? `，你寫的是 ${answered}` : ''}`;
+  if (res.grade.miss) return `${headText(card, res)}。下次 ${relDays(res.state.intervalDays)}`;
+  const r = reasonText(card, res.grade.reason);
+  const verb = card?.mode === 'choice' ? '選' : '寫';
+  return `${r}。正確答案 ${res.answer}${answered ? `，你${verb}的是 ${answered}` : ''}`;
 }
 
 /** 批改面板最上面那一行。改寫題自評過就報自評，其餘報錯法。 */
-function headText(res) {
+function headText(card, res) {
   if (!res.grade) return `記為「${RATING_ZH[res.rating]}」`;
   if (res.grade.miss && res.grade.correct) return `要素齊全，自評「${RW_RATING_ZH[res.rating] ?? RATING_ZH[res.rating]}」`;
-  return REASON_ZH[res.grade.reason] ?? res.grade.reason ?? '';
+  return reasonText(card, res.grade.reason);
 }
 
 function verdictPanel(card, res, next, correct) {
@@ -637,7 +738,7 @@ function verdictPanel(card, res, next, correct) {
 
   box.append(h('div.verdict-head', {},
     icon(t === 'ok' ? 'check' : t === 'near' ? 'alert' : 'cross'),
-    h('span', { text: headText(res) }),
+    h('span', { text: headText(card, res) }),
   ));
 
   // 改寫題不做逐字比對：整句有好幾種寫法都對，拿解答當骨架比一遍會整片標紅。
@@ -657,6 +758,9 @@ function verdictPanel(card, res, next, correct) {
       box.append(h('div.cue', { text: '解答' }));
       box.append(h('div.rw-answer.fr', { lang: 'fr', text: res.answer }));
     }
+  } else if (card.mode === 'choice') {
+    // 選擇題沒有拼寫可比：imparfait 對 indicatif 逐字標紅只會標出一排無意義的紅字。
+    if (res.answer) box.append(h('div.verdict-answer.fr', { lang: 'fr', text: res.answer }));
   } else if (res.answer) {
     // 逐字比對：以正確答案為骨架，把使用者沒打對的字元標出來。
     const line = h('div.verdict-answer.fr', { lang: 'fr' });
@@ -696,7 +800,7 @@ function verdictPanel(card, res, next, correct) {
   }
 
   if (res.answered && res.grade && (card.kind === 'rw' || res.grade.reason !== 'exact')) {
-    box.append(h('p.verdict-yours', {}, '你寫的：', h('span', { lang: 'fr', text: res.answered || '（空白）' })));
+    box.append(h('p.verdict-yours', {}, card.mode === 'choice' ? '你選的：' : '你寫的：', h('span', { lang: 'fr', text: res.answered || '（空白）' })));
   }
   if (res.accept && res.accept.length > 1) {
     box.append(h('p.verdict-note', { lang: 'fr', text: `也接受：${res.accept.slice(1).join('、')}` }));
@@ -814,6 +918,9 @@ function checkpoint(state, ctx, keepGoing) {
     ),
   );
 }
+
+/** 單張卡計入本次作答時間的上限（毫秒），與 api.mjs 統計中位數的過濾上限相同。 */
+const SESSION_MS_CAP = 120_000;
 
 function sessionLine(state) {
   const min = Math.round(state.ms / 60_000);
