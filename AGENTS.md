@@ -13,7 +13,7 @@
 
 四條不可協商的，摘要在此，細節看 CLAUDE.md：
 
-1. **零第三方依賴**——`dependencies` 與 `devDependencies` 維持空的。要引套件先問使用者。
+1. **零第三方依賴**——`dependencies` 與 `devDependencies` 維持空的。要引套件先問使用者。例外只有 `web/vendor/gsap.mjs`（經同意放入，非開源授權，檔首聲明不得刪），細節看 CLAUDE.md。
 2. **`data/reviews.jsonl`、`data/checkins.jsonl` 與 `data/attempts.jsonl` 只增不改**——三個不可重建的資料檔；撤銷與評分更正也只追加事件。
 3. **GPL-2.0 隔離**——Verbiste 衍生物只能落在 gitignore 的 `data/bank/`。
 4. **法文重音完整保留**——不得轉 ASCII。
@@ -22,7 +22,7 @@
 
 ```bash
 npm run lint   # node --check 全檔
-npm test       # 275 題，含 732 組 FSRS 黃金向量
+npm test       # 276 題，含 732 組 FSRS 黃金向量
 npm run doctor # 四個外部來源、題庫、索引三邊對帳
 ```
 

@@ -1,5 +1,5 @@
 /**
- * 考前推演頁。
+ * 進度頁的「推演」分頁。頁首（分頁與範圍鈕）與分節跟「現況」共用，見 stats.mjs。
  *
  * 這一頁是這個 App 唯一做了「人腦做不到的計算」的地方：拿你目前每一張卡的
  * FSRS 記憶狀態，逐日模擬到考試當天，算出那天的期望答對率。
@@ -10,13 +10,18 @@
  *  - 達不到目標時直接說達不到，並給出上限，不給一個看起來好看的數字。
  */
 
-import { h, clear, pct, icon, num } from './dom.mjs';
+import { h, clear, pct, num } from './dom.mjs';
 import { api } from './net.mjs';
 import { line } from './charts.mjs';
+import { progressHead, section } from './stats.mjs';
+import * as motion from './motion.mjs';
+import { KIND_ZH } from './kinds.mjs';
 
 export function forecastView(root, ctx) {
-  const box = h('div');
+  const box = h('div.progress');
   root.append(box);
+  box.append(progressHead(ctx, 'forecast'));
+  let dead = false;
 
   const form = h('form.fc-form', { onsubmit: (ev) => { ev.preventDefault(); run(); } });
   const saved = ctx.settings?.examDate ?? null;
@@ -39,7 +44,7 @@ export function forecastView(root, ctx) {
   );
   box.append(form);
 
-  const out = h('div');
+  const out = h('div.prog-body');
   // 這一頁進來是空的，而且是刻意的：一次推演要把範圍內每一張卡逐日模擬到考試當天，
   // 反推目標答對率還要跑六十幾次，開頁就自動算會讓人以為 App 當掉了。
   // 但「空白＋一顆按鈕」看起來也像壞掉，所以先寫清楚按下去會發生什麼事。
@@ -47,7 +52,7 @@ export function forecastView(root, ctx) {
   box.append(out);
 
   async function run() {
-    clear(out).append(h('div.card.empty', {}, h('p', { text: '模擬中…' })));
+    clear(out).append(h('p.sec-empty.fc-busy', { 'aria-busy': 'true', text: '模擬中…' }));
     try {
       const data = await api.forecast({
         ...ctx.scopeQuery(),
@@ -56,10 +61,11 @@ export function forecastView(root, ctx) {
         new: fresh.value,
         target: Number(target.value) / 100,
       });
+      if (dead) return;
       render(data);
       if (examTouched && exam.value !== (ctx.settings?.examDate ?? null)) rememberExam(exam.value);
     } catch (err) {
-      clear(out).append(h('div.card.errorbox', {}, h('p', { text: err.message })));
+      if (!dead) clear(out).append(h('div.sec-err', {}, h('p', { text: err.message })));
     }
   }
 
@@ -101,22 +107,22 @@ export function forecastView(root, ctx) {
     // ---- 每日負擔曲線 ----
     const days = p.days.map((x) => ({ x: x.day.slice(5), a: x.reviews + x.learned }));
     const peakIdx = p.days.findIndex((x) => x === p.peakDay);
-    const curve = h('div.body', {},
+    const curve = [
       line(days, {
         height: 170,
         title: '每天要做的張數',
         marks: peakIdx >= 0 ? [{ at: peakIdx, label: `最高峰 ${num(p.peakDay.reviews + p.peakDay.learned)} 張` }] : [],
       }),
-      h('p.verdict-note', {
+      h('p.sec-note', {
         text: p.days.some((x) => x.minutes)
           ? `依你自己的作答速度（每張 ${d.inputs.secondsPerCard} 秒），最忙的一天約 ${p.peakDay?.minutes ?? 0} 分鐘。`
           : '沒有足夠的作答時間紀錄，暫時無法換算成分鐘。',
       }),
       p.backlogPeak > 0
-        ? h('p.verdict-note', { text: `每天上限 ${p.dailyLimit} 張的話，最多會有 ${p.backlogPeak} 張被擠到隔天。` })
+        ? h('p.sec-note', { text: `每天上限 ${p.dailyLimit} 張的話，最多會有 ${p.backlogPeak} 張被擠到隔天。` })
         : null,
-    );
-    out.append(panel('每天的負擔', `到 ${p.examDate} 還有 ${p.daysUntilExam} 天`, curve));
+    ];
+    out.append(section('每天的負擔', `到 ${p.examDate} 還有 ${p.daysUntilExam} 天`, curve));
 
     // ---- 考試當天的分佈 ----
     const b = p.buckets;
@@ -134,7 +140,7 @@ export function forecastView(root, ctx) {
       if (n / totalCards > 0.06) seg.textContent = num(n);
       strip.append(seg);
     }
-    out.append(panel('考試當天，這些卡的狀態', '依 FSRS 推算的可提取度分組', h('div.body', {},
+    out.append(section('考試當天，這些卡的狀態', '依 FSRS 推算的可提取度分組', [
       strip,
       h('div.legend', {},
         swatch('記得牢（≥90%）', 'var(--ok)'),
@@ -142,27 +148,41 @@ export function forecastView(root, ctx) {
         swatch('大概忘了（<70%）', 'var(--bad)'),
         swatch('沒學到', 'var(--sunken)'),
       ),
-    )));
+    ]));
 
     // ---- 反推新卡量 ----
     if (d.solved) out.append(solvedPanel(d.solved));
+
+    // 三個招牌動作：結論的數字滾上來、分布條長出來、各節依序浮上來。
+    motion.countUp(out.querySelector('.fc-big .num'), Math.round(p.expectedRecall), { duration: 1.2 });
+    motion.grow(strip.children, { delay: 0.3, stagger: 0.08 });
+    motion.rise(out.querySelectorAll('.sec'), { delay: 0.2, stagger: 0.06 });
   }
+
+  return () => {
+    dead = true;
+    motion.killWithin(box);
+  };
 }
 
-/** 結論。一句話講完，數字放大，其餘退到底下。 */
+/**
+ * 結論。一句話講完，數字放大，其餘退到底下。
+ * 大數字本身用墨色，不用綠或紅：它是一個估計值，不是評分；
+ * 有沒有達標交給底下那一行小字，那一行才帶語意色。
+ */
 function verdict(p, inputs, targetRate) {
   const hit = p.expectedRecallRate >= targetRate;
-  const card = h('div.fc-verdict', { dataset: { tone: hit ? 'ok' : 'bad' } });
+  const card = h('section.fc-verdict', { dataset: { tone: hit ? 'ok' : 'bad' } });
 
-  card.append(h('p.lead', {},
-    `考試當天，範圍內 ${num(p.cardsInScope)} 張裡預期記得 `,
-    h('b', { text: `${num(Math.round(p.expectedRecall))} 張` }),
-    `（${pct(p.expectedRecallRate, 1)}）`,
+  card.append(h('p.fc-kicker', { text: `考試當天（${p.examDate}）預期記得` }));
+  card.append(h('p.fc-big', {},
+    h('span.num', { text: num(Math.round(p.expectedRecall)) }),
+    h('span.of', { text: ` / ${num(p.cardsInScope)} 張` }),
   ));
-  card.append(h('p.sub', { text: hit
-    ? `達到 ${pct(targetRate)} 目標；這是期望值。`
-    : `低於 ${pct(targetRate)} 目標。`,
-  }));
+  card.append(h('p.fc-rate', {},
+    h('b', { text: pct(p.expectedRecallRate, 1) }),
+    h('span.tone', { text: hit ? `達到 ${pct(targetRate)} 目標。這是期望值。` : `低於 ${pct(targetRate)} 目標。` }),
+  ));
   card.append(h('p.sub', {
     text: `總作答 ${num(p.totalReviews)} 次・預期答錯 ${num(p.totalLapses)} 次・涵蓋 ${pct(p.coverage)}`,
   }));
@@ -179,33 +199,23 @@ function verdict(p, inputs, targetRate) {
   return card;
 }
 
-const KIND_LABEL = {
-  'vocab-recall': '看字回想',
-  'vocab-produce': '中翻法',
-  conj: '動詞變位',
-  connector: '連接詞',
-  pick: '挑連接詞',
-  rw: '改寫整句',
-  nom: '名詞化',
-};
-
 /**
  * 新卡首次作答是逐題型取樣的，樣本不夠的題型一律當 Good。
  * 原本只寫「260 張，分題型」，實際上那 260 張全是看字回想，另外六種都是假設——
- * 所以把實測的題型點名，其餘的另開一個「假設」標籤，範圍只算側欄勾到的題型。
+ * 所以把實測的題型點名，其餘的另開一個「假設」標籤，範圍只算範圍選單勾到的題型。
  */
 function firstRatingChips(inputs) {
   const min = inputs.firstRatingMin ?? 30;
-  const inScope = inputs.scope?.kinds?.length ? inputs.scope.kinds : Object.keys(KIND_LABEL);
+  const inScope = inputs.scope?.kinds?.length ? inputs.scope.kinds : Object.keys(KIND_ZH);
   const sampled = inScope.filter((kind) => inputs.firstRatingKinds?.[kind]);
   const assumed = inScope.filter((kind) => !inputs.firstRatingKinds?.[kind]);
   const chips = [];
   if (sampled.length) {
-    const parts = sampled.map((kind) => `${KIND_LABEL[kind] ?? kind} ${num(inputs.firstRatingKinds[kind])}`);
+    const parts = sampled.map((kind) => `${KIND_ZH[kind] ?? kind} ${num(inputs.firstRatingKinds[kind])}`);
     chips.push(h('span.chip', { text: `首次作答實測：${parts.join('、')} 張` }));
   }
   if (assumed.length) {
-    const who = assumed.length <= 3 ? assumed.map((kind) => KIND_LABEL[kind] ?? kind).join('、')
+    const who = assumed.length <= 3 ? assumed.map((kind) => KIND_ZH[kind] ?? kind).join('、')
       : !sampled.length ? '各題型'
         : `其餘 ${assumed.length} 種題型`;
     chips.push(h('span.chip', { dataset: { kind: 'assumed' }, text: `首次作答：${who}不足 ${min} 張，當作 Good` }));
@@ -214,14 +224,14 @@ function firstRatingChips(inputs) {
 }
 
 function solvedPanel(sv) {
-  const body = h('div.body');
+  const body = h('div');
   if (sv.achievable) {
     body.append(h('p.lead', {},
       '每天學 ',
       h('b', { text: `${sv.recommended.dailyNew} 張新卡` }),
       ' 就能達標。',
     ));
-    body.append(h('p.verdict-note', { text: achievableNote(sv) }));
+    body.append(h('p.sec-note', { text: achievableNote(sv) }));
   } else {
     body.append(h('p.lead', {},
       '這個目標達不到。最好的情況是每天 ',
@@ -230,7 +240,7 @@ function solvedPanel(sv) {
       h('b', { text: pct(sv.ceiling.rate, 1) }),
       '。',
     ));
-    body.append(h('p.verdict-note', { text: '可縮小側欄範圍，或提高每天上限後重算。' }));
+    body.append(h('p.sec-note', { text: '可以縮小範圍，或提高每天上限後重算。' }));
   }
 
   // 掃過的每一格畫成曲線。這條線的形狀就是「新卡學太多反而更差」的證據，
@@ -269,8 +279,7 @@ function solvedPanel(sv) {
   }
   table.append(tb);
   body.append(h('div.scroll-x', {}, table));
-  return panel('要達標得學多少新卡', `掃過 ${sv.tried.length} 種新卡量，每一種都跑一次完整模擬`, body);
-
+  return section('要達標得學多少新卡', `掃過 ${sv.tried.length} 種新卡量，每一種都跑一次完整模擬`, body);
 }
 
 /**
@@ -284,21 +293,17 @@ function achievableNote(sv) {
     return `在這個範圍裡，每天學幾張新卡幾乎不影響考試當天的記憶率：0 到 ${top} 張都是 ${pct(rates[0], 1)}。`;
   }
   if (sv.recommended.dailyNew === top) return `掃到上限 ${top} 張都還達標，實際能承受的量可能更多。`;
-  return '這是「還能達標的最大新卡量」——學得比這個多，考試當天的整體記憶率反而會被稀釋。';
+  return '這是還能達標的最大新卡量。學得更多，考試當天的整體記憶率反而會被還沒穩的新卡拉低。';
 }
 
 // ---- 小工具 --------------------------------------------------------------
 
 /** 還沒推演過時的畫面。說明按鈕會做什麼、要等多久、哪些設定會影響結果。 */
 function emptyState() {
-  return h('div.card.empty.fc-empty', {},
-    h('p.fc-empty-lead', { text: '按「推演」估算考試日記憶率與每日新卡量。' }),
-    h('p.fc-empty-note', { text: '會套用側欄範圍，約需一秒。' }),
+  return h('div.fc-empty', {},
+    h('p.fc-empty-lead', { text: '按「推演」，把範圍內每一張卡逐日模擬到考試那天。' }),
+    h('p.fc-empty-note', { text: '算出那天記得幾張，以及每天該學多少新卡。約需一秒。' }),
   );
-}
-
-function panel(title, why, bodyNode) {
-  return h('section.panel', {}, h('h2', {}, title, why ? h('span.why', { text: why }) : null), bodyNode);
 }
 
 function input(props) {
@@ -326,7 +331,6 @@ function bucketLabel(b) {
   return `記得牢 ${num(b.strong)}、不太穩 ${num(b.shaky)}、大概忘了 ${num(b.weak)}、沒學到 ${num(b.untouched)}`;
 }
 
-/** 沒設考試日期時，預設兩個月後——夠遠到看得出排程效果，夠近到還有壓力。 */
 /**
  * 從掃描結果挑出值得列表的幾列：頭、尾、勝出的那一格，中間等距補到約 10 列。
  * 全部列出來的話一次會有 61 列，讀的人只會往下捲過去。
@@ -347,6 +351,7 @@ function examHint(saved) {
     : '還沒設考試日期，先用 60 天後；改了日期再推演才會記住';
 }
 
+/** 沒設考試日期時，預設兩個月後——夠遠到看得出排程效果，夠近到還有壓力。 */
 function defaultExam() {
   const d = new Date(Date.now() + 60 * 86400000);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;

@@ -107,6 +107,17 @@ test('diffChars：以正確答案為骨架逐格標記', () => {
   assert.equal(diffChars('école', 'école').every((x) => x.ok), true);
 });
 
+test('diffChars：先對齊再比，少打或多打一個字不會讓後面整排錯位', () => {
+  // 少打開頭的 s、r 打成 t：只該標這兩格，逐位比對會六格全紅。
+  assert.deepEqual(diffChars('etais', 'serais').map((x) => x.ok), [false, true, false, true, true, true]);
+  // 中間漏一個字母：只標漏掉的那格。
+  assert.deepEqual(diffChars('seais', 'serais').map((x) => x.ok), [true, true, false, true, true, true]);
+  // 中間多打一個字母：答案每一格都對得上。
+  assert.equal(diffChars('serrais', 'serais').every((x) => x.ok), true);
+  // 平手時選替換而非「漏一格＋多一格」，漏重音才會落在正確的位置。
+  assert.deepEqual(diffChars('ecole', 'école').map((x) => x.ok), [false, true, true, true, true]);
+});
+
 test('missingAccents：只回報「同一個字母、少了符號」的位置', () => {
   assert.deepEqual(missingAccents('ecole', 'école'), ['é']);
   assert.deepEqual(missingAccents('etre', 'être'), ['ê']);
@@ -117,4 +128,6 @@ test('missingAccents：只回報「同一個字母、少了符號」的位置', 
   assert.deepEqual(missingAccents('chien', 'école'), []);
   // 作答太短時，缺的位置沒有對應字母，不算漏重音。
   assert.deepEqual(missingAccents('', 'école'), []);
+  // 對齊後才比：前面少打一個字，後面的漏重音照樣抓得到。
+  assert.deepEqual(missingAccents('leve', 'élevé'), ['é']);
 });

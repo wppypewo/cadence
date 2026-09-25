@@ -9,31 +9,50 @@
 /* ---- 今天 ------------------------------------------------------------- */
 
 /*
- * 這一頁的層級只有兩層：倒數天數，然後四列任務。
- * 中間不放任何裝飾——每多一個「看起來很認真」的區塊，
- * 就多一個讓人停在這一頁而不去按「練 N 張」的理由。
+ * 照報紙頭版排：報頭、左邊一個大數字加一顆主按鈕、右欄兩則短訊、底下四科帳本。
+ * 層級只有兩層——倒數與主按鈕，然後其他全部。每多一個「看起來很認真」的區塊，
+ * 就多一個讓人停在這一頁而不去按「開始複習」的理由。
+ * 灰底框一律不用，分區只靠細線與留白。
  */
 
-.today { display: flex; flex-direction: column; gap: var(--s5); }
+.today { display: flex; flex-direction: column; max-width: 1120px; }
 
 /* ---- 四科練習與模考 --------------------------------------------------- */
 
-.workbench { display: flex; flex-direction: column; gap: var(--s5); }
-.workbench .page-head { margin-bottom: 0; }
+/*
+ * 工作台：頁首、一條計時列、底下左做右記。跟其他頁一樣不用框，
+ * 分區只靠細線；輸入框本身保留外框，那是可以打字的地方的唯一提示。
+ */
+.workbench { display: flex; flex-direction: column; gap: var(--s6); max-width: 1120px; }
+
+.wb-head { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s1); }
+.wb-back { margin: 0 0 var(--s3) calc(-1 * var(--s2)); }
+.wb-code { font: 600 var(--t-xs)/1 var(--font-num); letter-spacing: 0.1em; color: var(--accent); }
+.wb-head h2 { font: 400 var(--t-3xl)/1.05 var(--font-fr); letter-spacing: -0.02em; }
+.wb-fr { font: italic 400 var(--t-lg)/1.3 var(--font-fr); color: var(--text-muted); }
+.wb-sub { font-size: var(--t-sm); color: var(--text-muted); }
+
+/* 計時列。時鐘是這一頁唯一的大數字，跟今天頁的倒數同一個字級層。 */
 .practice-timer {
-  display: flex; align-items: center; justify-content: space-between; gap: var(--s5);
-  padding: var(--s5);
+  display: flex; align-items: center; gap: var(--s5); flex-wrap: wrap;
+  padding: var(--s4) 0; border-block: 1px solid var(--line-strong);
 }
-.practice-clock {
-  display: block; margin-top: var(--s1);
-  font-size: var(--t-3xl); line-height: 1; letter-spacing: -0.03em;
-}
+.practice-clock { font: 400 var(--t-3xl)/1 var(--font-num); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.practice-timer .cue { flex: 1 1 16rem; max-width: 40ch; }
 .practice-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
-.practice-tool, .practice-form { display: flex; flex-direction: column; gap: var(--s4); padding: var(--s5); }
-.practice-tool h3 { font-size: var(--t-lg); }
+
+.wb-grid { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: var(--s7); align-items: start; }
+.wb-grid[data-solo] { grid-template-columns: minmax(0, 40rem); }
+
+.practice-tool, .practice-form { display: flex; flex-direction: column; gap: var(--s4); }
+.practice-tool h3, .practice-form h3 { font: 400 var(--t-xl)/1.2 var(--font-fr); }
 .practice-tool-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s3); }
 .practice-tool-head .num, .practice-tool .hint { color: var(--text-muted); font-size: var(--t-sm); }
-.practice-draft { min-height: 320px; padding: var(--s4); resize: vertical; line-height: 1.75; font-size: var(--t-lg); }
+/* 草稿是這一頁的主角：法文襯線、行距放寬，讀起來像一張稿紙而不是一個表單欄位。 */
+.practice-draft {
+  min-height: 420px; padding: var(--s5); resize: vertical;
+  font: 400 var(--t-lg)/1.8 var(--font-fr);
+}
 .practice-notes { min-height: 112px; padding: var(--s3); resize: vertical; line-height: 1.6; }
 .practice-audio { width: 100%; }
 .pass-list { display: grid; gap: var(--s2); }
@@ -43,81 +62,127 @@
 .assessment { display: flex; flex-direction: column; gap: var(--s3); margin: 0; padding: 0; border: 0; }
 .assessment legend { margin-bottom: var(--s2); font-size: var(--t-sm); font-weight: 600; }
 .mistake-tags { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s4); }
-.rubric-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2); }
-.rubric-row { display: grid; grid-template-columns: minmax(0, 1fr) 5rem; align-items: center; gap: var(--s3); }
-.rubric-total { align-self: flex-end; font-size: var(--t-xl); font-weight: 600; }
-.baseline-flow { display: grid; gap: 1px; padding: 0; overflow: hidden; background: var(--border); }
-.baseline-step { display: grid; grid-template-columns: 2rem minmax(0, 1fr) auto; align-items: center; gap: var(--s3); padding: var(--s3) var(--s4); background: var(--surface); }
-.baseline-step > .num { color: var(--accent); font-weight: 600; }
-.baseline-step > div { display: flex; flex-direction: column; }
-.baseline-step small { color: var(--text-muted); }
+/* 規準一項一列，細線分隔。兩欄會把「自我介紹／引導訪談」這種長標籤擠成兩行。 */
+.rubric-grid { display: flex; flex-direction: column; border-top: 1px solid var(--line); }
+.rubric-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) 5rem; align-items: center; gap: var(--s3);
+  padding: var(--s2) 0; border-bottom: 1px solid var(--line); font-size: var(--t-sm);
+}
+.rubric-total { align-self: flex-end; font: 400 var(--t-2xl)/1 var(--font-num); }
+
+/* 基準模考的四步。編號用襯線大字，像章節號；每步之間一條細線。 */
+.baseline-flow { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line-strong); }
+.baseline-step {
+  display: grid; grid-template-columns: 2.5rem minmax(0, 1fr) auto; align-items: baseline; gap: var(--s3);
+  padding: var(--s4) 0; border-bottom: 1px solid var(--line);
+}
+.baseline-step > .num { font: 400 var(--t-2xl)/1 var(--font-fr); color: var(--text-faint); }
+.baseline-step > div { display: flex; flex-direction: column; gap: 2px; }
+.baseline-step strong { font: 600 var(--t-sm)/1.2 var(--font-num); letter-spacing: 0.08em; color: var(--accent); }
+.baseline-step small { font-size: var(--t-sm); color: var(--text-muted); }
 
 .mock-fieldset { margin: 0; padding: 0; border: 0; }
-.mock-fieldset legend { margin-bottom: var(--s2); font-size: var(--t-sm); font-weight: 500; }
-.mock-scores { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2); }
+.mock-fieldset legend { margin-bottom: var(--s2); font-size: var(--t-sm); font-weight: 600; }
+.mock-scores { display: flex; flex-direction: column; border-top: 1px solid var(--line); }
 .mock-score {
-  display: grid; grid-template-columns: 2.5rem minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center; gap: var(--s2); padding: var(--s3);
-  background: var(--sunken); border-radius: var(--r-control);
+  display: grid; grid-template-columns: 3rem minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center; gap: var(--s2); padding: var(--s2) 0; border-bottom: 1px solid var(--line);
 }
-.mock-score strong { font-size: var(--t-sm); }
-.mock-result {
-  padding: var(--s3) var(--s4); border: 1px solid var(--border);
-  border-radius: var(--r-control); color: var(--text-muted);
+.mock-score strong { font: 600 var(--t-sm)/1 var(--font-num); letter-spacing: 0.08em; color: var(--accent); }
+.mock-score .of { color: var(--text-faint); }
+/* 過門檻與否是在評分，所以這一行可以用評分色；只上字色與左線，不鋪底。 */
+.mock-result { padding-left: var(--s3); border-left: 2px solid var(--line-strong); font-size: var(--t-sm); color: var(--text-muted); }
+.mock-result[data-tone="ok"] { border-color: var(--ok); color: var(--ok); }
+.mock-result[data-tone="warn"] { border-color: var(--warn); color: var(--warn); }
+
+/* 儲存後。章跟今天頁打卡同一顆 .stamp，這裡不是按鈕，所以游標還原。 */
+.wb-done { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s3); padding-top: var(--s5); }
+.wb-done-title { display: flex; align-items: center; gap: var(--s5); flex-wrap: wrap; }
+.wb-done-title h2 { font: 400 var(--t-3xl)/1.05 var(--font-fr); letter-spacing: -0.02em; }
+.wb-done .stamp { cursor: default; padding: var(--s1) var(--s3); font-size: var(--t-sm); }
+.wb-done .stamp b { font-size: var(--t-lg); }
+.wb-done-line { font-size: var(--t-md); color: var(--text-muted); }
+/* 完成面板下方的附屬清單。寬度收在一欄內，不然三格資訊會散在 1120px 的兩端。 */
+.wb-after { align-self: stretch; max-width: 34rem; margin-top: var(--s7); }
+.wb-after h3 { margin-bottom: var(--s3); font-size: var(--t-xs); font-weight: 500; color: var(--text-muted); }
+.tally { font-size: var(--t-sm); text-align: right; }
+.skill[data-done='1'] .tally { color: var(--text-muted); }
+.skill[aria-current] .skill-main > span:first-child { font-weight: 600; }
+.skill[data-low='1'] .tally, .skill[data-low='1'] .dim { color: var(--warn); }
+
+@media (max-width: 1100px) {
+  .wb-grid, .wb-grid[data-solo] { grid-template-columns: minmax(0, 1fr); gap: var(--s6); }
+  /* 疊成一欄後，做的區塊和記的區塊之間補一條細線，不然「這一次」像是工具的延續。 */
+  .wb-grid:not([data-solo]) > :last-child { padding-top: var(--s5); border-top: 1px solid var(--line); }
 }
-.mock-result[data-tone="ok"] { border-color: var(--ok); background: var(--ok-weak); color: var(--ok); }
-.mock-result[data-tone="warn"] { border-color: var(--warn); background: var(--warn-weak); color: var(--warn); }
 
-.today-head { display: flex; flex-direction: column; gap: var(--s1); }
-.today-date { font-size: var(--t-sm); color: var(--text-muted); }
+/* 報頭。雙線是報紙頭版的慣例，也是全站唯一一條用 --text 畫的粗線：它把「日期」跟「今天要做的事」切開。 */
+.dateline {
+  display: flex; justify-content: space-between; align-items: baseline; gap: var(--s4); flex-wrap: wrap;
+  padding-bottom: var(--s3); border-bottom: 3px double var(--text);
+}
+.dateline-fr { font: italic 400 var(--t-xl)/1.2 var(--font-fr); }
+.dateline-zh { display: flex; gap: var(--s4); flex-wrap: wrap; font-size: var(--t-sm); color: var(--text-muted); }
+.dateline-zh span + span { color: var(--text-faint); }
 
-/* 倒數是全頁最大的字。日期記不住，「還有幾天」才會逼人動作。 */
-.today-count { display: flex; align-items: baseline; gap: var(--s2); }
-.today-count .n { font-size: var(--t-3xl); font-weight: 600; line-height: 1.05; }
-.today-count .u { font-size: var(--t-lg); color: var(--text-muted); }
+.today-hero {
+  display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: var(--s7); padding: var(--s6) 0 var(--s7);
+}
+.hero-main { min-width: 0; }
 
-.today-sub { font-size: var(--t-sm); color: var(--text-muted); }
-.today-run { font-size: var(--t-xs); color: var(--text-faint); }
+/*
+ * 倒數是全頁最大的字。日期記不住，「還有幾天」才會逼人動作。
+ * 300 字重：176px 的 400 在紙色底上黑成一塊，搶走旁邊主按鈕的注意力。
+ * line-height 0.9 會切到法文字體的下伸部，但阿拉伯數字沒有下伸部，只有數字住這一行。
+ */
+.hero-num {
+  font: 300 var(--t-hero)/0.9 var(--font-fr);
+  letter-spacing: -0.04em; font-variant-numeric: lining-nums tabular-nums;
+}
+.hero-none { font: italic 400 var(--t-2xl)/1.2 var(--font-fr); color: var(--text-muted); }
+.hero-cap { margin-top: var(--s3); font-size: var(--t-lg); color: var(--text-muted); }
 
 /*
  * 推演那一行。字級比倒數小得多：倒數是「還有多久」，這行是「照現在這樣會怎樣」，
  * 後者要讀完整句才有意義，放大反而像口號。只把會隨節奏掉下去的那個數字加粗。
- * min-height 讓「正在推演…」與算完的句子佔同一行高，任務列不會被往下推。
+ * min-height 讓「正在推演…」與算完的句子佔同一行高，主按鈕不會被往下推。
  */
-.today-cast { min-height: 1.6em; margin-top: var(--s2); font-size: var(--t-sm); color: var(--text-muted); }
-.today-cast strong { color: var(--text); font-weight: 600; }
+.hero-cast { min-height: 3.2em; max-width: 52ch; margin-top: var(--s2); font-size: var(--t-sm); color: var(--text-muted); }
+.hero-cast strong { color: var(--text); font-weight: 600; }
 
-/*
- * 任務列下方的兩塊。只做電腦版，所以直接兩欄；字級一律比任務列低一層，
- * 它們回答「做這些有沒有用」，不能搶「先做哪一件事」的位置。
- */
-.today-more {
-  display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-  align-items: start; gap: var(--s4); margin-top: var(--s3);
+.hero-act { display: flex; align-items: center; gap: var(--s4) var(--s5); flex-wrap: wrap; margin-top: var(--s6); }
+/* 全頁唯一一顆實心鍵，比預設大一號；按鈕字不換行，數字在窄欄也不會被拆到下一行。 */
+.hero-go { min-height: 48px; padding-inline: var(--s5); font-size: var(--t-md); white-space: nowrap; }
+.hero-meta { font-size: var(--t-sm); color: var(--text-faint); max-width: 36ch; }
+.hero-done { display: inline-flex; align-items: center; gap: var(--s2); font-size: var(--t-lg); color: var(--ok); }
+.hero-done svg { width: 20px; height: 20px; }
+
+/* 右欄。字級一律比左欄低一層：它回答「做這些有沒有用」，不能搶「先做哪一件事」。 */
+.today-side {
+  display: flex; flex-direction: column; gap: var(--s6); min-width: 0;
+  padding-left: var(--s6); border-left: 1px solid var(--line);
 }
-.today-more .card { display: flex; flex-direction: column; gap: var(--s3); padding: var(--s4); min-height: 180px; }
-.more-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); }
-.more-title { font-size: var(--t-md); }
-.more-note { font-size: var(--t-xs); color: var(--text-faint); max-width: 60ch; }
-.more-empty { font-size: var(--t-sm); color: var(--text-muted); }
-.more-err { font-size: var(--t-sm); color: var(--bad); }
+.side-block { display: flex; flex-direction: column; gap: var(--s2); }
+.side-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s3); }
+.side-h { font: 600 var(--t-xs)/1.4 var(--font-ui); letter-spacing: 0.08em; color: var(--text-faint); }
+.side-n { font-size: var(--t-xs); color: var(--text-faint); }
+.side-foot { font-size: var(--t-xs); color: var(--text-faint); }
+.side-empty { font-size: var(--t-sm); color: var(--text-muted); }
+.side-err { font-size: var(--t-sm); color: var(--bad); }
 
-.reading-score { display: flex; align-items: baseline; gap: var(--s2); font-size: var(--t-sm); }
-.reading-score .n { font-size: var(--t-xl); font-weight: 600; }
-.reading-score .u { color: var(--text-muted); }
-
-/* 法文句子是這一塊的主角，照全檔的原則用法文字體、比介面大。 */
-.reading-line { font-family: var(--font-fr); font-size: var(--t-xl); line-height: 1.9; }
+/* 法文句子是這一塊的主角，照全檔的原則用法文字體、比介面大。行高留給底線與下伸部。 */
+.sentence { font: 400 var(--t-xl)/1.7 var(--font-fr); }
 
 /*
  * 四層不能只靠顏色分：穩了＝加粗＋主色、學過＝實線底線、還沒學＝點線底線、題庫外＝淡字無線。
  * 對比度（surface 上，淺／深）：--accent 7.22／7.55、--text-faint 5.45／5.23（文字 4.5:1）；
- * 底線是非文字圖形，要 3:1：--accent-mid 3.77／3.17、--border-strong 3.72／3.12。
+ * 底線是非文字圖形，要 3:1：--accent-mid 3.77／3.17、--line-strong 3.72／3.12。
  */
 .w { text-underline-offset: 0.28em; text-decoration-thickness: 2px; }
 .w[data-tier="mature"] { color: var(--accent); font-weight: 600; }
 .w[data-tier="seen"] { color: var(--text); text-decoration-line: underline; text-decoration-color: var(--accent-mid); }
-.w[data-tier="fresh"] { color: var(--text-muted); text-decoration-line: underline; text-decoration-style: dotted; text-decoration-color: var(--border-strong); }
+.w[data-tier="fresh"] { color: var(--text-muted); text-decoration-line: underline; text-decoration-style: dotted; text-decoration-color: var(--line-strong); }
 .w[data-tier="outside"] { color: var(--text-faint); }
 
 .reading-legend {
@@ -128,99 +193,89 @@
 .reading-legend li { display: inline-flex; align-items: baseline; gap: var(--s1); }
 .reading-legend .w { font-family: var(--font-fr); font-size: var(--t-sm); }
 
-.weekly-list { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
-.weekly-list li {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline;
-  column-gap: var(--s3); padding: var(--s2) 0; border-top: 1px solid var(--border);
+.stable { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+.stable li {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: baseline;
+  gap: var(--s3); padding: var(--s2) 0; border-bottom: 1px solid var(--line);
 }
-.weekly-label { font-family: var(--font-fr); font-size: var(--t-lg); color: var(--accent); font-weight: 600; }
-.weekly-sub { grid-column: 1; font-size: var(--t-xs); color: var(--text-muted); overflow-wrap: anywhere; }
-.weekly-day { grid-column: 2; grid-row: 1; font-size: var(--t-xs); color: var(--text-faint); }
-.weekly-more summary { margin-top: var(--s1); color: var(--text-muted); font-size: var(--t-xs); cursor: pointer; }
-.weekly-more[open] summary { margin-bottom: var(--s2); }
+.stable .fr { font: 400 var(--t-lg)/1.3 var(--font-fr); }
+.stable .gl { font-size: var(--t-sm); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stable .d { font: 400 var(--t-sm) var(--font-fr); color: var(--ok); }
+.side-more summary { padding-top: var(--s2); font-size: var(--t-xs); color: var(--text-muted); cursor: pointer; }
+.side-more .stable { border-top: 0; }
 
-.tasks { display: flex; flex-direction: column; gap: var(--s3); }
+/* ---- 四科帳本 ---- */
 
-.task {
+.ledger { display: flex; flex-direction: column; }
+.ledger-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--s3);
+  padding-bottom: var(--s2); border-bottom: 1px solid var(--text);
+}
+.ledger-pend { font-size: var(--t-xs); color: var(--text-muted); }
+
+/*
+ * 一科一列，欄寬固定：四列的數字要能上下對齊著比，像帳本，不像四張各自排版的卡片。
+ * 舊版每一列是一個有陰影的白框，四個框疊起來就是「四張卡片」那個模板。
+ */
+.lrow {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: start;
-  gap: var(--s4);
-  padding: var(--s4);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-card);
-  box-shadow: var(--shadow-card);
+  /* 科目與進度兩欄都用 fr：寫成 minmax(0, 15rem) 的話，非彈性軌道會先長到上限，
+     917px 寬時科目欄只剩一個字寬（實測），法文科名一個字一行。 */
+  grid-template-columns: 3.5rem minmax(0, 3fr) minmax(0, 2fr) 7.5rem 7rem;
+  align-items: center; column-gap: var(--s5);
+  padding: var(--s4) 0; border-bottom: 1px solid var(--line);
 }
-
+.lrow-code { align-self: start; padding-top: 0.35em; font: 500 var(--t-sm) var(--font-fr); letter-spacing: 0.12em; color: var(--accent); }
 /*
- * CO／PO 用虛線框。它們沒有卡片、沒有進度，實線會讓人以為
- * 跟上面兩列是同一種東西——差別是「系統管得到」與「只有你管得到」。
+ * CO／PO 的代號用淡色。它們沒有卡片、沒有進度，跟上面兩列同色會讓人以為
+ * 是同一種東西——差別是「系統管得到」與「只有你管得到」。
  */
-.task[data-mode="doc"] { border-style: dashed; box-shadow: none; }
+.lrow[data-mode="doc"] .lrow-code { color: var(--text-muted); }
 
-.task-code {
-  display: grid; place-items: center;
-  width: 40px; height: 40px;
-  border: 1px solid var(--border-strong); border-radius: var(--r-control);
-  font-family: var(--font-num); font-size: var(--t-sm); font-weight: 600;
-  color: var(--text-muted);
-}
-.task[data-mode="cards"] .task-code { border-color: var(--accent); color: var(--accent); }
-
-.task-main { display: flex; flex-direction: column; gap: var(--s2); min-width: 0; }
-
-.task-name { display: flex; align-items: baseline; gap: var(--s2); flex-wrap: wrap; }
-.task-name .zh { font-size: var(--t-lg); font-weight: 600; }
+.lrow-subj { display: flex; flex-direction: column; gap: var(--s1); min-width: 0; }
 /* 考卷上印的是法文名稱，考場裡認得的必須是這一行。 */
-.task-name .fr { font-family: var(--font-fr); font-size: var(--t-sm); color: var(--text-muted); }
+.lrow-name { display: flex; flex-direction: column; font-weight: 400; }
+.lrow-name .fr { font: italic 400 var(--t-xl)/1.2 var(--font-fr); padding-bottom: 2px; }
+.lrow-name .zh { font-size: var(--t-sm); color: var(--text-muted); }
+/* CO／PO 那兩列的正文：它是今天真正要做的事。 */
+.lrow-do { max-width: 52ch; font-size: var(--t-sm); color: var(--text); }
+.lrow-links { display: flex; gap: var(--s1); flex-wrap: wrap; margin-left: calc(var(--s2) * -1); }
 
-.task-count { display: flex; align-items: baseline; gap: var(--s1); flex-wrap: wrap; font-size: var(--t-sm); }
-.task-count .n { font-family: var(--font-num); font-size: var(--t-xl); font-weight: 600; }
-.task-count .u { color: var(--text-muted); }
-.task-count .sep { color: var(--text-faint); }
-.task-count .part { color: var(--text-muted); }
-.task-count .dim { color: var(--text-faint); font-size: var(--t-xs); }
-.task-count .done { display: inline-flex; align-items: center; gap: var(--s1); color: var(--ok); }
-.task-count .done svg { width: 16px; height: 16px; }
+.today .bar { display: block; height: 3px; background: var(--line); }
+.today .bar i { display: block; height: 100%; min-width: 2px; background: var(--text); }
+.bar-cap { display: block; margin-top: var(--s2); font-size: var(--t-xs); color: var(--text-faint); }
 
-.task-hint { font-size: var(--t-xs); color: var(--text-faint); max-width: 52ch; }
-/* CO／PO 那兩列的正文：它是今天真正要做的事，字級要跟上面兩列的數字同一層。 */
-.task-do { font-size: var(--t-sm); color: var(--text); max-width: 52ch; }
-/*
- * CO／PO 的打卡狀態行。字級與 .task-hint 同一層（比 .task-do 小）：
- * 它是回頭看的紀錄，不是現在要做的事，搶到正文前面就本末倒置了。
- * 括號裡那句但書用最淡的一階顏色壓下去——它必須一直在，但一直在的東西不能一直吵。
- * 不再往下縮字級：--t-xs 已經是這套 token 的最小號，硬寫一個更小的數字
- * 等於在 tokens.css 之外自己開一階。
- */
-.task-check { display: flex; align-items: center; gap: var(--s1); flex-wrap: wrap; font-size: var(--t-xs); }
-.task-check .dim { color: var(--text-faint); }
-.task-check .sep { color: var(--text-faint); }
-.task-check .part { color: var(--text-muted); }
-.task-check .note { color: var(--text-faint); }
-.task-check .done { display: inline-flex; align-items: center; gap: var(--s1); color: var(--ok); }
-.task-check .done svg { width: 14px; height: 14px; }
+.lrow-due { font-size: var(--t-sm); color: var(--text-muted); }
+.lrow-due b { font: 400 var(--t-xl)/1 var(--font-fr); color: var(--text); }
+.lrow-due .dim { color: var(--text-faint); }
+.lrow-due .ok { display: inline-flex; align-items: center; gap: var(--s1); color: var(--ok); }
+.lrow-due .ok svg { width: 16px; height: 16px; }
+
+.lrow-act { display: flex; flex-direction: column; align-items: flex-end; gap: var(--s2); }
+.lrow-check { display: flex; justify-content: flex-end; min-height: 44px; align-items: center; }
 
 /*
- * 打過卡的那一列左邊的代號框改成 ok 色。這是虛線框那條規則的例外理由：
- * 虛線講的是「系統管不到內容」，那件事沒變；代號框講的是「今天這一科動過了」，
- * 而那件事現在記得住。兩個訊號各自為政，所以只動顏色不動線型。
- *
- * **只給文件型那兩列**。PE 也能打卡，但它的打卡只代表「今天寫過一篇作文」，
- * 卡片那一半可能一張都還沒動；整框轉綠會讓人以為這一科今天結束了。
- * PE 的打卡狀態由 .task-check 那一行自己交代，不佔用代號框這個位置。
+ * 打卡的日期章。蓋在打卡鍵原本的位置，像在帳本上蓋一枚章：
+ * 斜 7 度是章歪蓋的樣子，靠 rotate 不靠 transform，GSAP 蓋章動畫補間 transform 時不會互相覆蓋。
+ * 章本身是按鈕（按了撤銷），外框 2px --accent 對 --bg 淺 6.62:1、暗 8.20:1，高於控制項的 3:1。
  */
-.task[data-mode="doc"][data-done="1"] .task-code { border-color: var(--ok); color: var(--ok); }
+.stamp {
+  display: inline-flex; flex-direction: column; align-items: center;
+  padding: 3px var(--s2);
+  border: 2px solid var(--accent); border-radius: var(--r);
+  background: var(--bg); color: var(--accent);
+  font: 600 var(--t-xs)/1.2 var(--font-ui); letter-spacing: 0.06em; white-space: nowrap;
+  rotate: -7deg; cursor: pointer;
+}
+.stamp b { font: italic 500 var(--t-md)/1 var(--font-fr); letter-spacing: 0; }
+button.stamp:hover:not(:disabled) { background: var(--accent-weak); }
+.stamp:disabled { cursor: default; }
 
-.task-act { display: flex; flex-direction: column; gap: var(--s2); }
-.task-more summary { color: var(--text-muted); font-size: var(--t-xs); cursor: pointer; text-align: right; }
-.task-secondary { display: flex; flex-direction: column; gap: var(--s2); margin-top: var(--s2); }
-
-/* 文件面板。展開後接在同一列的內文下方，不另開頁——換頁就會忘記自己本來要幹嘛。 */
-.doc { display: flex; flex-direction: column; gap: var(--s2); margin-top: var(--s2); }
+/* 文件面板。展開後接在同一列底下、橫跨整列，不另開頁——換頁就會忘記自己本來要幹嘛。 */
+.lrow .doc { grid-column: 1 / -1; }
+.doc { display: flex; flex-direction: column; gap: var(--s2); margin-top: var(--s3); }
 .doc-bar { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; }
-.doc-path { font-family: var(--font-num); font-size: var(--t-xs); color: var(--text-faint); }
+.doc-path { font-family: var(--font-mono); font-size: var(--t-xs); color: var(--text-faint); }
 .doc-loading { font-size: var(--t-sm); color: var(--text-muted); }
 .doc-error { font-size: var(--t-sm); color: var(--bad); }
 
@@ -232,8 +287,8 @@
 .doc .md {
   padding: var(--s4);
   background: var(--sunken);
-  border: 1px solid var(--border);
-  border-radius: var(--r-control);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
   /* 15px：這是拿來照著做的文件，不是註腳。舊版 12px 等寬字讀一頁就累。 */
   font-size: var(--t-md); line-height: 1.75; color: var(--text);
   word-break: break-word;
@@ -249,22 +304,22 @@
 .md > .md-h { margin-top: var(--s5); }
 .md > .md-h + * { margin-top: var(--s2); }
 .md > .md-h:first-child { margin-top: 0; }
-.md-hr { height: 0; margin: var(--s5) 0; border: 0; border-top: 1px solid var(--border); }
+.md-hr { height: 0; margin: var(--s5) 0; border: 0; border-top: 1px solid var(--line); }
 .md-list { padding-left: var(--s5); max-width: 74ch; }
 .md-list li + li { margin-top: var(--s2); }
 .md-list li[data-d="1"] { margin-left: var(--s4); }
 .md-list li[data-d="2"] { margin-left: var(--s6); }
 .md-quote {
-  padding-left: var(--s4); border-left: 2px solid var(--border-strong);
+  padding-left: var(--s4); border-left: 2px solid var(--line-strong);
   color: var(--text-muted); max-width: 74ch;
 }
 .md-code {
-  padding: var(--s3); border-radius: var(--r-control);
-  background: var(--surface); border: 1px solid var(--border);
-  font-family: var(--font-num); font-size: var(--t-sm); line-height: 1.6;
+  padding: var(--s3); border-radius: var(--r);
+  background: var(--surface); border: 1px solid var(--line);
+  font-family: var(--font-mono); font-size: var(--t-sm); line-height: 1.6;
   overflow-x: auto; white-space: pre;
 }
-.md code { font-family: var(--font-num); font-size: 0.92em; }
+.md code { font-family: var(--font-mono); font-size: 0.92em; }
 /* 外部連結。實測對比度：淺 6.62:1、暗 8.20:1（--accent 對 --bg），都高於內文的 4.5:1。
    底線不拿掉——表格裡的連結只靠顏色分辨，色覺不同的人就分不出哪一格點得下去。
    `<網址>` 那種寫法的顯示文字就是網址本身，一整串沒有空白可斷，
@@ -275,17 +330,34 @@
 .md-tablewrap { overflow-x: auto; }
 .md-table { border-collapse: collapse; font-size: var(--t-sm); min-width: 100%; }
 .md-table th, .md-table td {
-  padding: var(--s2) var(--s3); border: 1px solid var(--border); vertical-align: top;
+  padding: var(--s2) var(--s3); border: 1px solid var(--line); vertical-align: top;
 }
 .md-table th { background: var(--surface); font-weight: 600; white-space: nowrap; }
 
-.today-foot { font-size: var(--t-xs); color: var(--text-faint); max-width: 60ch; }
+.ledger-note { padding-top: var(--s3); font-size: var(--t-xs); color: var(--text-faint); }
+
+.today-skel { display: flex; flex-direction: column; gap: var(--s5); }
+
+/* 帳本比頭版先收：五欄在 1000px 以下會把科目欄擠到法文科名斷成三行。 */
+@media (max-width: 1000px) {
+  /* 進度條在窄螢幕讓出來：它是「回頭看」的資訊，擠掉的應該是它，不是今天要做的量。
+     條下那行字留著——CO／PO「近 7 天做了幾天」是那兩科唯一的歷史，藏掉就看不到了。 */
+  .lrow { grid-template-columns: 3rem minmax(0, 1fr) auto; row-gap: var(--s2); }
+  .lrow-due { grid-column: 2; grid-row: 2; }
+  .lrow-meter { grid-column: 2; grid-row: 3; }
+  .today .lrow-meter .bar { display: none; }
+  .lrow-meter .bar-cap { margin-top: 0; }
+  .lrow[data-mode="doc"] .lrow-due { display: none; }
+  .lrow[data-mode="doc"] .lrow-meter { grid-row: 2; }
+  .lrow-act { grid-column: 3; grid-row: 1 / span 3; align-self: start; }
+}
+
+@media (max-width: 900px) {
+  .today-hero { grid-template-columns: minmax(0, 1fr); gap: var(--s6); padding-top: var(--s5); }
+  .today-side { padding-left: 0; padding-top: var(--s5); border-left: 0; border-top: 1px solid var(--line); }
+}
 
 @media (max-width: 620px) {
-  /* 窄螢幕把按鈕放到整列底下拉滿：拇指構得到，也不會把中間的數字擠成兩行。 */
-  .task { grid-template-columns: auto minmax(0, 1fr); }
-  .task-act { grid-column: 1 / -1; }
-  .task-act .btn { width: 100%; }
   .rubric-grid { grid-template-columns: 1fr; }
   .baseline-step { grid-template-columns: 2rem minmax(0, 1fr); }
   .baseline-step .btn { grid-column: 1 / -1; }
@@ -293,58 +365,76 @@
 
 /* ---- 複習 ------------------------------------------------------------- */
 
-.study { display: flex; flex-direction: column; gap: var(--s4); }
+/*
+ * 專注模式的外框：最上面一條 2px 進度線、下面一列（離開／計數／範圍），其餘整片給卡片。
+ * 卡片不裝框、不墊底色：這一頁畫面上只有一張卡，框線只會多一層要讀的東西。
+ */
+.focus { display: flex; flex-direction: column; min-height: 100dvh; }
+.focus[data-mode="end"] .focus-progress,
+.focus[data-mode="end"] .focus-top { visibility: hidden; }
 
-.study-bar {
-  display: flex; align-items: center; gap: var(--s3);
-  font-size: var(--t-sm); color: var(--text-muted);
+/* 進度線。外框只建一次，這個 <i> 跨卡存在，寬度交給 motion.progress() 補間。 */
+.focus-progress { height: 2px; background: var(--line); }
+.focus-progress i { display: block; width: 0; height: 100%; background: var(--accent); }
+
+.focus-top {
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: var(--s3);
+  padding: var(--s3) var(--s5);
 }
-.study-bar .spacer { flex: 1; }
+.focus-top > :last-child { justify-self: end; }
+.focus-leave { justify-self: start; }
+.focus-leave kbd, .focus-actions kbd, .reveal-btn kbd { margin-left: var(--s1); }
+.focus-count { font-family: var(--font-num); font-size: var(--t-md); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.focus-tools { display: flex; align-items: center; gap: var(--s3); font-size: var(--t-xs); color: var(--text-muted); }
+.focus-tools .remain { white-space: nowrap; }
 
-/* 進度條。不用百分比數字，看得到走到哪就夠了。 */
-.progress {
-  position: relative; flex: 1; height: 4px; max-width: 240px;
-  background: var(--sunken); border-radius: var(--r-pill); overflow: hidden;
-}
-/* 不放 transition：每翻一張卡整個 study 區塊會重建，這個 <i> 每次都是新節點，
-   沒有前一個寬度可以補間，寫了也不會動，只是留一條會誤導人的規則。 */
-.progress i {
-  position: absolute; inset: 0 auto 0 0; display: block;
-  background: var(--accent); border-radius: inherit;
-}
-
-.card-face {
-  display: flex; flex-direction: column; gap: var(--s5);
-  padding: var(--s7) var(--s6);
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--r-card); box-shadow: var(--shadow-card);
+/* overflow 藏住換卡時滑出去的那 48px，不然會在右邊撐出一條橫向捲軸。 */
+.stage {
+  flex: 1; display: grid; place-items: center;
+  padding: var(--s5) var(--s5) var(--s8); overflow: hidden;
 }
 
-.face-tags { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.focus-card {
+  width: min(720px, 100%);
+  display: flex; flex-direction: column; align-items: center; gap: var(--s5);
+  text-align: center;
+}
+.focus-skeleton { gap: var(--s4); }
 
+/* 題型・等級・第幾次。資訊有用但不該搶眼，排成一行小字。 */
+.card-kind {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: var(--s3);
+  font-size: var(--t-xs); letter-spacing: 0.08em; color: var(--text-faint);
+}
+.card-kind span + span::before { content: '·'; margin-right: var(--s3); }
+
+/* 題目上方的一句提示。練習頁也用這個 class，所以不綁在複習的版面上。 */
 .cue {
   font-size: var(--t-sm); color: var(--text-muted);
   letter-spacing: 0.04em; text-transform: none;
 }
 
-.prompt { display: flex; flex-direction: column; gap: var(--s2); }
+.prompt { display: flex; flex-direction: column; align-items: center; gap: var(--s2); width: 100%; }
 .prompt-word {
-  font-family: var(--font-fr); font-size: var(--t-3xl); font-weight: 400;
-  line-height: 1.15; letter-spacing: -0.01em;
-  /* 襯線 + 大字時字距要放開一點才不會擠。 */
+  margin: var(--s4) 0 var(--s3);
+  font-family: var(--font-fr); font-size: var(--t-word); font-weight: 400;
+  line-height: 1.05; letter-spacing: -0.02em;
   word-break: break-word;
 }
 .prompt-zh { font-size: var(--t-xl); font-weight: 500; }
+/* 中翻法的題目就是這句中文，要跟法文單字題的大字同一個份量。 */
+.prompt-lead { margin: var(--s3) 0; font-size: var(--t-2xl); line-height: 1.35; }
 .prompt-en { font-size: var(--t-sm); color: var(--text-muted); font-style: italic; }
 .prompt-note { font-size: var(--t-sm); color: var(--text-faint); }
 
 /* 動詞變位題：人稱 + 空格，排成一句。 */
 .conj-line {
-  display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--s3);
-  font-family: var(--font-fr); font-size: var(--t-2xl);
+  display: flex; align-items: baseline; justify-content: center; flex-wrap: wrap; gap: var(--s3);
+  margin: var(--s3) 0;
+  font-family: var(--font-fr); font-size: var(--t-3xl);
 }
 .conj-line .blank {
-  display: inline-block; min-width: 6ch; border-bottom: 2px solid var(--border-strong);
+  display: inline-block; min-width: 6ch; border-bottom: 2px solid var(--line-strong);
 }
 
 /*
@@ -352,84 +442,97 @@
  * 方框裡的字是要讀的內容不是標籤，所以比一般 chip 大一級、用內文色，
  * 並且沿用法文字體——選項本身就是法文。
  */
-.pick-box { display: flex; flex-wrap: wrap; gap: var(--s2); }
-.pick-box .chip {
-  padding: var(--s1) var(--s3);
-  font-family: var(--font-fr); font-size: var(--t-md); color: var(--text);
+.pick-box {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: var(--s2) var(--s4);
+  padding: var(--s3) var(--s4); border: 1px solid var(--line-strong); border-radius: var(--r);
 }
+.pick-box span { font-family: var(--font-fr); font-size: var(--t-md); color: var(--text); }
+.pick-sentence {
+  margin-top: var(--s3); max-width: 56ch;
+  font-family: var(--font-fr); font-size: var(--t-xl); line-height: 1.5;
+  word-break: break-word;
+}
+
 /*
  * 改寫題：指定工具 + 原句（法文或中文）+ 多行作答框。
  * 指定工具排在原句前面且做強調——整題的限制條件就是它，
  * 看漏了會寫出一句「意思對但沒用到指定連接詞」的答案，那是零分。
  */
 .rw-tool {
-  /* .prompt 是 stretch 的直向 flex，不 align-self 就會拉成整條橫幅。 */
-  align-self: flex-start;
+  /* .prompt 是直向 flex，不 align-self 就會拉成整條橫幅。 */
+  align-self: center;
   display: inline-block; padding: var(--s1) var(--s3);
-  font-family: var(--font-fr); font-size: var(--t-lg); font-weight: 600;
-  color: var(--accent); background: var(--sunken);
-  border: 1px solid var(--accent); border-radius: var(--r-control);
+  font-family: var(--font-fr); font-size: var(--t-xl); font-weight: 600;
+  color: var(--accent); border: 1px solid var(--accent); border-radius: var(--r);
 }
-.rw-source { font-size: var(--t-lg); line-height: 1.6; }
+.rw-source { max-width: 56ch; font-size: var(--t-lg); line-height: 1.6; }
 .rw-source.fr { font-family: var(--font-fr); font-size: var(--t-xl); }
-.rw-self { display: flex; flex-direction: column; gap: var(--s3); }
+.rw-phase, .rw-yours { display: flex; flex-direction: column; align-items: center; gap: var(--s2); width: 100%; }
+.rw-yours .fr { max-width: 56ch; font-size: var(--t-lg); line-height: 1.6; }
 .rw-answer {
-  font-family: var(--font-fr); font-size: var(--t-lg); line-height: 1.6;
-  padding: var(--s3); border-radius: var(--r-control);
-  background: var(--sunken); border: 1px solid var(--border);
-}
-/* 自評只有三格，格數寫在 data-n 上，不另開一個 class。 */
-.ratings[data-n="3"] { grid-template-columns: repeat(3, 1fr); }
-
-.pick-sentence {
-  font-family: var(--font-fr); font-size: var(--t-xl); line-height: 1.5;
-  word-break: break-word;
+  max-width: 56ch;
+  font-family: var(--font-fr); font-size: var(--t-xl); line-height: 1.6;
 }
 
-.answer-row { display: flex; flex-direction: column; gap: var(--s3); }
+/* ---- 作答 ---- */
 
+.answer-form, .self-answer { display: flex; flex-direction: column; align-items: center; gap: var(--s4); width: 100%; }
+
+/* 只留一條底線：這是在紙上寫字的地方，不是一個表單欄位。 */
 .answer-input {
-  width: 100%; min-height: 56px; padding: 0 var(--s4);
-  font-family: var(--font-fr); font-size: var(--t-xl);
-  background: var(--sunken); border: 1px solid var(--border-strong);
-  border-radius: var(--r-control); color: var(--text);
+  width: min(420px, 100%); padding: 0 0 10px;
+  font-family: var(--font-fr); font-size: var(--t-2xl); line-height: 1.2; text-align: center;
+  background: transparent; color: var(--text);
+  border: 0; border-bottom: 1px solid var(--line-strong); border-radius: 0;
 }
 .answer-input::placeholder { color: var(--text-faint); font-family: var(--font-ui); font-size: var(--t-md); }
-.answer-input:focus-visible { background: var(--surface); border-color: var(--accent); }
-.answer-input:disabled { opacity: 1; color: var(--text-muted); }
+/* 聚焦時底線加粗並換強調色，padding 少 1px 抵掉多出來的那 1px 邊框，字才不會跳。 */
+.answer-input:focus, .answer-input:focus-visible {
+  outline: none; border-bottom: 2px solid var(--accent); padding-bottom: 9px;
+}
 /* 作答框要多行：一整句寫在單行輸入框裡看不到自己寫了什麼。 */
-.answer-area { min-height: 96px; padding: var(--s3) var(--s4); line-height: 1.5; resize: vertical; }
+.answer-area {
+  width: min(600px, 100%); min-height: 96px; padding: var(--s2) 0 10px;
+  font-size: var(--t-xl); line-height: 1.5; text-align: left; resize: vertical;
+}
 
 /*
  * 重音鍵盤。這排不是裝飾——沒有法文輸入法的鍵盤打不出 é ç œ，
  * 而這個 App 的立場是重音算數，所以必須自己把符號給出來。
  * 點一下插入到游標位置，不搶焦點。
- * 外框用 --border-strong 不用 --border：這是按鈕，受 WCAG 1.4.11 的 3:1 管，
- * --border 對 surface 不到 3:1，按鈕的邊界會糊進底色。
+ * 外框用 --line-strong 不用 --line：這是按鈕，受 WCAG 1.4.11 的 3:1 管，
+ * --line 對 surface 不到 3:1，按鈕的邊界會糊進底色。
  */
-.accents { display: flex; flex-wrap: wrap; gap: var(--s1); }
+.accents { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--s1); max-width: 560px; }
 .accents button {
-  min-width: 38px; min-height: 38px; padding: 0 var(--s2);
-  font-family: var(--font-fr); font-size: var(--t-lg);
-  background: var(--surface); color: var(--text);
-  border: 1px solid var(--border-strong); border-radius: var(--r-control);
+  min-width: 32px; min-height: 32px; padding: 0 var(--s2);
+  font-family: var(--font-fr); font-size: var(--t-md);
+  background: transparent; color: var(--text);
+  border: 1px solid var(--line-strong); border-radius: var(--r);
   cursor: pointer;
-  transition: background var(--dur-out) var(--ease), border-color var(--dur-out) var(--ease);
+  transition: background var(--dur-out) var(--ease-out), border-color var(--dur-out) var(--ease-out);
 }
 .accents button:hover { background: var(--accent-weak); border-color: var(--accent); color: var(--accent); }
 .accents button:active { transform: translateY(1px); }
 
-/* 選擇題（連接詞後接什麼語氣）。 */
-.choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--s2); }
+.focus-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--s3); }
+.btn-primary kbd { color: inherit; border-color: currentColor; opacity: .85; }
+
+/* 選擇題（連接詞後接什麼語氣、挑連接詞）。 */
+.choices {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--s2);
+  width: 100%;
+}
+.choices:focus { outline: none; }
 .choices button {
   position: relative;
   display: flex; flex-direction: column; justify-content: center; gap: 2px;
   /* 右邊多留的空間給角落的數字鍵，選項文字不會壓到它。 */
-  min-height: 52px; padding: var(--s2) var(--s6) var(--s2) var(--s4);
+  min-height: 56px; padding: var(--s2) var(--s6) var(--s2) var(--s4);
   font-family: var(--font-fr); font-size: var(--t-lg); text-align: left;
-  background: var(--surface); color: var(--text);
-  border: 1px solid var(--border-strong); border-radius: var(--r-control); cursor: pointer;
-  transition: background var(--dur-out) var(--ease), border-color var(--dur-out) var(--ease);
+  background: transparent; color: var(--text);
+  border: 1px solid var(--line-strong); border-radius: var(--r); cursor: pointer;
+  transition: background var(--dur-out) var(--ease-out), border-color var(--dur-out) var(--ease-out);
 }
 /* 語氣的中文。字級與顏色都降一階，法文術語仍然是按鈕的主體——
    考卷上印的是法文，中文只是幫忙認出那是什麼。 */
@@ -447,157 +550,218 @@
 .choices button[data-mark="ok"] { border-color: var(--ok); background: var(--ok-weak); color: var(--ok); opacity: 1; }
 .choices button[data-mark="bad"] { border-color: var(--bad); background: var(--bad-weak); color: var(--bad); opacity: 1; }
 
-/* 自評題的四個評分鍵。順序與 FSRS 的 1..4 一致。 */
-.ratings { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--s2); }
-.ratings button {
-  display: flex; flex-direction: column; align-items: center; gap: 2px;
-  min-height: 60px; padding: var(--s2);
-  background: var(--surface); border: 1px solid var(--border-strong);
-  border-radius: var(--r-control); cursor: pointer;
-  transition: background var(--dur-out) var(--ease), border-color var(--dur-out) var(--ease);
+/*
+ * 評分鍵。順序與 FSRS 的 1..4 一致。四格共用上下兩條細線、中間用直線隔開，
+ * 不做四個各自有框的方塊。滑過時底邊換成那一級的語意色：顏色只是輔助，字才是主體。
+ */
+.ratings {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  width: 100%; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
 }
-.ratings button:hover { background: var(--sunken); }
-.ratings b { font-size: var(--t-md); font-weight: 600; }
-.ratings small { font-family: var(--font-num); font-size: var(--t-xs); color: var(--text-faint); }
+.ratings:focus { outline: none; }
+.ratings:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* 自評只有三格，格數寫在 data-n 上，不另開一個 class。 */
+.ratings[data-n="3"] { grid-template-columns: repeat(3, 1fr); }
+.rate {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  min-height: 72px; padding: var(--s4) var(--s2) var(--s3);
+  background: transparent; color: var(--text);
+  border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px;
+  cursor: pointer;
+  transition: background var(--dur-out) var(--ease-out), border-color var(--dur-out) var(--ease-out);
+}
+.rate + .rate { border-left: 1px solid var(--line); }
+.rate b { font-size: var(--t-md); font-weight: 600; }
+.rate kbd { position: absolute; top: var(--s2); left: var(--s2); }
 /* 按下去之後這張卡會排到哪一天。比數字鍵重要，所以用 muted 不用 faint。 */
-.ratings .iv { font-size: var(--t-xs); color: var(--text-muted); }
-.ratings .iv:empty { display: none; }
-.ratings button[data-r="1"]:hover { border-color: var(--bad); color: var(--bad); }
-.ratings button[data-r="2"]:hover { border-color: var(--warn); color: var(--warn); }
-.ratings button[data-r="3"]:hover, .ratings button[data-r="4"]:hover { border-color: var(--ok); color: var(--ok); }
-.correction { padding-top: var(--s2); border-top: 1px dashed var(--border); }
+.rate small { font-family: var(--font-num); font-size: var(--t-sm); color: var(--text-muted); }
+.rate small:empty { display: none; }
+.rate:hover:not(:disabled) { background: var(--sunken); }
+.rate[data-r="1"]:hover:not(:disabled) { border-bottom-color: var(--bad); }
+.rate[data-r="2"]:hover:not(:disabled) { border-bottom-color: var(--warn); }
+.rate[data-r="3"]:hover:not(:disabled) { border-bottom-color: var(--ok); }
+.rate[data-r="4"]:hover:not(:disabled) { border-bottom-color: var(--accent); }
+.rate:disabled { cursor: default; color: var(--text-muted); }
+
+.correction { width: 100%; }
 .correction summary {
-  width: fit-content; color: var(--text-muted); font-size: var(--t-sm); cursor: pointer;
+  width: fit-content; margin: 0 auto; color: var(--text-muted); font-size: var(--t-sm); cursor: pointer;
 }
 .correction-ratings { margin-top: var(--s3); }
-.correction-ratings button:disabled { opacity: .55; cursor: default; }
+.correction-ratings .rate { min-height: 52px; padding: var(--s3) var(--s2); }
+
+/* ---- 批改 ---- */
 
 /*
  * 批改結果。三種語氣對應三種語意，顏色只是輔助——
- * 每一種都另外有文字說明，不靠顏色傳達資訊。
+ * 標題永遠有文字說明，不靠顏色傳達資訊。不墊底色：正確答案本身就是最大的字。
  */
 .verdict {
-  display: flex; flex-direction: column; gap: var(--s3);
-  padding: var(--s4); border-radius: var(--r-control);
-  border: 1px solid var(--border); background: var(--sunken);
-  animation: verdict-in var(--dur-in) var(--ease);
+  display: flex; flex-direction: column; align-items: center; gap: var(--s3);
+  width: 100%;
 }
-@keyframes verdict-in { from { opacity: 0; transform: translateY(4px); } }
-@media (prefers-reduced-motion: reduce) { .verdict { animation: none; } }
+.verdict:focus { outline: none; }
 
-/* 新卡先看解答：還沒作答，沒有對錯，所以只用中性底色。 */
-.study-answer {
-  display: flex; flex-direction: column; gap: var(--s3);
-  padding: var(--s4); border-radius: var(--r-control);
-  border: 1px solid var(--border); background: var(--sunken);
+.verdict-head {
+  display: flex; align-items: center; justify-content: center; gap: var(--s2);
+  font-weight: 600;
 }
-
-.verdict[data-tone="ok"]   { border-color: var(--ok);   background: var(--ok-weak); }
-.verdict[data-tone="near"] { border-color: var(--warn); background: var(--warn-weak); }
-.verdict[data-tone="bad"]  { border-color: var(--bad);  background: var(--bad-weak); }
-
-.verdict-head { display: flex; align-items: center; gap: var(--s2); font-weight: 600; }
 .verdict[data-tone="ok"]   .verdict-head { color: var(--ok); }
 .verdict[data-tone="near"] .verdict-head { color: var(--warn); }
 .verdict[data-tone="bad"]  .verdict-head { color: var(--bad); }
 .verdict-head svg { width: 18px; height: 18px; flex: none; }
 
+/* 逐字比對：以正確答案為骨架，只把沒打對的字母標紅加底線，其餘維持墨色。 */
+.diff {
+  margin: var(--s2) 0; max-width: 100%;
+  font-family: var(--font-fr); font-size: var(--t-3xl); line-height: 1.1;
+  word-break: break-word;
+}
+/* inline-block 才能讓 GSAP 逐字位移；空白字元要留寬度，不然兩個字會黏在一起。 */
+.diff span { display: inline-block; white-space: pre; }
+.diff .bad {
+  color: var(--bad); text-decoration: underline 2px; text-underline-offset: 8px;
+}
+.diff.all-ok { color: var(--ok); }
 .verdict-answer { font-family: var(--font-fr); font-size: var(--t-2xl); line-height: 1.3; }
-/* 逐字比對：只把不同的字元標出來，其餘維持原色。 */
-.verdict-answer .ch.bad {
-  color: var(--bad); border-bottom: 2px solid var(--bad); padding-bottom: 1px;
-}
-.verdict-yours { font-size: var(--t-sm); color: var(--text-muted); }
-.verdict-yours span { font-family: var(--font-fr); font-size: var(--t-md); }
-.verdict-note { font-size: var(--t-sm); color: var(--text-muted); }
-.verdict-sched {
-  display: flex; flex-wrap: wrap; gap: var(--s4);
-  padding-top: var(--s3); border-top: 1px solid var(--border);
-  font-size: var(--t-xs); color: var(--text-faint);
-}
-.verdict-sched b { font-family: var(--font-num); font-weight: 600; color: var(--text-muted); }
 
-.study-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s3); }
-.study-actions .spacer { flex: 1; }
-.session-followup { max-width: 56ch; text-align: left; }
-.session-followup strong { display: block; margin-bottom: var(--s2); }
+.verdict-yours { font-size: var(--t-sm); color: var(--text-muted); }
+.verdict-yours .fr { font-size: var(--t-lg); color: var(--text); }
+.verdict-yours s { color: var(--bad); text-decoration-thickness: 1px; }
+/* 統計與推演頁也用這個 class，所以只定字級與顏色。 */
+.verdict-note { font-size: var(--t-sm); color: var(--text-muted); }
+.verdict .verdict-note { max-width: 56ch; }
+
+.verdict-sched {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: var(--s5);
+  margin-top: var(--s2); padding-top: var(--s3); border-top: 1px solid var(--line);
+}
+.verdict-sched div { display: flex; align-items: baseline; gap: var(--s2); }
+.verdict-sched dt { font-size: var(--t-xs); color: var(--text-faint); }
+.verdict-sched dd { font-family: var(--font-num); font-size: var(--t-md); color: var(--text-muted); }
+
+/* 新卡先看解答：還沒作答，沒有對錯，所以只用一條細線跟題目分開，不帶語意色。 */
+.study-answer {
+  display: flex; flex-direction: column; align-items: center; gap: var(--s3);
+  width: 100%; padding-top: var(--s4); border-top: 1px solid var(--line);
+}
+
+/* ---- 收尾 ---- */
+
+.summary {
+  width: min(560px, 100%); padding: var(--s8) 0;
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+}
+.summary .landing:focus { outline: none; }
+.sum-kicker, .sum-title { font-size: var(--t-xl); font-weight: 400; color: var(--text-muted); }
+.sum-title { font-family: var(--font-fr); font-size: var(--t-2xl); color: var(--text); }
+.sum-num {
+  margin-top: var(--s3);
+  font-family: var(--font-num); font-size: var(--t-hero); font-weight: 300;
+  line-height: .9; letter-spacing: -0.04em; font-variant-numeric: tabular-nums;
+}
+.sum-num small { margin-left: var(--s2); font-family: var(--font-ui); font-size: var(--t-xl); letter-spacing: 0; color: var(--text-muted); }
+.sum-cap { margin-top: var(--s4); color: var(--text-muted); }
+
+/* 四種評分的比例。寬度就是張數（flex-grow），不另外換算百分比。 */
+.sum-bar { display: flex; gap: 2px; width: 100%; height: 8px; margin-top: var(--s7); }
+.sum-bar i { display: block; flex-basis: 0; transform-origin: left center; }
+.sum-bar .r1 { background: var(--bad); }
+.sum-bar .r2 { background: var(--warn); }
+.sum-bar .r3 { background: var(--ok); }
+.sum-bar .r4 { background: var(--accent); }
+.sum-legend { display: grid; grid-template-columns: repeat(4, 1fr); width: 100%; margin-top: var(--s3); }
+.sum-legend dt { font-size: var(--t-xs); color: var(--text-faint); }
+.sum-legend dd { font-family: var(--font-num); font-size: var(--t-xl); font-variant-numeric: tabular-nums; }
+.sum-legend .zero dd { color: var(--text-faint); }
+
+.sum-note { margin-top: var(--s6); color: var(--text-muted); }
+.sum-next {
+  width: 100%; margin-top: var(--s6); padding-top: var(--s4);
+  border-top: 1px solid var(--line); color: var(--text-muted);
+}
+.sum-next b { font-family: var(--font-num); font-size: var(--t-xl); font-weight: 500; color: var(--text); }
+.sum-act { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--s3); margin-top: var(--s5); }
+.summary-empty .sum-cap { margin-top: var(--s3); }
+
+.session-followup { width: 100%; max-width: 56ch; margin-top: var(--s6); text-align: left; }
+.session-followup .cue { margin-bottom: var(--s2); }
 .session-followup ol { padding-left: var(--s5); color: var(--text-muted); }
 .session-followup li + li { margin-top: var(--s1); }
-/* 不折行。窄螢幕上寧可整句換到下一列，也不要斷成「Enter 送／出」。 */
-.kbd-hint { font-size: var(--t-xs); color: var(--text-faint); white-space: nowrap; }
-kbd {
-  display: inline-block; min-width: 20px; padding: 1px 5px;
-  font-family: var(--font-num); font-size: var(--t-2xs); text-align: center;
-  background: var(--sunken); border: 1px solid var(--border);
-  border-bottom-width: 2px; border-radius: 5px; color: var(--text-muted);
+
+/* ---- 進度（現況／推演） ------------------------------------------------ */
+
+.progress { display: flex; flex-direction: column; max-width: 1120px; }
+
+/* 頁首只用一條 --line-strong 細線，不用報頭那條雙線：雙線是「今天」頁的日期專用，
+   兩頁都用就沒有一條是特別的了。 */
+.prog-head {
+  display: flex; justify-content: space-between; align-items: flex-end; gap: var(--s4); flex-wrap: wrap;
+  border-bottom: 1px solid var(--line-strong);
+}
+.subtabs { display: flex; gap: var(--s6); }
+/* 底線畫在 a 自己身上、往下壓 1px 蓋住頁首那條線，選中的分頁看起來像從線上長出來。 */
+.subtabs a {
+  margin-bottom: -1px; padding: var(--s2) 0 var(--s3);
+  font: 400 var(--t-xl)/1.2 var(--font-fr); color: var(--text-muted); text-decoration: none;
+  border-bottom: 2px solid transparent;
+  transition: color var(--dur-out) var(--ease-out), border-color var(--dur-out) var(--ease-out);
+}
+.subtabs a:hover { color: var(--text); }
+.subtabs a[aria-current="page"] { color: var(--text); border-bottom-color: var(--accent); }
+.prog-head .scope-btn { margin-bottom: var(--s2); }
+
+.prog-body { display: flex; flex-direction: column; gap: var(--s7); padding-top: var(--s6); }
+
+/* 六個數字排一列，用直向細線分隔，不用方塊。欄數跟 stats.mjs 的 figures 綁在一起：
+   六個剛好排成 6、3×2、2×3，任何一種寬度都不會有一格自己站一列。 */
+.figures { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.fig { display: flex; flex-direction: column; gap: var(--s1); padding: 0 var(--s4); border-left: 1px solid var(--line); }
+.fig:first-child { padding-left: 0; border-left: 0; }
+.fig dt { font-size: var(--t-xs); color: var(--text-muted); }
+.fig dd { margin: 0; }
+.fig-v { display: flex; align-items: baseline; gap: var(--s1); }
+.fig-v .num { font: 400 var(--t-2xl)/1 var(--font-num); letter-spacing: -0.01em; }
+.fig-v .u { font-size: var(--t-xs); color: var(--text-muted); }
+.fig-s { font-size: var(--t-xs); color: var(--text-faint); }
+@media (max-width: 1000px) {
+  .figures { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: var(--s5); }
+  .fig:nth-child(3n + 1) { padding-left: 0; border-left: 0; }
+}
+@media (max-width: 560px) {
+  .figures { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fig:nth-child(3n + 1) { padding-left: var(--s4); border-left: 1px solid var(--line); }
+  .fig:nth-child(2n + 1) { padding-left: 0; border-left: 0; }
 }
 
-/* ---- 統計 ------------------------------------------------------------- */
+/* 左欄放「量」（題型、頻率、未來負擔），右欄放「該處理的事」（弱點、錯法）。
+   7:5 而不是 1:1：左欄都是寬圖表，右欄是清單，清單太寬反而讀不到行尾的錯法。 */
+.prog-grid { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: var(--s7); align-items: start; }
+.prog-col { display: flex; flex-direction: column; gap: var(--s7); min-width: 0; }
+/* 斷點看的是視窗，但桌機版左邊還有側欄；1100px 視窗扣掉側欄約剩 830px，再窄右欄的清單就只剩 250px 上下。 */
+@media (max-width: 1100px) { .prog-grid { grid-template-columns: minmax(0, 1fr); } }
 
-/* 固定三欄，因為上面剛好是六塊磚（3×2 排得滿）。
-   舊版用 auto-fit minmax(150px, 1fr)，寬視窗會排成五欄，第六塊自己站一列——
-   一個孤零零的方塊看起來像沒載完，而不像刻意的版面。
-   欄數寫死代表它跟磚數綁在一起：stats.mjs 那六個 stat() 增減時，這裡要一起改。 */
-.stat-grid {
-  display: grid; grid-template-columns: repeat(3, 1fr);
-  gap: var(--s3); margin-bottom: var(--s5);
+/* 分節：頂上一條細線、標題、一句說明、右邊一顆動作鈕。沒有外框。 */
+.sec { min-width: 0; }
+.sec-head {
+  display: flex; align-items: baseline; gap: var(--s3); flex-wrap: wrap;
+  padding-top: var(--s3); margin-bottom: var(--s4); border-top: 1px solid var(--line);
 }
-.practice-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2); }
-.practice-stat {
-  display: flex; align-items: center; justify-content: space-between; gap: var(--s3);
-  padding: var(--s3); background: var(--sunken); border-radius: var(--r-control);
-}
-.practice-stat > div { display: flex; min-width: 0; flex-direction: column; }
-.practice-stat strong { font-size: var(--t-lg); }
-.practice-stat span, .practice-stat small { color: var(--text-muted); font-size: var(--t-xs); }
-.section-label { margin-top: var(--s4); font-size: var(--t-sm); }
-.attempt-list, .mock-history { display: grid; gap: 1px; overflow: hidden; border-radius: var(--r-control); background: var(--border); }
-.attempt-row {
-  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;
-  gap: var(--s3); padding: var(--s2) var(--s3); background: var(--surface);
-}
-.attempt-row > div { display: flex; min-width: 0; flex-direction: column; }
-.attempt-row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-sm); }
-.attempt-row small, .attempt-row > .num { color: var(--text-muted); font-size: var(--t-xs); }
-.panel-actions { display: flex; justify-content: flex-end; padding-top: var(--s3); }
-.mock-latest { display: flex; align-items: center; justify-content: space-between; gap: var(--s4); }
-.mock-latest > div:first-child { display: flex; flex-direction: column; }
-.mock-latest strong { font-size: var(--t-2xl); }
-.mock-latest span { color: var(--text-muted); font-size: var(--t-sm); }
-.mock-parts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--s1); }
-.mock-history { margin-top: var(--s3); }
-.mock-history > div {
-  display: grid; grid-template-columns: 7rem 5rem minmax(0, 1fr); gap: var(--s3);
-  padding: var(--s2) var(--s3); background: var(--surface); font-size: var(--t-sm);
-}
-.mock-history small { overflow: hidden; color: var(--text-muted); text-overflow: ellipsis; white-space: nowrap; }
-/* 視窗窄到三欄會把數字擠成兩行時退成兩欄，仍然排得滿（2×3）。 */
-@media (max-width: 860px) { .stat-grid { grid-template-columns: repeat(2, 1fr); } }
-.stat {
-  display: flex; flex-direction: column; gap: 2px;
-  padding: var(--s4); background: var(--surface);
-  border: 1px solid var(--border); border-radius: var(--r-card);
-}
-.stat .k { font-size: var(--t-xs); color: var(--text-muted); }
-.stat .v { font-family: var(--font-num); font-size: var(--t-2xl); font-weight: 600; line-height: 1.1; }
-.stat .s { font-size: var(--t-xs); color: var(--text-faint); }
-
-.panel { margin-bottom: var(--s5); }
-.panel > h2 {
-  display: flex; align-items: baseline; gap: var(--s3);
-  font-size: var(--t-lg); margin-bottom: var(--s1);
-}
-.panel > h2 .why { font-size: var(--t-xs); font-weight: 400; color: var(--text-faint); }
-.panel > .body {
-  padding: var(--s4); background: var(--surface);
-  border: 1px solid var(--border); border-radius: var(--r-card);
-}
+.sec-head h2 { font: 500 var(--t-lg)/1.3 var(--font-fr); }
+.sec-why { font-size: var(--t-xs); color: var(--text-faint); }
+.sec-act { margin-left: auto; }
+.sec-note { margin-top: var(--s3); max-width: 64ch; font-size: var(--t-sm); color: var(--text-muted); text-wrap: pretty; }
+.sec-empty { font-size: var(--t-sm); color: var(--text-faint); }
+.sec-err { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; color: var(--bad); font-size: var(--t-sm); }
 .scroll-x { overflow-x: auto; }
+
+.prog-skel { display: flex; flex-direction: column; gap: var(--s7); padding-top: var(--s6); }
 
 /* 進度長條：已掌握 / 學過 / 未學，一條看完。 */
 /* gap 露出的是底色 sunken：已掌握與學過但未穩兩段彼此只差 1.9:1（深色 2.4:1），
    各自對 sunken 都在 3:1 以上，所以用一道底色缺口分界，而不是再找第三個色。 */
-.meter { display: flex; gap: 2px; height: 8px; border-radius: var(--r-pill); overflow: hidden; background: var(--sunken); }
+.meter { display: flex; gap: 2px; height: 8px; border-radius: var(--r); overflow: hidden; background: var(--sunken); }
 .meter i { display: block; height: 100%; }
 .meter .mature { background: var(--accent); }
 .meter .seen { background: var(--accent-mid); }
@@ -605,40 +769,70 @@ kbd {
 /* 長條封頂 360px，不讓它吃滿整列。剛開始練的時候每一條都是全空的，
    如果條子有 500px 長，右邊那組數字就被推到離題型名稱半個螢幕遠，
    讀一列要橫掃過去再掃回來。封頂之後名稱、長條、數字擠成一組，一眼看完。 */
-.kind-row {
+/* 欄寬定在 .krows、每一列用 subgrid 接過去：各列自己算欄寬的話，數字欄寬度不同，
+   窄螢幕上七條長條會長短不一，看起來像資料不同。 */
+.krows {
   display: grid; grid-template-columns: 108px minmax(0, 360px) auto;
-  justify-content: start; align-items: center;
-  gap: var(--s3); padding: var(--s3) 0;
+  justify-content: start; column-gap: var(--s3);
 }
-.kind-row + .kind-row { border-top: 1px solid var(--border); }
-.kind-row .name { font-size: var(--t-sm); font-weight: 500; }
-.kind-row .n { font-family: var(--font-num); font-size: var(--t-sm); color: var(--text-muted); white-space: nowrap; }
+.krow {
+  display: grid; grid-column: 1 / -1; grid-template-columns: subgrid;
+  align-items: center; padding: var(--s2) 0;
+}
+.krow + .krow { border-top: 1px solid var(--line); }
+.krow .name { font-size: var(--t-sm); }
+.krow .n { font-family: var(--font-num); font-size: var(--t-sm); color: var(--text-muted); white-space: nowrap; }
+.krow .n b { font-weight: 500; color: var(--text); }
+@media (max-width: 560px) { .krows { grid-template-columns: 84px minmax(0, 1fr) auto; } }
 
 /* 弱點清單。難的字排前面，錯法直接寫出來。 */
-.weak { display: grid; gap: 1px; background: var(--border); border-radius: var(--r-control); overflow: hidden; }
+.weak { list-style: none; margin: 0; padding: 0; }
 .weak-item {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center;
-  gap: var(--s3); padding: var(--s3) var(--s4); background: var(--surface);
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--s3);
+  padding: var(--s2) 0; border-bottom: 1px solid var(--line);
 }
-.weak-item .w { font-family: var(--font-fr); font-size: var(--t-lg); }
-.weak-item .g { font-size: var(--t-xs); color: var(--text-muted); }
-.weak-item .r { display: flex; align-items: center; gap: var(--s3); }
-.weak-item .lapses { font-family: var(--font-num); font-size: var(--t-sm); color: var(--bad); }
+.weak-item:first-child { border-top: 1px solid var(--line); }
+.weak-main { display: flex; flex: 1 1 auto; align-items: baseline; gap: var(--s3); min-width: 0; }
+.weak-main .w { flex: 0 1 auto; min-width: 0; overflow: hidden; font: 400 var(--t-lg)/1.3 var(--font-fr); text-overflow: ellipsis; white-space: nowrap; }
+/* 釋義只拿剩下的寬度：窄的時候先縮它，法文字本身保持一行。 */
+.weak-main .g { flex: 1 1 0; min-width: 0; overflow: hidden; font-size: var(--t-xs); color: var(--text-muted); text-overflow: ellipsis; white-space: nowrap; }
+.weak-side { display: flex; align-items: baseline; gap: var(--s3); flex: none; font-size: var(--t-xs); }
+.weak-side .lapses { font-family: var(--font-num); color: var(--bad); }
+.weak-side .why { color: var(--text-faint); }
+.sec .side-more .weak-item:first-child { border-top: 0; }
 
 /* 錯誤類型分布：橫條 + 數字，不用圓餅圖（四類以下的圓餅圖只會更難讀）。 */
 .reasons { display: flex; flex-direction: column; gap: var(--s2); }
 .reason-row { display: grid; grid-template-columns: 72px 1fr 56px; align-items: center; gap: var(--s3); }
 .reason-row .lbl { font-size: var(--t-sm); }
-.reason-row .track { height: 10px; background: var(--sunken); border-radius: var(--r-pill); overflow: hidden; }
+.reason-row .track { height: 10px; background: var(--sunken); border-radius: var(--r); overflow: hidden; }
 .reason-row .track i { display: block; height: 100%; border-radius: inherit; }
 .reason-row .n { font-family: var(--font-num); font-size: var(--t-sm); color: var(--text-muted); text-align: right; }
+
+/* 四科實作與模考紀錄：同一種細線清單。代碼（CE、PO…）是唯一上強調色的字。 */
+.skills, .attempts { list-style: none; margin: 0; padding: 0; }
+.skill, .attempt {
+  display: grid; grid-template-columns: 2.5rem minmax(0, 1fr) auto; align-items: center;
+  gap: var(--s3); padding: var(--s2) 0; border-bottom: 1px solid var(--line);
+}
+.skill:first-child, .attempt:first-child { border-top: 1px solid var(--line); }
+.skill-code { font-family: var(--font-num); font-size: var(--t-xs); font-weight: 600; letter-spacing: 0.04em; color: var(--accent); }
+.skill-main, .attempt-main { display: flex; flex-direction: column; min-width: 0; font-size: var(--t-sm); }
+.skill-main > *, .attempt-main > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dim { font-size: var(--t-xs); color: var(--text-muted); }
+.attempt > .num { font-size: var(--t-sm); color: var(--text-muted); }
+
+.mock-latest { display: flex; align-items: baseline; gap: var(--s5); flex-wrap: wrap; margin-bottom: var(--s4); }
+.mock-total .num { font: 400 var(--t-3xl)/1 var(--font-num); }
+.mock-total .of { margin-left: var(--s1); font-size: var(--t-sm); color: var(--text-muted); }
+.mock-meta { display: flex; flex-direction: column; gap: 2px; font-size: var(--t-sm); color: var(--text-muted); }
 
 /* ---- 圖表（手寫 SVG，沒有圖表函式庫） ---------------------------------- */
 
 .chart { display: block; width: 100%; height: auto; overflow: visible; }
 .chart-cap { font-size: var(--t-xs); color: var(--text-muted); margin-bottom: var(--s2); }
-.chart .axis { stroke: var(--border); stroke-width: 1; }
-.chart .grid { stroke: var(--border); stroke-width: 1; stroke-dasharray: 2 4; opacity: 0.7; }
+.chart .axis { stroke: var(--line); stroke-width: 1; }
+.chart .grid { stroke: var(--line); stroke-width: 1; stroke-dasharray: 2 4; opacity: 0.7; }
 /* --tick 由 charts.mjs 依實際渲染寬度算出，讓刻度字不隨 viewBox 一起縮小。
    沒有 ResizeObserver 時退回 10px，就是原本的行為。 */
 .chart .tick { fill: var(--text-faint); font-family: var(--font-num); font-size: var(--tick, 10px); }
@@ -655,7 +849,7 @@ kbd {
 .legend { display: flex; flex-wrap: wrap; gap: var(--s4); margin-top: var(--s3); font-size: var(--t-xs); color: var(--text-muted); }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
 /* 「未學」「沒學到」那一格的顏色就是 --sunken，跟底色幾乎一樣，不描邊會像少了一個色塊。 */
-.legend i.blank { box-shadow: inset 0 0 0 1px var(--border-strong); }
+.legend i.blank { box-shadow: inset 0 0 0 1px var(--line-strong); }
 
 /* 每日熱力圖。方塊 11px，一年也塞得下。 */
 .heat { display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, 11px); gap: 3px; }
@@ -674,118 +868,150 @@ kbd {
 .fc-form {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(128px, max-content);
+  /* 10rem 是日期輸入框（含日曆鈕）實測不被截掉的最窄寬度；原本 128px 會讓它壓到隔壁那格。 */
+  grid-auto-columns: minmax(10rem, max-content);
   grid-template-rows: auto auto auto;
   justify-content: start; align-items: start;
-  gap: var(--s1) var(--s3);
-  padding: var(--s4); margin-bottom: var(--s5);
-  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card);
+  gap: var(--s1) var(--s4);
+  padding: var(--s5) 0; border-bottom: 1px solid var(--line);
 }
 .fc-form .field { display: grid; grid-row: 1 / -1; grid-template-rows: subgrid; min-width: 0; }
 /* 按鈕跟輸入框同一列，不跟標籤也不跟說明。 */
 .fc-form > .btn { grid-row: 2; }
+.fc-form .input { width: 100%; }
+.fc-form .hint { max-width: 22ch; }
+/* 四格加一顆鈕在 1100px 以下（扣掉側欄）排不下一列，改成兩欄往下疊；subgrid 在這裡用不上，說明各自跟著自己的欄位。 */
+@media (max-width: 1100px) {
+  .fc-form { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: none; row-gap: var(--s4); max-width: 40rem; }
+  .fc-form .field { grid-row: auto; grid-template-rows: none; align-content: start; }
+  .fc-form .hint { max-width: none; }
+  .fc-form > .btn { grid-row: auto; justify-self: start; }
+}
 
-/* 還沒推演過的空狀態。.empty 是置中的，但這裡有一份三步驟清單，
-   置中的清單每一行起點都不一樣，讀起來像散開的字。整塊改成靠左。 */
-.fc-empty { align-items: flex-start; text-align: left; padding: var(--s6) var(--s5); }
-/* .empty p 的 42ch 是為了置中的一兩句短文；這裡的句子比較長，
-   42ch 會讓最後一行只剩一兩個字，看起來像斷掉。 */
+/* 還沒推演過的空狀態：兩句話，靠左，跟底下結果出現的位置同一條起線。 */
+.fc-empty { display: flex; flex-direction: column; gap: var(--s2); }
 .fc-empty p { max-width: 64ch; text-wrap: pretty; }
-/* 加上 .fc-empty 前綴不是為了好看，是為了贏過 `.empty p` 的字級與顏色。 */
-.fc-empty p.fc-empty-lead { font-size: var(--t-md); color: var(--text); font-weight: 600; }
-.fc-empty-list {
-  display: flex; flex-direction: column; gap: var(--s2);
-  margin: 0; padding: 0; list-style: none; counter-reset: fc;
-}
-.fc-empty-list li {
-  display: flex; gap: var(--s3); align-items: baseline;
-  font-size: var(--t-sm); color: var(--text-muted); counter-increment: fc;
-}
-/* 用 counter 而不是 <ol> 的預設編號：預設編號的數字對齊由瀏覽器決定，
-   在這個字級下會跟內文差半個字身。 */
-.fc-empty-list li::before {
-  content: counter(fc);
-  flex: none; width: 1.4em; text-align: right;
-  font-family: var(--font-num); color: var(--text-faint);
-}
-.fc-empty p.fc-empty-note { font-size: var(--t-xs); color: var(--text-faint); }
+.fc-empty-lead { font: 400 var(--t-xl)/1.35 var(--font-fr); }
+.fc-empty-note { font-size: var(--t-sm); color: var(--text-muted); }
 
-/* 推演結論。這是整個 App 最該被讀到的一句話，所以給它最大的字。 */
-.fc-verdict {
-  padding: var(--s5); margin-bottom: var(--s5);
-  border: 1px solid var(--border); border-radius: var(--r-card); background: var(--surface);
-}
-.fc-verdict[data-tone="ok"]  { border-color: var(--ok); }
-.fc-verdict[data-tone="bad"] { border-color: var(--warn); }
-.fc-verdict .lead { font-size: var(--t-xl); font-weight: 600; line-height: 1.4; }
-.fc-verdict .lead b { font-family: var(--font-num); }
-.fc-verdict[data-tone="ok"] .lead b  { color: var(--ok); }
-.fc-verdict[data-tone="bad"] .lead b { color: var(--warn); }
-.fc-verdict .sub { margin-top: var(--s2); font-size: var(--t-sm); color: var(--text-muted); }
+/* 推演結論。這是整個 App 最該被讀到的一句話，所以給它全站最大的數字。
+   數字用墨色：它是估計，不是評分；有沒有達標只在 .tone 那一行用語意色。 */
+.fc-verdict { display: flex; flex-direction: column; gap: var(--s2); }
+.fc-kicker { font-size: var(--t-sm); color: var(--text-muted); }
+.fc-big { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--s2); }
+.fc-big .num { font: 400 var(--t-hero)/0.95 var(--font-num); letter-spacing: -0.02em; }
+.fc-big .of { font-size: var(--t-lg); color: var(--text-muted); }
+.fc-rate { display: flex; align-items: baseline; gap: var(--s3); flex-wrap: wrap; font-size: var(--t-md); }
+.fc-rate b { font-family: var(--font-num); font-weight: 600; }
+.fc-verdict[data-tone="ok"] .tone { color: var(--ok); }
+.fc-verdict[data-tone="bad"] .tone { color: var(--warn); }
+.fc-verdict .sub { font-size: var(--t-sm); color: var(--text-muted); }
 
 /* 模型假設。放在結論正下方而不是頁尾，因為看到數字的人有權立刻知道它怎麼來的。 */
 .assumptions {
   display: flex; flex-wrap: wrap; gap: var(--s2);
-  margin-top: var(--s4); padding-top: var(--s3); border-top: 1px dashed var(--border);
+  margin-top: var(--s3); padding-top: var(--s3); border-top: 1px dashed var(--line);
 }
 .assumptions .chip[data-kind="assumed"] { background: var(--warn-weak); color: var(--warn); }
 
-.buckets { display: flex; height: 28px; border-radius: var(--r-control); overflow: hidden; }
-.buckets i { display: flex; align-items: center; justify-content: center; font-family: var(--font-num); font-size: var(--t-xs); }
+.buckets { display: flex; gap: 2px; height: 28px; border-radius: var(--r); overflow: hidden; }
+.buckets i { display: flex; align-items: center; justify-content: center; font-family: var(--font-num); font-size: var(--t-xs); font-style: normal; }
 .buckets .strong    { background: var(--ok);      color: var(--surface); }
 .buckets .shaky     { background: var(--warn);    color: var(--surface); }
 .buckets .weak      { background: var(--bad);     color: var(--surface); }
 .buckets .untouched { background: var(--sunken);  color: var(--text-faint); }
 
-table.grid { width: 100%; border-collapse: collapse; font-size: var(--t-sm); }
+/* 反推結果的那一句。跟結論同一套字，但小一級：它是結論的推論，不是第二個結論。 */
+.sec .lead { font: 400 var(--t-xl)/1.4 var(--font-fr); margin-bottom: var(--s2); }
+.sec .lead b { font-family: var(--font-num); font-weight: 600; color: var(--accent); }
+
+table.grid { width: 100%; margin-top: var(--s4); border-collapse: collapse; font-size: var(--t-sm); }
 table.grid th, table.grid td { padding: var(--s2) var(--s3); text-align: right; white-space: nowrap; }
 table.grid th:first-child, table.grid td:first-child { text-align: left; }
-table.grid th { font-weight: 500; color: var(--text-muted); border-bottom: 1px solid var(--border); }
-table.grid td { border-bottom: 1px solid var(--border); font-family: var(--font-num); }
+table.grid th { font-weight: 500; color: var(--text-muted); border-bottom: 1px solid var(--line-strong); }
+table.grid td { border-bottom: 1px solid var(--line); font-family: var(--font-num); }
 table.grid tr:last-child td { border-bottom: none; }
 table.grid tr[data-hit="1"] td { background: var(--accent-weak); color: var(--accent); }
 
-/* ---- 查詢 ------------------------------------------------------------- */
+/* ---- 辭典 ------------------------------------------------------------- */
 
-.search-form { display: flex; gap: var(--s2); margin-bottom: var(--s4); }
-.search-form .input { flex: 1; }
+/*
+ * 照紙本辭典排：搜尋框是欄頭，結果是一條條詞條，字頭用襯線、底下一行小字釋義，
+ * 詞條之間只有細線。沒有灰底框，也沒有圓角卡片。
+ */
+.dict { display: flex; flex-direction: column; gap: var(--s6); max-width: 960px; }
 
-.hits { display: grid; gap: 1px; background: var(--border); border-radius: var(--r-card); overflow: hidden; }
-.hit {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center;
-  gap: var(--s3); padding: var(--s3) var(--s4); background: var(--surface);
+.dict-search {
+  display: flex; align-items: center; gap: var(--s3);
+  border-bottom: 1px solid var(--text);
 }
-.hit .w { font-family: var(--font-fr); font-size: var(--t-lg); }
-.hit .m { font-size: var(--t-xs); color: var(--text-muted); }
-.hit .s { font-family: var(--font-num); font-size: var(--t-xs); color: var(--text-faint); text-align: right; }
+/* 沒有外框的輸入框，焦點狀態要另外給：底線加粗並換成主色。
+   用 :focus-within 畫在整條 form 上，放大鏡按鈕也一起算在裡面。 */
+.dict-search:focus-within { border-bottom-color: var(--accent); box-shadow: 0 1px 0 var(--accent); }
+.dict-input {
+  flex: 1; min-width: 0; padding: var(--s2) 0;
+  background: transparent; border: 0; color: var(--text);
+  font: 400 var(--t-2xl)/1.2 var(--font-fr);
+}
+.dict-input:focus-visible { outline: none; }
+.dict-input::placeholder { color: var(--text-faint); }
+/* 瀏覽器內建的清除鈕在襯線大字旁邊很突兀，而且 Esc 一樣能清。 */
+.dict-input::-webkit-search-cancel-button { display: none; }
+.dict-go {
+  display: grid; place-items: center; flex: none; width: 44px; height: 44px;
+  background: none; border: 0; color: var(--text-muted);
+}
+.dict-go:hover { color: var(--accent); }
+.dict-go svg { width: 22px; height: 22px; }
 
-/* 動詞全表。橫向可捲，欄位不壓縮。 */
-.verb-table { width: 100%; border-collapse: collapse; font-size: var(--t-sm); }
-.verb-table th { text-align: left; padding: var(--s2) var(--s3); font-weight: 500; color: var(--text-muted); }
-.verb-table td { padding: var(--s1) var(--s3); font-family: var(--font-fr); white-space: nowrap; }
-.verb-table tbody tr:nth-child(odd) { background: var(--sunken); }
+.dict-empty { display: flex; flex-direction: column; gap: var(--s3); }
+.dict-empty p { max-width: 64ch; text-wrap: pretty; }
+.dict-empty-lead { font: 400 var(--t-xl)/1.35 var(--font-fr); }
+.dict-empty-note { font-size: var(--t-sm); color: var(--text-muted); }
+.dict-try { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--s1) var(--s4); font-size: var(--t-sm); color: var(--text-muted); }
+/* 單一個漢字（去）只有 18px 寬，低於 WCAG 2.5.8 的 24px；給最小寬度、字置中。 */
+.dict-eg {
+  min-width: 24px; padding: var(--s1) 0; background: none; border: 0;
+  border-bottom: 1px solid var(--line-strong); color: var(--text);
+  font: italic 400 var(--t-lg)/1.3 var(--font-fr);
+}
+.dict-eg:hover { color: var(--accent); border-bottom-color: var(--accent); }
+
+.browse-out { min-height: 200px; }
+.hits-count { font-size: var(--t-xs); color: var(--text-muted); margin-bottom: var(--s2); }
 
 /*
  * 查詢結果。每一列左邊是字、右邊是這張卡目前的記憶狀態——
  * 查一個字時順便看到「這個字我上次是三天前記起來的」，比只給釋義有用。
  */
-.browse-out { min-height: 200px; }
-.hits-count { font-size: var(--t-xs); color: var(--text-faint); margin-bottom: var(--s2); }
+.hits { border-top: 1px solid var(--line-strong); }
+.hit {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline;
+  gap: var(--s2) var(--s5); padding: var(--s3) 0;
+  border-bottom: 1px solid var(--line);
+}
 .hit-main { min-width: 0; }
-.hit-state { display: flex; align-items: center; gap: var(--s2); justify-content: flex-end; flex-wrap: wrap; }
+.hit .w { font: 400 var(--t-xl)/1.25 var(--font-fr); }
+.hit .m { font-size: var(--t-sm); color: var(--text-muted); }
+.hit-state {
+  display: flex; align-items: baseline; justify-content: flex-end; flex-wrap: wrap;
+  gap: var(--s1) var(--s3); font-size: var(--t-xs); color: var(--text-muted);
+}
+/* 題型是一串字不是膠囊，灰底框在這一頁一律不用。 */
+.tag { white-space: nowrap; }
+/* 程度是這一列唯一有框的東西：辭典在字頭旁標 A1／B2 也是這樣框起來。 */
+.lv {
+  padding: 0 var(--s1); border: 1px solid var(--line-strong); border-radius: var(--r);
+  font: 500 var(--t-2xs)/1.5 var(--font-num); letter-spacing: 0.04em;
+}
+.hit .s { font-family: var(--font-num); white-space: nowrap; }
 /* 這是文字不是外框，受 1.4.3 的 4.5:1 管，不能借用邊框色。 */
 .hit .s.dim { color: var(--text-faint); }
 .hit-open { cursor: pointer; }
-.hit-open:hover { background: var(--sunken); }
-.hit-open:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
-.open-hint { color: var(--text-faint); }
+.hit-open:hover .w { color: var(--accent); }
+.hit-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.open-hint { color: var(--accent); white-space: nowrap; }
 .hit-open:not(:hover):not(:focus-visible) .open-hint { visibility: hidden; }
-
-.tag {
-  padding: 1px var(--s2); border-radius: var(--r-pill);
-  background: var(--sunken); color: var(--text-muted);
-  font-size: var(--t-xs); white-space: nowrap;
-}
 
 /* ---- 動詞全表 --------------------------------------------------------- */
 
@@ -793,58 +1019,65 @@ table.grid tr[data-hit="1"] td { background: var(--accent-weak); color: var(--ac
  * 十二個時態一次攤開，不做分頁也不做手風琴。查變位表的人要的是
  * 掃過去找到那一格，多按一下都是阻礙。欄寬固定，橫向對得起來。
  */
-.verb-head {
-  display: flex; align-items: flex-start; justify-content: space-between;
-  gap: var(--s4); margin-bottom: var(--s2);
-}
-.verb-head h2 { font-size: var(--t-2xl); font-weight: 500; letter-spacing: -0.01em; }
-.verb-sub { font-size: var(--t-sm); color: var(--text-muted); margin-top: var(--s1); }
+.verb { display: flex; flex-direction: column; gap: var(--s3); }
+.verb-back { align-self: flex-start; margin-left: calc(-1 * var(--s2)); }
+.verb-head { padding-bottom: var(--s4); border-bottom: 1px solid var(--text); }
+.verb-head h2 { font: 400 var(--t-3xl)/1.05 var(--font-fr); letter-spacing: -0.02em; }
+.verb-sub { margin-top: var(--s2); font-size: var(--t-sm); color: var(--text-muted); }
+/* 附註用左側細線標出來，不用琥珀色底：琥珀是評分色，這裡沒有人答錯。 */
 .verb-note {
-  margin-bottom: var(--s3); padding: var(--s2) var(--s3);
-  background: var(--warn-weak); color: var(--warn);
-  border-radius: var(--r-control); font-size: var(--t-sm);
+  padding-left: var(--s3); border-left: 2px solid var(--line-strong);
+  font-size: var(--t-sm); color: var(--text-muted);
 }
-.verb-foot { margin-top: var(--s4); font-size: var(--t-xs); color: var(--text-faint); }
+.verb-foot { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s3); font-size: var(--t-xs); color: var(--text-muted); }
 
 .tenses {
-  display: grid; gap: var(--s3);
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-}
-.tense {
-  padding: var(--s3); background: var(--surface);
-  border: 1px solid var(--border); border-radius: var(--r-card);
+  display: grid; gap: var(--s6) var(--s6); margin-top: var(--s3);
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
 }
 .tense h3 {
-  display: flex; align-items: baseline; gap: var(--s2);
-  font-size: var(--t-sm); font-weight: 600; margin-bottom: var(--s2);
+  display: flex; align-items: baseline; gap: var(--s2); flex-wrap: wrap;
+  padding-bottom: var(--s2); margin-bottom: var(--s1);
+  border-bottom: 1px solid var(--line-strong);
+  font-size: var(--t-sm); font-weight: 600;
 }
-.tense h3 .raw { font-weight: 400; font-size: var(--t-xs); color: var(--text-faint); }
-.tense h3 .dot {
+.tense h3 .raw { font: italic 400 var(--t-sm)/1 var(--font-fr); color: var(--text-muted); }
+.dot {
   width: 6px; height: 6px; border-radius: 50%;
   background: var(--accent); flex: none; align-self: center;
 }
-.verb-table .p { color: var(--text-faint); font-family: var(--font-ui); width: 4.5em; }
-.verb-table .f { font-family: var(--font-fr); }
+.verb-table { width: 100%; border-collapse: collapse; }
+.verb-table td { padding: 3px 0; white-space: nowrap; }
+.verb-table .p { width: 4.5em; color: var(--text-muted); font-size: var(--t-sm); }
+.verb-table .f { font: 400 var(--t-lg)/1.35 var(--font-fr); }
 
 @media (max-width: 640px) {
-  .practice-timer { align-items: stretch; flex-direction: column; }
-  .score-fields, .form-grid, .mock-scores { grid-template-columns: minmax(0, 1fr); }
-  .practice-stats { grid-template-columns: minmax(0, 1fr); }
+  .score-fields, .form-grid { grid-template-columns: minmax(0, 1fr); }
+  .wb-head h2, .wb-done-title h2 { font-size: var(--t-2xl); }
+  .practice-draft { min-height: 320px; padding: var(--s4); }
   .mock-latest { align-items: flex-start; flex-direction: column; }
-  .mock-parts { justify-content: flex-start; }
-  .attempt-row { grid-template-columns: auto minmax(0, 1fr); }
-  .attempt-row > .num { grid-column: 2; }
-  .card-face { padding: var(--s5) var(--s4); }
-  /* 重音鍵在手機上是最常按的東西，38px 低於拇指的可靠命中範圍。
+  .focus-top { grid-template-columns: auto 1fr; padding: var(--s2) var(--s4); }
+  .focus-count { justify-self: end; }
+  /* 窄螢幕上一列放不下離開、計數、剩餘數與範圍鈕，後兩者換到第二列。 */
+  .focus-tools { grid-column: 1 / -1; justify-self: stretch; justify-content: space-between; }
+  .stage { padding: var(--s4) var(--s4) var(--s7); place-items: start center; }
+  /* 重音鍵在手機上是最常按的東西，32px 低於拇指的可靠命中範圍。
      15 個排成 5×3 剛好填滿一行，不會留下最後一列只剩一顆的畸零格。 */
-  .accents { display: grid; grid-template-columns: repeat(5, 1fr); }
+  .accents { display: grid; grid-template-columns: repeat(5, 1fr); width: 100%; }
   .accents button { min-height: 44px; }
-  .prompt-word { font-size: var(--t-2xl); }
+  .conj-line { font-size: var(--t-2xl); }
+  .diff { font-size: var(--t-2xl); }
   .pick-sentence { font-size: var(--t-lg); }
-  .ratings { grid-template-columns: repeat(2, 1fr); }
-  .kind-row { grid-template-columns: 88px 1fr; }
-  .kind-row .n { grid-column: 1 / -1; }
+  .ratings, .ratings[data-n="3"] { grid-template-columns: repeat(2, 1fr); }
+  .rate:nth-child(3) { border-left: 0; }
+  .rate:nth-child(n+3) { border-top: 1px solid var(--line); }
+  /* 三組「標籤 數字」橫排在 375px 會把第三組擠到下一行，改成三欄、標籤疊在數字上面。 */
+  .verdict-sched { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s2); }
+  .verdict-sched div { flex-direction: column; align-items: center; gap: 0; }
+  .summary { padding: var(--s6) 0; }
   .hit { grid-template-columns: minmax(0, 1fr); }
   .hit-state { justify-content: flex-start; }
+  .dict-input { font-size: var(--t-xl); }
+  .verb-head h2 { font-size: var(--t-2xl); }
   .tenses { grid-template-columns: minmax(0, 1fr); }
 }

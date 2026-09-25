@@ -8,23 +8,19 @@
  *    自動前進會把「學到東西」的那一秒鐘吃掉。
  *  - 重音鍵盤常駐。沒有法文輸入法就打不出 é，而這個 App 認真計較重音，
  *    不給輸入手段就等於逼使用者作弊。
+ *  - 出卡時進專注模式：導覽整條收起來，畫面上只剩這張卡。Esc 離開，不記任何東西。
+ *
+ * 版面分兩層：外框（進度條、離開、計數、範圍）只建一次，換卡只重畫中間的 stage。
+ * 外框不重建，進度條才有前一個寬度可以補間，範圍選單的 popover 也不會每張卡生一個。
  */
 
 import { h, icon, clear, announce, relDays } from './dom.mjs';
 import { api } from './net.mjs';
 import { diffChars, missingAccents } from './shared/grade.mjs';
+import * as motion from './motion.mjs';
+import { KIND_ZH } from './kinds.mjs';
 
 const ACCENTS = ['é', 'è', 'ê', 'ë', 'à', 'â', 'î', 'ï', 'ô', 'ù', 'û', 'ü', 'ç', 'œ', 'æ'];
-
-const KIND_ZH = {
-  'vocab-recall': '看字回想',
-  'vocab-produce': '中翻法',
-  conj: '動詞變位',
-  connector: '連接詞語氣',
-  pick: '挑連接詞',
-  rw: '改寫整句',
-  nom: '名詞化',
-};
 
 const REASON_ZH = {
   exact: '完全正確',
@@ -52,6 +48,8 @@ const GLOSS_SOURCE_ZH = {
   manual: '中文釋義為人工整理',
 };
 
+const fmt = new Intl.NumberFormat('zh-Hant');
+
 export function reviewView(root, ctx) {
   const preset = ctx.takeReviewPreset();
   const state = {
@@ -61,10 +59,14 @@ export function reviewView(root, ctx) {
     done: 0,
     again: 0,
     ms: 0,
+    // 各評分的張數，index 即 FSRS 的 1..4。摘要頁的比例條用；更正評分時兩邊各調一格。
+    byRating: [0, 0, 0, 0, 0],
     startedAt: 0,
     // 改寫題第一趟的結果：要素齊全、正在等自評。這時還沒寫進紀錄。
     selfPhase: null,
     verdict: null,
+    // 批改結果只在第一次畫出來時播動畫；更正評分會重畫同一份結果，那時再播一次像是又答了一題。
+    fresh: false,
     remaining: null,
     // 到期卡清完後的那一次停頓。為 true 時下一批已經抓好放在 cards，只是先不顯示。
     checkpoint: false,
@@ -77,10 +79,52 @@ export function reviewView(root, ctx) {
     previewed: new Set(),
     // 正在顯示的那張「先看解答」：{ id, data, error }。解答另外抓，佇列裡沒有。
     study: null,
+    // 換卡動畫進行中。這段時間畫面上是舊卡正在滑走，按鍵一律不收。
+    sliding: false,
+    focusOn: false,
   };
 
-  const body = h('div');
-  root.append(body);
+  // ---- 外框 ----
+  const bar = h('i');
+  const progressEl = h('div.focus-progress', {
+    role: 'progressbar', 'aria-label': '這一批的進度', 'aria-valuemin': 0,
+  }, bar);
+  const countEl = h('p.focus-count.num');
+  const remainEl = h('span.remain');
+  // 範圍選單只在一般複習給。弱點批次是一組固定的卡，換範圍會整頁重抓，preset 就丟了。
+  const scopeBtn = state.preset ? null : ctx.scopeMenu();
+  const tools = h('div.focus-tools', {}, remainEl, scopeBtn);
+  const leave = h('button.btn.btn-quiet.btn-sm.focus-leave', {
+    type: 'button', 'aria-keyshortcuts': 'Escape', onclick: () => ctx.go('today'),
+  }, '離開', h('kbd', { text: 'Esc', 'aria-hidden': 'true' }));
+  const stage = h('div.stage');
+  const frame = h('div.focus', { dataset: { mode: 'card' } },
+    progressEl,
+    h('div.focus-top', {}, leave, countEl, tools),
+    stage,
+  );
+  root.append(frame);
+
+  function focusMode(on) {
+    if (state.focusOn === on) return;
+    state.focusOn = on;
+    ctx.setFocus(on);
+  }
+
+  function updateTop() {
+    const total = state.cards.length;
+    // 分母是這一批的張數（`api.queue` 的 limit，目前 20），不是今天要做的總數——
+    // 做完這批 `load()` 會再抓一批。光寫「1 / 20」會被讀成「今天做完 20 張就收工」，
+    // 但今天到期 9 張加上新卡額度 15 張其實是 24 張。所以前面明寫「這批」，
+    // 今天還剩多少交給右邊那行講。
+    countEl.textContent = total && !state.loading ? `這批 ${Math.min(state.idx + 1, total)} / ${total}` : '';
+    progressEl.setAttribute('aria-valuenow', String(state.idx));
+    progressEl.setAttribute('aria-valuemax', String(total));
+    motion.progress(bar, total ? state.idx / total : 0);
+    if (state.remaining) remainEl.textContent = remainText(state.remaining);
+    // 範圍鈕在空狀態時會被借去放在畫面中間，回到出卡時放回右上角。
+    if (scopeBtn && scopeBtn.parentNode !== tools) tools.append(scopeBtn);
+  }
 
   async function load() {
     state.loading = true;
@@ -132,13 +176,12 @@ export function reviewView(root, ctx) {
    */
   function seenPreview() {
     const card = current();
-    if (!card || !state.study?.data) return;
+    if (!card || !state.study?.data || state.sliding) return;
     state.previewed.add(card.id);
     state.study = null;
     const [moved] = state.cards.splice(state.idx, 1);
     state.cards.splice(Math.min(state.idx + PREVIEW_GAP, state.cards.length), 0, moved);
-    state.startedAt = performance.now();
-    render();
+    slide();
     announce('這張稍後再考');
   }
 
@@ -152,7 +195,18 @@ export function reviewView(root, ctx) {
     return state.cards[state.idx] ?? null;
   }
 
+  /** 換卡動畫。計時從新卡真的出現才開始，滑動那半秒不算作答時間。 */
+  function slide() {
+    state.sliding = true;
+    motion.slideCard(stage, () => {
+      state.sliding = false;
+      state.startedAt = performance.now();
+      render();
+    });
+  }
+
   function next() {
+    if (state.sliding) return;
     state.verdict = null;
     state.selfPhase = null;
     state.idx += 1;
@@ -161,7 +215,7 @@ export function reviewView(root, ctx) {
       if (state.preset) render();
       else load();
     }
-    else render();
+    else slide();
   }
 
   async function correct(rating) {
@@ -173,6 +227,8 @@ export function reviewView(root, ctx) {
       const changed = await api.correctReview({ id: old.reviewId, rating });
       if (old.rating === 1 && rating !== 1) state.again -= 1;
       if (old.rating !== 1 && rating === 1) state.again += 1;
+      state.byRating[old.rating] -= 1;
+      state.byRating[rating] += 1;
       state.verdict = { ...old, rating, state: changed.state, corrected: true };
       announce(`剛才的評分已改為「${labels[rating]}」`);
       render();
@@ -204,7 +260,9 @@ export function reviewView(root, ctx) {
       // 自評送出後就離開第一趟：兩塊面板同時留在畫面上會變成兩份解答。
       state.selfPhase = null;
       state.verdict = { ...res, answered: answer };
+      state.fresh = true;
       state.done += 1;
+      state.byRating[res.rating] += 1;
       if (res.rating === 1) state.again += 1;
       if (res.rating === 1) {
         const key = res.grade?.reason ?? card.kind;
@@ -212,18 +270,17 @@ export function reviewView(root, ctx) {
       }
       // 加總時單張封頂，送給伺服器的仍是原始 ms。卡片開著人走開，計時會一直跑：
       // 實測有一張 pick 記到 25 分鐘，一張就能把「作答時間共 n 分鐘」灌大好幾倍。
-      // 上限跟統計頁取中位數時的 120 秒一致。
+      // 上限跟進度頁取中位數時的 120 秒一致。
       state.ms += Math.min(ms, SESSION_MS_CAP);
       announce(verdictText(card, res, answer));
       render();
-      // 上方那行「待複習 n・新卡 x/y」是作答後才會變的，隨佇列一起抓的那份已經過期。
-      // 側欄的數字問的是同一支端點，借它回來的結果就地補上，不另外再打一次請求。
+      // 右上角那行「待複習 n・新卡 x/y」是作答後才會變的，隨佇列一起抓的那份已經過期。
+      // 導覽的數字問的是同一支端點，借它回來的結果就地補上，不另外再打一次請求。
       // 只改文字不重畫，避免在使用者正要按「下一張」時把焦點搶走。
       ctx.refreshBadge().then((fresh) => {
         if (!fresh) return;
         state.remaining = fresh;
-        const el = body.querySelector('.study-bar .remain');
-        if (el) el.textContent = remainText(fresh);
+        remainEl.textContent = remainText(fresh);
       });
     } catch (err) {
       ctx.toast(err.message, 'bad');
@@ -233,38 +290,60 @@ export function reviewView(root, ctx) {
   }
 
   function render() {
-    clear(body);
-    if (state.loading) return void body.append(skeleton());
+    motion.killWithin(stage);
+    clear(stage);
+    if (state.loading) {
+      frame.dataset.mode = 'card';
+      focusMode(true);
+      updateTop();
+      stage.append(skeleton());
+      return;
+    }
     if (state.error) {
-      return void body.append(h('div.card.errorbox', {},
+      frame.dataset.mode = 'end';
+      focusMode(false);
+      stage.append(h('div.errorbox', {},
+        icon('alert'),
         h('p', { text: `讀不到題目：${state.error}` }),
-        h('button.btn', { onclick: load, text: '再試一次' }),
+        h('button.btn', { type: 'button', onclick: load, text: '再試一次' }),
       ));
+      return;
     }
     if (state.checkpoint) {
-      body.append(checkpoint(state, ctx, keepGoing));
-      body.querySelector('.empty h2')?.focus();
+      frame.dataset.mode = 'end';
+      focusMode(true);
+      stage.append(checkpoint(state, ctx, keepGoing));
+      stage.querySelector('.landing')?.focus();
       return;
     }
     const card = current();
     if (!card) {
-      body.append(finished(state, ctx, load));
+      frame.dataset.mode = 'end';
+      // 一張都沒做就沒有東西要專注，導覽放回來，讓人直接去別頁。
+      focusMode(state.done > 0);
+      stage.append(state.done
+        ? summary(state, ctx, load)
+        : emptyScreen(state, ctx, state.done ? null : scopeBtn));
       // 上一張的「下一張」鈕已經被清掉，不接住的話焦點掉回 body，報讀器也不會念出做完了。
-      body.querySelector('.empty h2')?.focus();
+      stage.querySelector('.landing')?.focus();
       return;
     }
+    frame.dataset.mode = 'card';
+    focusMode(true);
+    updateTop();
     if (needsPreview(card, state)) {
       if (state.study?.id !== card.id) loadPreview(card);
-      body.append(h('div.study', {}, topBar(state), studyFace(card, state.study, seenPreview)));
-      focusInput(body);
+      stage.append(studyFace(card, state.study, seenPreview));
+      focusInput(stage);
       return;
     }
-    body.append(h('div.study', {},
-      topBar(state),
-      face(card, state, submit),
-      state.verdict ? verdictPanel(card, state.verdict, next, correct) : null,
-    ));
-    focusInput(body);
+    const box = face(card, state, submit);
+    if (state.verdict) {
+      box.append(verdictPanel(card, state.verdict, next, correct, state.fresh));
+      state.fresh = false;
+    }
+    stage.append(box);
+    focusInput(stage);
   }
 
   // 鍵盤：捕捉在 document 上，因為批改後焦點在按鈕上也要能按 1–4。
@@ -272,6 +351,8 @@ export function reviewView(root, ctx) {
     if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
     // 按住不放的自動重複一律不算：按住 Enter 會一路「下一張」，批改結果連看都沒看到。
     if (ev.repeat) return;
+    if (ev.key === 'Escape') return void leaveKey(ev);
+    if (state.sliding) return;
     // 停頓頁底下的下一批已經抓好，current() 會回傳一張畫面上看不到的卡，
     // 不擋的話按 Space、3 會替那張沒看過的卡評分。
     if (state.checkpoint) return;
@@ -304,17 +385,34 @@ export function reviewView(root, ctx) {
       return;
     }
     if (card.mode === 'self') {
-      if (ev.key === ' ') { ev.preventDefault(); revealSelf(body); return; }
-      if (['1', '2', '3', '4'].includes(ev.key) && isRevealed(body)) {
+      if (ev.key === ' ') { ev.preventDefault(); revealSelf(stage); return; }
+      if (['1', '2', '3', '4'].includes(ev.key) && isRevealed(stage)) {
         ev.preventDefault();
         submit({ rating: Number(ev.key) });
       }
     }
   }
+
+  /**
+   * Esc 離開專注模式回今天。作答框裡也收：打到一半想走，不必先把焦點移出來。
+   * 離開不送任何東西，這張卡照樣到期，所以誤按的代價只是重新進來一次。
+   * 對話框、選單、輸入法選字時的 Esc 是在關那些東西，不能順手把整頁換掉。
+   */
+  function leaveKey(ev) {
+    if (!state.focusOn || ev.isComposing || ev.keyCode === 229) return;
+    if (document.querySelector('dialog[open]')) return;
+    try { if (document.querySelector(':popover-open')) return; } catch { /* 舊瀏覽器不認得這個選擇器，當作沒開 */ }
+    ev.preventDefault();
+    ctx.go('today');
+  }
+
   document.addEventListener('keydown', onKey);
 
   load();
-  return () => document.removeEventListener('keydown', onKey);
+  return () => {
+    document.removeEventListener('keydown', onKey);
+    motion.killWithin(frame);
+  };
 }
 
 // ---- 版面片段 ------------------------------------------------------------
@@ -331,13 +429,15 @@ function needsPreview(card, state) {
   return (card.kind === 'nom' || card.kind === 'rw') && !card.state && !state.previewed.has(card.id);
 }
 
+/** 卡片最上面那一行小字：題型・等級・第幾次。 */
+function kindLine(...parts) {
+  return h('p.card-kind', {}, ...parts.filter(Boolean).map((text) => h('span', { text })));
+}
+
 function studyFace(card, study, seen) {
   const f = card.front ?? {};
-  const box = h('div.card-face');
-  box.append(h('div.face-tags', {},
-    h('span.chip.chip-accent', { text: KIND_ZH[card.kind] ?? card.kind }),
-    h('span.chip', { text: '新卡・先看解答' }),
-  ));
+  const box = h('div.focus-card');
+  box.append(kindLine(KIND_ZH[card.kind] ?? card.kind, '新卡・先看解答'));
   box.append(prompt(card, f));
 
   const panel = h('div.study-answer');
@@ -345,58 +445,46 @@ function studyFace(card, study, seen) {
   if (!d) {
     panel.append(h('p.verdict-note', { text: '讀取解答中…' }));
   } else {
-    panel.append(h('div.cue', { text: '解答' }));
-    panel.append(h(card.kind === 'rw' ? 'div.rw-answer.fr' : 'div.verdict-answer.fr', { lang: 'fr', text: d.answer ?? '' }));
+    panel.append(h('p.cue', { text: '解答' }));
+    panel.append(h(card.kind === 'rw' ? 'p.rw-answer.fr' : 'p.verdict-answer.fr', { lang: 'fr', text: d.answer ?? '' }));
     if (d.note) panel.append(h('p.verdict-note', { text: d.note }));
-    panel.append(h('p.verdict-note', { text: '這次不計分。隔幾張之後會正式考這一題。' }));
+    panel.append(h('p.verdict-note', { text: '這次不計分，隔幾張後再考。' }));
   }
   box.append(panel);
-  box.append(h('button.btn.btn-primary.answer-target', {
-    type: 'button', onclick: seen, disabled: !d, text: '看過了，稍後再考',
-  }));
+  box.append(h('div.focus-actions', {},
+    h('button.btn.btn-primary.answer-target', {
+      type: 'button', onclick: seen, disabled: !d, 'aria-keyshortcuts': 'Enter',
+    }, '看過了', h('kbd', { text: 'Enter', 'aria-hidden': 'true' })),
+  ));
   return box;
-}
-
-function topBar(state) {
-  const total = state.cards.length;
-  const bar = h('i');
-  bar.style.width = `${total ? (state.idx / total) * 100 : 0}%`;
-  const r = state.remaining;
-  // 分母是這一批的張數（`api.queue` 的 limit，目前 20），不是今天要做的總數——
-  // 做完這批 `load()` 會再抓一批。光寫「1 / 20」會被讀成「今天做完 20 張就收工」，
-  // 但今天到期 9 張加上新卡額度 15 張其實是 24 張。所以前面明寫「這批」，
-  // 今天還剩多少交給右邊那行講。
-  return h('div.study-bar', {},
-    h('span.num', { text: `這批 ${state.idx + 1} / ${total}` }),
-    h('div.progress', { role: 'progressbar', 'aria-label': '這一批的進度', 'aria-valuenow': state.idx, 'aria-valuemin': 0, 'aria-valuemax': total }, bar),
-    h('span.spacer'),
-    r ? h('span.remain', { text: remainText(r) }) : null,
-  );
 }
 
 function remainText(r) {
   // newLimit 為 null 是不設上限，寫成「3/null」或「3/∞」都不如直接說今天學了幾張。
-  if (r.newLimit === null) return `待複習 ${r.remaining.due}・今天新學 ${r.newToday} 張`;
+  if (r.newLimit === null) return `待複習 ${r.remaining.due}・今天新學 ${r.newToday}`;
   return `待複習 ${r.remaining.due}・新卡 ${r.newToday}/${r.newLimit}`;
 }
 
 function face(card, state, submit) {
   const f = card.front ?? {};
-  const box = h('div.card-face');
+  const box = h('div.focus-card');
+  const v = state.verdict;
 
-  box.append(h('div.face-tags', {},
-    h('span.chip.chip-accent', { text: KIND_ZH[card.kind] ?? card.kind }),
-    f.level ? h('span.chip', { text: f.level }) : null,
-    card.state ? h('span.chip', { text: `第 ${card.state.reps + 1} 次` }) : h('span.chip', { text: '新卡' }),
-    f.noisy ? h('span.chip', { text: '釋義可能不精確' }) : null,
+  box.append(kindLine(
+    KIND_ZH[card.kind] ?? card.kind,
+    f.level,
+    card.state ? `第 ${card.state.reps + 1} 次` : '新卡',
+    f.noisy ? '釋義可能不精確' : null,
   ));
 
   box.append(prompt(card, f));
 
-  if (card.mode === 'typed') box.append(typedAnswer(card, state, submit));
-  else if (card.mode === 'rewrite') box.append(rewriteAnswer(card, state, submit));
+  // 批改之後作答區不再畫：打字題的答案由比對行重印一次（錯字標在正確答案上），
+  // 留一個停用的輸入框只是同一個字串出現兩遍。選擇題例外，標好對錯的選項本身就是批改。
+  if (card.mode === 'typed') { if (!v) box.append(typedAnswer(submit)); }
+  else if (card.mode === 'rewrite') box.append(rewriteAnswer(state, submit));
   else if (card.mode === 'choice') box.append(choiceAnswer(card, state, submit));
-  else box.append(selfAnswer(card, state, submit));
+  else if (!v) box.append(selfAnswer(card, submit));
 
   return box;
 }
@@ -405,64 +493,62 @@ function face(card, state, submit) {
 function prompt(card, f) {
   const p = h('div.prompt');
   if (card.kind === 'conj') {
-    p.append(h('div.cue', { text: `${f.tenseZh}・請填入變位` }));
-    p.append(h('div.conj-line', {},
+    p.append(h('p.cue', { text: `${f.tenseZh}・填入變位` }));
+    p.append(h('p.conj-line.fr', { lang: 'fr' },
       h('span', { text: f.pronoun }),
       h('span.blank'),
     ));
-    p.append(h('div.prompt-en', { text: `${f.verb}　${f.gloss ?? ''}`.trim() }));
-    if (f.note) p.append(h('div.prompt-note', { text: f.note }));
+    p.append(h('p.prompt-en', { text: `${f.verb}　${f.gloss ?? ''}`.trim() }));
+    if (f.note) p.append(h('p.prompt-note', { text: f.note }));
   } else if (card.kind === 'pick') {
-    p.append(h('div.cue', { text: '從方框裡挑一個填進空格，該省的音要省、性數要配好' }));
+    p.append(h('p.cue', { text: '選一個填進空格・注意省音與性數' }));
     // 方框照印。這一大題考的就是「在六個裡認出哪一個」，
     // 把選項藏起來等於換了一種題目。
     const boxEl = h('div.pick-box', { role: 'group', 'aria-label': '可選的連接詞' });
-    for (const opt of f.options ?? []) boxEl.append(h('span.chip.fr', { lang: 'fr', text: opt }));
+    for (const opt of f.options ?? []) boxEl.append(h('span.fr', { lang: 'fr', text: opt }));
     p.append(boxEl);
-    p.append(h('div.pick-sentence.fr', { lang: 'fr', text: f.prompt }));
-    if (f.src) p.append(h('div.prompt-note', { text: f.src }));
+    p.append(h('p.pick-sentence.fr', { lang: 'fr', text: f.prompt }));
+    if (f.src) p.append(h('p.prompt-note', { text: f.src }));
   } else if (card.kind === 'rw') {
-    p.append(h('div.cue', { text: '用指定的連接詞改寫整句' }));
+    p.append(h('p.cue', { text: '用指定的連接詞改寫整句' }));
     // 指定工具比題幹還重要：整題就是「非得用這個字不可」。
-    if (f.tool) p.append(h('div.rw-tool.fr', { lang: 'fr', text: f.tool }));
+    if (f.tool) p.append(h('p.rw-tool.fr', { lang: 'fr', text: f.tool }));
     // 考卷第 III 大題給的是法文原句，擴充題庫給的是中文——標錯 lang 會讓朗讀器念錯語言。
     const fr = f.sec === 'III';
-    p.append(h(fr ? 'div.rw-source.fr' : 'div.rw-source', fr ? { lang: 'fr', text: f.prompt } : { text: f.prompt }));
-    if (f.src) p.append(h('div.prompt-note', { text: f.src }));
+    p.append(h(fr ? 'p.rw-source.fr' : 'p.rw-source', fr ? { lang: 'fr', text: f.prompt } : { text: f.prompt }));
+    if (f.src) p.append(h('p.prompt-note', { text: f.src }));
   } else if (card.kind === 'nom') {
-    p.append(h('div.cue', { text: '改寫成名詞組，冠詞要一起寫' }));
-    p.append(h('div.prompt-word.fr', { lang: 'fr', text: f.base }));
+    p.append(h('p.cue', { text: '寫成名詞組，連冠詞' }));
+    p.append(h('p.prompt-word.fr', { lang: 'fr', text: f.base }));
     // 中文釋義一定要印：規則推出來的配對不保證語意貼合，釋義擺在眼前才看得出配對有沒有問題。
-    p.append(h('div.prompt-zh', { text: f.gloss || '（題庫沒有中文釋義）' }));
+    p.append(h('p.prompt-zh', { text: f.gloss || '（題庫沒有中文釋義）' }));
     // 這裡不印性別——那正是要考的東西。
-    p.append(h('div.prompt-note', { text: [f.posZh, f.src].filter(Boolean).join('・') }));
+    p.append(h('p.prompt-note', { text: [f.posZh, f.src].filter(Boolean).join('・') }));
   } else if (card.kind === 'connector') {
-    p.append(h('div.cue', { text: '這個連接詞後面接什麼語氣？' }));
-    p.append(h('div.prompt-word.fr', { lang: 'fr', text: f.connector }));
-    if (f.zh) p.append(h('div.prompt-en', { text: f.zh }));
+    p.append(h('p.cue', { text: '後面接什麼語氣？' }));
+    p.append(h('p.prompt-word.fr', { lang: 'fr', text: f.connector }));
+    if (f.zh) p.append(h('p.prompt-en', { text: f.zh }));
   } else if (card.kind === 'vocab-produce') {
-    p.append(h('div.cue', { text: '這個意思的法文怎麼寫？' }));
-    p.append(h('div.prompt-zh', { text: f.gloss || f.en || '（沒有釋義）' }));
-    if (f.en && f.gloss) p.append(h('div.prompt-en', { lang: 'en', text: f.en }));
-    p.append(h('div.prompt-note', { text: [f.posZh, f.gender].filter(Boolean).join('・') }));
+    p.append(h('p.cue', { text: '法文怎麼寫？' }));
+    p.append(h('p.prompt-zh.prompt-lead', { text: f.gloss || f.en || '（沒有釋義）' }));
+    if (f.en && f.gloss) p.append(h('p.prompt-en', { lang: 'en', text: f.en }));
+    p.append(h('p.prompt-note', { text: [f.posZh, f.gender].filter(Boolean).join('・') }));
   } else {
-    p.append(h('div.cue', { text: '這個字是什麼意思？' }));
-    p.append(h('div.prompt-word.fr', { lang: 'fr', text: f.word }));
-    p.append(h('div.prompt-note', { text: [f.posZh, f.gender, f.level].filter(Boolean).join('・') }));
+    p.append(h('p.cue', { text: '什麼意思？' }));
+    p.append(h('p.prompt-word.fr', { lang: 'fr', text: f.word }));
+    p.append(h('p.prompt-note', { text: [f.posZh, f.gender, f.level].filter(Boolean).join('・') }));
   }
   return p;
 }
 
-function typedAnswer(card, state, submit) {
+function typedAnswer(submit) {
   const input = h('input.answer-input.answer-target', {
     type: 'text', lang: 'fr', autocomplete: 'off', autocapitalize: 'off',
-    spellcheck: false, placeholder: '打上法文，重音要打對',
+    spellcheck: false, placeholder: '打出法文，重音要對',
     'aria-label': '作答',
-    disabled: Boolean(state.verdict),
   });
-  if (state.verdict) input.value = state.verdict.answered ?? '';
 
-  const form = h('form.answer-row', {
+  const form = h('form.answer-form', {
     onsubmit: (ev) => { ev.preventDefault(); submit({ answer: input.value }); },
   }, input);
 
@@ -472,17 +558,15 @@ function typedAnswer(card, state, submit) {
   // isComposing／keyCode 229 是給輸入法的——選字階段的 Enter 是在確認候選字，不是要交卷。
   input.addEventListener('keydown', (ev) => answerKey(ev, input, submit));
 
-  if (!state.verdict) {
-    form.append(accentBar(input));
-    form.append(answerActions(submit));
-  }
+  form.append(accentBar(input));
+  form.append(answerActions(submit));
   return form;
 }
 
 /**
  * 作答框的 Enter。Shift+Enter 等於「不會，直接看」：手已經在鍵盤上，
  * 為了放棄一題去摸滑鼠是這頁最貴的動作。不用 Esc，是因為 Esc 常被順手按來關東西，
- * 誤觸就是一筆「忘了」寫進只增不改的紀錄。
+ * 誤觸就是一筆「忘了」寫進只增不改的紀錄。（Esc 現在是「離開」，不記任何東西。）
  */
 function answerKey(ev, input, submit) {
   if (ev.key !== 'Enter' || ev.isComposing || ev.keyCode === 229) return;
@@ -491,17 +575,15 @@ function answerKey(ev, input, submit) {
   submit({ answer: ev.shiftKey ? '' : input.value });
 }
 
+/** 按鍵提示直接寫在按鈕上，不另外排一行說明：看得到按鈕的地方就看得到快捷鍵。 */
 function answerActions(submit) {
-  return h('div.study-actions', {},
-    h('button.btn.btn-primary', { type: 'submit', text: '對答案', 'aria-keyshortcuts': 'Enter' }),
+  return h('div.focus-actions', {},
+    h('button.btn', { type: 'submit', 'aria-keyshortcuts': 'Enter' },
+      '對答案', h('kbd', { text: 'Enter', 'aria-hidden': 'true' })),
     h('button.btn.btn-quiet', {
-      type: 'button', text: '不會，直接看', 'aria-keyshortcuts': 'Shift+Enter',
+      type: 'button', 'aria-keyshortcuts': 'Shift+Enter',
       onclick: () => submit({ answer: '' }),
-    }),
-    h('span.spacer'),
-    h('span.kbd-hint', {},
-      h('kbd', { text: 'Enter' }), ' 送出　',
-      h('kbd', { text: 'Shift' }), '+', h('kbd', { text: 'Enter' }), ' 不會'),
+    }, '不會', h('kbd', { text: 'Shift Enter', 'aria-hidden': 'true' })),
   );
 }
 
@@ -515,7 +597,7 @@ function answerActions(submit) {
  */
 function accentBar(input) {
   const bar = h('div.accents', { role: 'toolbar', 'aria-label': '插入法文重音字母' });
-  const keys = ACCENTS.map((ch, i) => h('button', {
+  const keys = ACCENTS.map((ch, i) => h('button.fr', {
     type: 'button', text: ch, tabindex: i === 0 ? 0 : -1, title: `插入 ${ch}`,
     onmousedown: (ev) => ev.preventDefault(),
     onclick: () => {
@@ -547,38 +629,51 @@ function accentBar(input) {
  * 解答不能在作答前就送到前端——這一題唯一的難處就是自己造得出那個句子，
  * 提早看到解答等於整題作廢。所以第一趟只送作答，伺服器判完要素才把解答給下來。
  */
-function rewriteAnswer(card, state, submit) {
+function rewriteAnswer(state, submit) {
+  // 記分之後「你寫的」由批改面板印，這裡不重複。
+  if (state.verdict) return null;
   const self = state.selfPhase;
+  if (self) {
+    // 自評時要拿自己的句子跟解答對照，所以印成可讀的文字，不是一個停用的輸入框。
+    return h('div.rw-phase', {},
+      h('div.rw-yours', {},
+        h('p.cue', { text: '你寫的' }),
+        h('p.fr', { lang: 'fr', text: self.answered || '（空白）' }),
+      ),
+      rwSelfRating(self, submit),
+    );
+  }
   const input = h('textarea.answer-input.answer-area.answer-target', {
     lang: 'fr', autocomplete: 'off', autocapitalize: 'off', spellcheck: false,
-    rows: '3', placeholder: '把整句寫出來，重音要打對',
+    rows: '3', placeholder: '把整句寫出來，重音要對',
     'aria-label': '改寫後的句子',
-    disabled: Boolean(state.verdict || self),
   });
-  if (state.verdict || self) input.value = (state.verdict?.answered ?? self?.answered) ?? '';
 
-  const form = h('form.answer-row', {
+  const form = h('form.answer-form', {
     onsubmit: (ev) => { ev.preventDefault(); submit({ answer: input.value }); },
   }, input);
 
   // 換行對一個句子沒有用處，Enter 直接送出，跟其他題型一致。
   input.addEventListener('keydown', (ev) => answerKey(ev, input, submit));
 
-  if (self) {
-    form.append(rwSelfRating(self, submit));
-    return form;
-  }
-  if (!state.verdict) {
-    form.append(accentBar(input));
-    form.append(answerActions(submit));
-  }
+  form.append(accentBar(input));
+  form.append(answerActions(submit));
   return form;
+}
+
+/** 評分鈕。數字鍵放角落，跟選擇題的選項同一套：主體是字，數字只是告訴你按哪個鍵。 */
+function rateButton(r, label, onclick, extra = null) {
+  return h('button.rate', { type: 'button', dataset: { r: String(r) }, 'aria-keyshortcuts': String(r), onclick },
+    h('kbd', { text: String(r), 'aria-hidden': 'true' }),
+    h('b', { text: label }),
+    extra,
+  );
 }
 
 /** 要素齊全之後的自評：整句沒有唯一解，只有自己看得出差在哪。 */
 function rwSelfRating(self, submit) {
-  const box = h('div.rw-self');
-  box.append(h('div.verdict-head', {}, icon('check'), h('span', {
+  const box = h('div.verdict.rw-self', { dataset: { tone: 'ok' } });
+  box.append(h('p.verdict-head', {}, icon('check'), h('span', {
     text: self.grade.accent?.length ? '要素齊全，但有字漏了重音' : '指定的連接詞與語氣都對了',
   })));
   if (self.grade.accent?.length) {
@@ -586,21 +681,17 @@ function rwSelfRating(self, submit) {
       text: `漏重音的是：${self.grade.accent.map((alts) => alts[0]).join('、')}`,
     }));
   }
-  box.append(h('div.cue', { text: '解答' }));
-  box.append(h('div.rw-answer.fr', { lang: 'fr', text: self.answer ?? '' }));
+  box.append(h('p.cue', { text: '解答' }));
+  box.append(h('p.rw-answer.fr', { lang: 'fr', text: self.answer ?? '' }));
   if (self.note) box.append(h('p.verdict-note', { text: self.note }));
   if (self.src) box.append(h('p.verdict-note', { text: self.src }));
 
-  box.append(h('div.cue', { text: '整句跟解答比' }));
+  box.append(h('p.cue', { text: '整句跟解答比' }));
   const rate = h('div.ratings', { dataset: { n: '3' }, role: 'group', 'aria-label': '整句跟解答比' });
   for (let r = 1; r <= 3; r += 1) {
-    rate.append(h('button', {
-      type: 'button', dataset: { r: String(r) },
-      onclick: () => submit({ answer: self.answered, rating: r }),
-    }, h('b', { text: RW_RATING_ZH[r] }), h('small', { text: String(r) })));
+    rate.append(rateButton(r, RW_RATING_ZH[r], () => submit({ answer: self.answered, rating: r })));
   }
   box.append(rate);
-  box.append(h('span.kbd-hint', {}, h('kbd', { text: '1' }), '–', h('kbd', { text: '3' }), ' 給分'));
   queueMicrotask(() => rate.querySelector('button')?.focus());
   return box;
 }
@@ -626,17 +717,14 @@ function choiceAnswer(card, state, submit) {
       disabled: Boolean(state.verdict),
       dataset: mark ? { mark } : {},
       'aria-keyshortcuts': key,
-      onclick: () => submit({ answer: opt }),
     }, key ? h('kbd', { text: key, 'aria-hidden': 'true' }) : null, h('span.fr', { lang: 'fr', text: opt }));
+    btn.addEventListener('click', () => submit({ answer: opt }));
     // 中文放在法文底下，不取代它：考卷上印的是 subjonctif，
     // 只認得「虛擬式」的人到了考場一樣認不出來。
     if (zh[opt]) btn.append(h('small', { text: zh[opt] }));
     box.append(btn);
   });
-  const last = Math.min(opts.length, 9);
-  return h('div.answer-row', {}, box,
-    state.verdict || !last ? null
-      : h('span.kbd-hint', {}, h('kbd', { text: '1' }), '–', h('kbd', { text: String(last) }), ' 選答案'));
+  return box;
 }
 
 /**
@@ -644,23 +732,23 @@ function choiceAnswer(card, state, submit) {
  * 不做自動批改是因為「這個字的意思」沒有唯一字串答案，
  * 硬要比對只會製造假錯誤。
  */
-function selfAnswer(card, state, submit) {
-  const box = h('div.answer-row');
-  const back = h('div.prompt', { hidden: true });
+function selfAnswer(card, submit) {
+  const box = h('div.self-answer');
+  const back = h('div.self-back', { hidden: true });
   const err = h('p.field-error', { hidden: true });
 
   // answer-target：新卡出來時焦點落在這顆上，Enter 與 Space 都能翻面。
   const reveal = h('button.btn.btn-primary.reveal-btn.answer-target', {
-    type: 'button', text: '看答案',
+    type: 'button', 'aria-keyshortcuts': 'Space',
     onclick: async () => {
       reveal.disabled = true;
       try {
         const answer = await api.reveal(card.id);
-        back.append(h('div.prompt-zh', { text: answer.gloss || '（題庫沒有中文釋義）' }));
-        if (answer.en) back.append(h('div.prompt-en', {
+        back.append(h('p.prompt-zh.prompt-lead', { text: answer.gloss || '（題庫沒有中文釋義）' }));
+        if (answer.en) back.append(h('p.prompt-en', {
           lang: 'en', text: Array.isArray(answer.en) ? answer.en.join('；') : answer.en,
         }));
-        if (GLOSS_SOURCE_ZH[answer.glossSource]) back.append(h('div.prompt-note', { text: GLOSS_SOURCE_ZH[answer.glossSource] }));
+        if (GLOSS_SOURCE_ZH[answer.glossSource]) back.append(h('p.prompt-note', { text: GLOSS_SOURCE_ZH[answer.glossSource] }));
         // 每顆評分鍵寫上它會把這張卡排到哪一天。「想起來了」與「太簡單」差三天還是三十天，
         // 看不到就很難誠實地分。舊伺服器沒有這個欄位時留白。
         rate.querySelectorAll('.iv').forEach((node, i) => {
@@ -669,27 +757,24 @@ function selfAnswer(card, state, submit) {
         back.hidden = false;
         reveal.hidden = true;
         rate.hidden = false;
-        rate.querySelector('button')?.focus();
+        motion.rise([back, rate], { y: 8, stagger: 0.08, duration: 0.35 });
+        // 焦點落在群組上，不落在第一顆「忘了」：翻面之後順手再按一次 Enter，
+        // 落在按鈕上就是一筆「忘了」寫進只增不改的紀錄。
+        rate.focus();
       } catch (e) {
         err.textContent = `讀不到答案：${e.message}`;
         err.hidden = false;
         reveal.disabled = false;
       }
     },
-  });
+  }, '看答案', h('kbd', { text: 'Space', 'aria-hidden': 'true' }));
 
-  const rate = h('div.ratings', { hidden: true, role: 'group', 'aria-label': '這張卡剛才回想得如何' });
+  const rate = h('div.ratings.landing', { hidden: true, role: 'group', 'aria-label': '這張卡剛才回想得如何，按 1 到 4 給分', tabindex: -1 });
   for (let r = 1; r <= 4; r += 1) {
-    rate.append(h('button', {
-      type: 'button', dataset: { r: String(r) },
-      onclick: () => submit({ rating: r }),
-    }, h('b', { text: RATING_ZH[r] }), h('span.iv'), h('small', { text: String(r) })));
+    rate.append(rateButton(r, RATING_ZH[r], () => submit({ rating: r }), h('small.iv')));
   }
 
-  box.append(back, reveal, err, rate);
-  if (!state.verdict) {
-    box.append(h('span.kbd-hint', {}, h('kbd', { text: 'Space' }), ' 看答案，', h('kbd', { text: '1' }), '–', h('kbd', { text: '4' }), ' 給分'));
-  }
+  box.append(back, h('div.focus-actions', {}, reveal), err, rate);
   return box;
 }
 
@@ -732,47 +817,57 @@ function headText(card, res) {
   return reasonText(card, res.grade.reason);
 }
 
-function verdictPanel(card, res, next, correct) {
+/**
+ * 批改結果。三種語氣對應三種語意，顏色只是輔助——
+ * 標題永遠有文字說明，不靠顏色傳達資訊。
+ * animate 只在剛作答完為真；更正評分後的重畫不再播一次。
+ */
+function verdictPanel(card, res, next, correct, animate) {
   const t = tone(res);
   const box = h('div.verdict', { dataset: { tone: t }, tabindex: -1 });
+  let letters = [];
 
-  box.append(h('div.verdict-head', {},
+  box.append(h('p.verdict-head', {},
     icon(t === 'ok' ? 'check' : t === 'near' ? 'alert' : 'cross'),
     h('span', { text: headText(card, res) }),
   ));
 
   // 改寫題不做逐字比對：整句有好幾種寫法都對，拿解答當骨架比一遍會整片標紅。
   if (card.mode === 'self') {
-    if (res.answer) box.append(h('div.prompt-zh', { text: res.answer }));
-    if (res.en?.length) box.append(h('div.prompt-en', {
+    if (res.answer) box.append(h('p.prompt-zh.prompt-lead', { text: res.answer }));
+    if (res.en?.length) box.append(h('p.prompt-en', {
       lang: 'en', text: Array.isArray(res.en) ? res.en.join('；') : res.en,
     }));
     if (GLOSS_SOURCE_ZH[res.glossSource]) box.append(h('p.verdict-note', { text: GLOSS_SOURCE_ZH[res.glossSource] }));
   } else if (card.kind === 'rw') {
     if (res.grade?.miss?.length) {
       box.append(h('p.verdict-note', {
-        text: `少了：${res.grade.miss.map((alts) => alts.join('／')).join('、')}。指定的連接詞與它要求的語氣是這一題的考點，缺一就不算改對。`,
+        text: `少了：${res.grade.miss.map((alts) => alts.join('／')).join('、')}。連接詞和它要求的語氣少一個就不算對。`,
       }));
     }
     if (res.answer) {
-      box.append(h('div.cue', { text: '解答' }));
-      box.append(h('div.rw-answer.fr', { lang: 'fr', text: res.answer }));
+      box.append(h('p.cue', { text: '解答' }));
+      box.append(h('p.rw-answer.fr', { lang: 'fr', text: res.answer }));
     }
   } else if (card.mode === 'choice') {
     // 選擇題沒有拼寫可比：imparfait 對 indicatif 逐字標紅只會標出一排無意義的紅字。
-    if (res.answer) box.append(h('div.verdict-answer.fr', { lang: 'fr', text: res.answer }));
+    // 正確答案已經標在選項上，這裡不再印一次。
   } else if (res.answer) {
     // 逐字比對：以正確答案為骨架，把使用者沒打對的字元標出來。
-    const line = h('div.verdict-answer.fr', { lang: 'fr' });
+    // 對齊用編輯距離（src/engine/grade.mjs），漏一個字母不會讓後面整排錯位變紅。
+    const line = h('p.diff.fr', { lang: 'fr' });
     for (const { ch, ok } of diffChars(res.answered ?? '', res.answer)) {
-      line.append(h('span', { class: ok ? 'ch' : 'ch bad', text: ch }));
+      const span = h('span', { class: ok ? null : 'bad', text: ch });
+      line.append(span);
+      letters.push(span);
     }
+    if (t === 'ok') line.classList.add('all-ok');
     box.append(line);
   }
 
   if (res.grade && res.grade.reason === 'article') {
     box.append(h('p.verdict-note', {
-      text: '名詞挑對了，錯的是冠詞。陰陽性是這一題型的一半分數，考卷上寫錯 le／la 一樣不給分。',
+      text: '名詞對了，錯在冠詞。考卷上 le／la 寫錯一樣不給分。',
     }));
   }
 
@@ -794,13 +889,17 @@ function verdictPanel(card, res, next, correct) {
     const missed = missingAccents(res.answered ?? '', res.answer ?? '');
     box.append(h('p.verdict-note', {
       text: missed.length
-        ? `字母全對，漏的是 ${missed.join('、')}。這在 cadence 裡算錯——考卷上也是。`
+        ? `字母全對，漏的是 ${missed.join('、')}。這在 cadence 裡算錯，考卷上也是。`
         : '字母全對，差在變音符號。',
     }));
   }
 
-  if (res.answered && res.grade && (card.kind === 'rw' || res.grade.reason !== 'exact')) {
-    box.append(h('p.verdict-yours', {}, card.mode === 'choice' ? '你選的：' : '你寫的：', h('span', { lang: 'fr', text: res.answered || '（空白）' })));
+  // 選擇題選了哪個已經標在選項上。打字題寫錯時把自己寫的劃掉：對照上面那行正確答案，
+  // 一眼看出差在哪；大小寫不同這種算對的就不劃，劃掉會讀成「錯了」。
+  if (card.mode !== 'choice' && res.answered && res.grade && (card.kind === 'rw' || res.grade.reason !== 'exact')) {
+    const struck = card.kind !== 'rw' && t !== 'ok';
+    box.append(h('p.verdict-yours', {}, '你寫的　',
+      h(struck ? 's.fr' : 'span.fr', { lang: 'fr', text: res.answered || '（空白）' })));
   }
   if (res.accept && res.accept.length > 1) {
     box.append(h('p.verdict-note', { lang: 'fr', text: `也接受：${res.accept.slice(1).join('、')}` }));
@@ -814,52 +913,111 @@ function verdictPanel(card, res, next, correct) {
 
   if (res.note) box.append(h('p.verdict-note', { text: res.note }));
 
-  box.append(h('div.verdict-sched', {},
-    h('span', {}, '下次複習　', h('b', { text: relDays(res.state.intervalDays) })),
-    h('span', {}, '記憶穩定度　', h('b', { text: `${res.state.stability.toFixed(1)} 天` })),
-    h('span', {}, '累計答錯　', h('b', { text: String(res.state.lapses) })),
+  box.append(h('dl.verdict-sched', {},
+    h('div', {}, h('dt', { text: '下次' }), h('dd', { text: relDays(res.state.intervalDays) })),
+    h('div', {}, h('dt', { text: '穩定度' }), h('dd.num', { text: `${res.state.stability.toFixed(1)} 天` })),
+    h('div', {}, h('dt', { text: '累計答錯' }), h('dd.num', { text: String(res.state.lapses) })),
   ));
 
   if (res.reviewId && res.selfRated) {
     const ratings = h('div.ratings.correction-ratings', { role: 'group', 'aria-label': '更正剛才的評分' });
     const labels = card.kind === 'rw' ? RW_RATING_ZH : RATING_ZH;
     const maxRating = card.kind === 'rw' ? 3 : 4;
+    if (maxRating === 3) ratings.dataset.n = '3';
     for (let rating = 1; rating <= maxRating; rating += 1) {
-      ratings.append(h('button', {
-        type: 'button', dataset: { r: String(rating) }, disabled: rating === res.rating,
-        onclick: () => correct(rating),
-      }, h('b', { text: labels[rating] }), rating === res.rating ? h('small', { text: '目前' }) : null));
+      const btn = rateButton(rating, labels[rating], () => correct(rating),
+        rating === res.rating ? h('small', { text: '目前' }) : null);
+      // 更正用滑鼠點，不綁數字鍵：批改畫面上按 1–4 沒有作用，寫著數字會讓人以為按了就改。
+      btn.querySelector('kbd').remove();
+      btn.removeAttribute('aria-keyshortcuts');
+      btn.disabled = rating === res.rating;
+      ratings.append(btn);
     }
     box.append(h('details.correction', {},
-      h('summary', { text: res.corrected ? '評分已更正' : '剛才評分按錯了？' }),
+      h('summary', { text: res.corrected ? '評分已更正' : '評分按錯了？' }),
       ratings,
     ));
   }
 
-  box.append(h('div.study-actions', {},
-    h('button.btn.btn-primary', { type: 'button', text: '下一張', onclick: next }),
-    h('span.spacer'),
-    h('span.kbd-hint', {}, h('kbd', { text: 'Enter' }), ' 繼續'),
+  box.append(h('div.focus-actions', {},
+    h('button.btn.btn-primary.verdict-next', { type: 'button', onclick: next, 'aria-keyshortcuts': 'Enter' },
+      '下一張', h('kbd', { text: 'Enter', 'aria-hidden': 'true' })),
   ));
 
-  queueMicrotask(() => box.querySelector('.btn-primary')?.focus());
+  if (animate) {
+    const rest = [...box.children].filter((el) => !el.classList.contains('diff') && !el.classList.contains('verdict-head'));
+    queueMicrotask(() => {
+      if (letters.length) motion.revealGrade(letters, rest);
+      else motion.rise(rest, { y: 6, stagger: 0.04, duration: 0.3 });
+    });
+  }
+  queueMicrotask(() => box.querySelector('.verdict-next')?.focus());
   return box;
 }
 
-// ---- 空狀態與載入 --------------------------------------------------------
+// ---- 收尾畫面 ------------------------------------------------------------
 
-function finished(state, ctx, reload) {
+/** 評分比例條與圖例。四段寬度直接用張數當 flex-grow，不先換算百分比。 */
+function ratingBreakdown(byRating) {
+  const cls = [null, 'r1', 'r2', 'r3', 'r4'];
+  const bars = h('div.sum-bar', { 'aria-hidden': 'true' });
+  const legend = h('dl.sum-legend');
+  for (let r = 1; r <= 4; r += 1) {
+    const n = byRating[r];
+    if (n > 0) {
+      const seg = h(`i.${cls[r]}`);
+      seg.style.flexGrow = String(n);
+      bars.append(seg);
+    }
+    legend.append(h('div', { class: n ? null : 'zero' },
+      h('dt', { text: RATING_ZH[r] }), h('dd.num', { text: fmt.format(n) })));
+  }
+  return { bars, legend };
+}
+
+/** 「明天到期 N 張」。stats 端點比較重，只在收尾畫面打一次。拿不到就整行拿掉。 */
+function tomorrowLine(ctx) {
+  const b = h('b.num', { text: '…' });
+  const line = h('p.sum-next', {}, '明天到期　', b, ' 張');
+  api.stats({ ...ctx.scopeQuery(), upcoming: 7, days: 7, weakest: 1 }).then((d) => {
+    const t = new Date();
+    t.setDate(t.getDate() + 1);
+    const day = t.toLocaleDateString('sv');
+    const n = d.upcoming?.days?.find((x) => x.day === day)?.count ?? 0;
+    b.textContent = fmt.format(n);
+  }, () => line.remove());
+  return line;
+}
+
+/** 收尾畫面共用的骨架：小標、大數字、說明、比例條、圖例，其餘接在後面。 */
+function sumScreen(state, { kicker, tail }) {
+  const k = h('h2.sum-kicker.landing', { tabindex: -1, text: kicker });
+  const n = h('span', { text: fmt.format(state.done) });
+  const number = h('p.sum-num.num', {}, n, h('small', { text: '張' }));
+  const cap = h('p.sum-cap', { text: capLine(state) });
+  const { bars, legend } = ratingBreakdown(state.byRating);
+  const list = tail.filter(Boolean);
+  const box = h('section.summary', {}, k, number, cap, bars, legend, ...list);
+  motion.introSummary({
+    kicker: k, number: n, to: state.done, cap,
+    bars: bars.children, legend: legend.children, tail: list,
+  });
+  return box;
+}
+
+function summary(state, ctx, reload) {
   if (state.preset === 'weak') {
-    return h('div.card.empty', {},
-      icon('check'),
-      h('h2.landing', { tabindex: -1, text: state.done ? '弱點這一批做完了' : '目前沒有弱點卡' }),
-      state.done ? h('p', { text: sessionLine(state) }) : h('p', { text: '這個範圍裡沒有答錯過的卡。' }),
-      state.done ? followUps(state) : null,
-      h('div.study-actions', {},
-        h('button.btn.btn-primary', { text: '回統計', onclick: () => ctx.go('stats') }),
-        ctx.guided ? h('button.btn', { text: '回今天', onclick: () => ctx.go('today') }) : null,
-      ),
-    );
+    return sumScreen(state, {
+      kicker: '弱點練習',
+      tail: [
+        followUps(state),
+        tomorrowLine(ctx),
+        h('div.sum-act', {},
+          h('button.btn.btn-primary', { type: 'button', text: '看進度', onclick: () => ctx.go('stats') }),
+          h('button.btn', { type: 'button', text: '回今天', onclick: () => ctx.go('today') }),
+        ),
+      ],
+    });
   }
   const r = state.remaining;
   // 不設上限（newLimit 為 null）時額度永遠用不完，只剩「新卡學光了」這一種收工方式。
@@ -867,18 +1025,41 @@ function finished(state, ctx, reload) {
   const noneLeft = r && r.remaining.new === 0;
   const nothingLeft = r && r.remaining.due === 0 && (capHit || noneLeft);
   // state.done 是這次進頁面以來的累計，不是最後一批——舊字樣「這一輪做完了，共 40 張」會被讀成一批 40 張。
-  return h('div.card.empty', {},
-    icon('check'),
-    h('h2.landing', { tabindex: -1, text: state.done ? '沒有卡可以做了' : '現在沒有到期的卡' }),
-    state.done ? h('p', { text: sessionLine(state) }) : null,
-    h('p', {
-      text: nothingLeft
-        ? `${noneLeft ? '這個範圍裡的新卡也都學過了。' : '今天的新卡額度也用完了。'}休息比硬撐有效——FSRS 的排程已經替明天算好了。`
-        : '還有卡可以練，按下面繼續。',
-    }),
-    h('div.study-actions', {},
-      nothingLeft ? null : h('button.btn', { text: '再來一輪', onclick: reload }),
-      h('button.btn', { text: '看統計', onclick: () => ctx.go('stats') }),
+  return sumScreen(state, {
+    kicker: '這次複習',
+    tail: [
+      h('p.sum-note', {
+        text: nothingLeft
+          ? (noneLeft ? '這個範圍的新卡也學完了。' : '今天的新卡額度用完了。')
+          : '還有卡可以練。',
+      }),
+      tomorrowLine(ctx),
+      h('div.sum-act', {},
+        nothingLeft
+          ? h('button.btn.btn-primary', { type: 'button', text: '回今天', onclick: () => ctx.go('today') })
+          : h('button.btn.btn-primary', { type: 'button', text: '再來一輪', onclick: reload }),
+        h('button.btn', { type: 'button', text: '看進度', onclick: () => ctx.go('stats') }),
+        nothingLeft ? null : h('button.btn.btn-quiet', { type: 'button', text: '回今天', onclick: () => ctx.go('today') }),
+      ),
+    ],
+  });
+}
+
+/** 一張都沒做就沒卡可出：範圍太窄、或今天真的做完了。範圍鈕借過來放在這裡，這時上方那條是收起來的。 */
+function emptyScreen(state, ctx, scopeBtn) {
+  const weak = state.preset === 'weak';
+  const r = state.remaining;
+  const capHit = r && r.newLimit !== null && r.newToday >= r.newLimit;
+  const noneLeft = r && r.remaining.new === 0;
+  let note = '這個範圍裡沒有答錯過的卡。';
+  if (!weak) note = noneLeft ? '這個範圍的新卡也學完了。' : capHit ? '今天的新卡額度用完了。' : '這個範圍裡沒有可以出的卡。';
+  return h('section.summary.summary-empty', {},
+    h('h2.sum-title.landing', { tabindex: -1, text: weak ? '目前沒有弱點卡' : '現在沒有到期的卡' }),
+    h('p.sum-cap', { text: note }),
+    weak ? null : tomorrowLine(ctx),
+    h('div.sum-act', {},
+      h('button.btn.btn-primary', { type: 'button', text: '回今天', onclick: () => ctx.go('today') }),
+      weak ? h('button.btn', { type: 'button', text: '看進度', onclick: () => ctx.go('stats') }) : scopeBtn,
     ),
   );
 }
@@ -899,7 +1080,7 @@ function followUps(state) {
   const picked = [...state.focus].sort((a, b) => b[1] - a[1]).slice(0, 2)
     .map(([key]) => advice[key]).filter(Boolean);
   while (picked.length < 2) picked.push(picked.length ? '明天先做今天仍答錯的卡。' : '挑一張最卡的題，說出錯因後再答一次。');
-  return h('div.session-followup', {}, h('strong', { text: '接下來兩件事' }), h('ol', {}, ...picked.map((text) => h('li', { text }))));
+  return h('div.session-followup', {}, h('p.cue', { text: '接下來兩件事' }), h('ol', {}, ...picked.map((text) => h('li', { text }))));
 }
 
 /**
@@ -907,26 +1088,28 @@ function followUps(state) {
  * 繼續學新卡是加練，所以放次要——學得越多，之後每天要複習的也越多。
  */
 function checkpoint(state, ctx, keepGoing) {
-  return h('div.card.empty', {},
-    icon('check'),
-    h('h2.landing', { tabindex: -1, text: '今天到期的卡都清完了' }),
-    h('p', { text: `${sessionLine(state)}今天新學 ${state.remaining.newToday} 張。` }),
-    h('p', { text: '今天的份量到這裡就夠了。還想練可以繼續學新卡，只是學得越多，之後每天要複習的也越多。' }),
-    h('div.study-actions', {},
-      h('button.btn.btn-primary', { text: '回今天', onclick: () => ctx.go('today') }),
-      h('button.btn', { text: '繼續學新卡', onclick: keepGoing }),
-    ),
-  );
+  return sumScreen(state, {
+    kicker: '到期的卡清完了',
+    tail: [
+      h('p.sum-note', { text: `今天新學 ${state.remaining.newToday} 張。再學新卡，之後每天要複習的也會變多。` }),
+      tomorrowLine(ctx),
+      h('div.sum-act', {},
+        h('button.btn.btn-primary', { type: 'button', text: '回今天', onclick: () => ctx.go('today') }),
+        h('button.btn', { type: 'button', text: '繼續學新卡', onclick: keepGoing }),
+      ),
+    ],
+  });
 }
 
 /** 單張卡計入本次作答時間的上限（毫秒），與 api.mjs 統計中位數的過濾上限相同。 */
 const SESSION_MS_CAP = 120_000;
 
-function sessionLine(state) {
+/** 大數字底下那一行。張數已經印成大字，這裡只講要重來幾張與花了多久。 */
+function capLine(state) {
   const min = Math.round(state.ms / 60_000);
-  const time = min < 1 ? '作答時間不到 1 分鐘' : `作答時間共 ${min} 分鐘`;
-  const again = state.again ? `其中 ${state.again} 張要重來` : '沒有要重來的';
-  return `這次做了 ${state.done} 張，${again}，${time}。`;
+  const time = min < 1 ? '作答不到 1 分鐘' : `作答 ${min} 分鐘`;
+  const again = state.again ? `${state.again} 張要重來` : '沒有要重來的';
+  return `${again}，${time}`;
 }
 
 // 一天只停一次，重新整理頁面也算數，所以記在 localStorage 而不是 state。
@@ -942,15 +1125,15 @@ function markEnoughShown() {
   try { localStorage.setItem(ENOUGH_KEY, localDay()); } catch { /* 見上 */ }
 }
 
+/** 載入中的骨架，形狀跟卡片一樣：小字一行、大字一行、作答線一條。 */
 function skeleton() {
-  const box = h('div.card-face');
-  for (const [w, hh] of [['30%', 18], ['70%', 40], ['100%', 56]]) {
+  const box = h('div.focus-card.focus-skeleton', { 'aria-busy': 'true' });
+  for (const [w, hh] of [['22%', 12], ['46%', 72], ['38%', 44]]) {
     const bar = h('div.skeleton');
     bar.style.width = w;
     bar.style.height = `${hh}px`;
     box.append(bar);
   }
-  box.setAttribute('aria-busy', 'true');
   return box;
 }
 

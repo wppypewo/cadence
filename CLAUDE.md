@@ -5,6 +5,7 @@
 ## 不可協商的四條
 
 1. **零第三方依賴。** `dependencies` 與 `devDependencies` 都必須維持空的。要用的東西只能來自 Node 內建模組（含 `node:sqlite`）或自己寫。引一個套件之前先問使用者。
+   唯一的例外是 `web/vendor/`：經使用者同意、單一檔案的 ESM 可以原樣放進去給前端 import，不經 npm、不進 `package.json`。目前只有 `gsap.mjs`（GSAP 3.15.0，2026-09-25 同意）。它用的是 GreenSock 的「Standard "no charge"」授權，**不是開源授權**：可以免費用在這類應用裡，禁止的是拿它做跟 Webflow 競爭的視覺化動畫編輯器；檔首的版權聲明不得拿掉。字型同理放在 `web/fonts/`（Newsreader，OFL 1.1，授權全文在 `OFL.txt`）。
 2. **`data/reviews.jsonl`、`data/checkins.jsonl` 與 `data/attempts.jsonl` 只增不改。** 這三個檔是唯一不可重建的資料。任何操作都不得改寫或刪除既有的行——撤銷與評分更正也只能追加事件。schema 要加欄位就加，舊行少欄位由讀取端處理。
 3. **GPL-2.0 隔離。** Verbiste 的 XML 只在 `npm run build` 時讀取，產物一律寫進 `data/bank/`，而 `data/bank/` 在 `.gitignore` 裡。不得把任何變位衍生資料提交進版控，不得把 Verbiste 內容內嵌進 `src/`。
 4. **法文重音完整保留。** 程式碼、測試、資料、註解裡的 `é è ê ë à â ù û ü ï î ç œ æ` 一律原樣，不得轉成 ASCII 替代。
@@ -13,7 +14,7 @@
 
 ```bash
 npm run lint   # node --check 全檔
-npm test       # 275 題，含 732 組 FSRS 黃金向量
+npm test       # 276 題，含 732 組 FSRS 黃金向量
 ```
 
 兩個都綠才算完成。動到 `src/engine/fsrs.mjs` 時，黃金向量測試紅了代表移植跑掉了，不要改測試去配合實作。

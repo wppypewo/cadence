@@ -1,5 +1,5 @@
 /**
- * 查詢頁。用途很窄，但少了會痛：
+ * 辭典頁（原「查詢」）。用途很窄，但少了會痛：
  * 寫作業寫到一半想確認 accueillir 的 nous 是什麼，不該為此開一輪複習。
  *
  * 兩個刻意的決定：
@@ -11,16 +11,8 @@
 
 import { h, clear, icon, relDays } from './dom.mjs';
 import { api } from './net.mjs';
-
-const KIND_ZH = {
-  'vocab-recall': '看字回想',
-  'vocab-produce': '中翻法',
-  conj: '動詞變位',
-  connector: '連接詞',
-  pick: '挑連接詞',
-  rw: '改寫整句',
-  nom: '名詞化',
-};
+import * as motion from './motion.mjs';
+import { KIND_ZH } from './kinds.mjs';
 
 const PRONOUNS = ['je', 'tu', 'il', 'nous', 'vous', 'ils'];
 const IMPERATIVE_PRONOUNS = ['tu', 'nous', 'vous'];
@@ -55,20 +47,24 @@ const DRILLED = new Set([
 ]);
 
 export function browseView(root) {
-  const box = h('div.browse');
+  const box = h('div.dict');
   root.append(box);
 
-  const field = h('input.input.fr', {
-    type: 'search', lang: 'fr', placeholder: '單字、動詞、連接詞…',
+  // 搜尋框就是這一頁的標題：沒有框，只有一條底線，字級跟詞條的字頭一樣大。
+  // 查字的人眼睛停在哪裡，打的字就出現在哪裡。
+  const field = h('input.dict-input.fr', {
+    type: 'search', lang: 'fr', placeholder: '查字：法文、動詞或中文',
     autocomplete: 'off', spellcheck: false, 'aria-label': '搜尋題庫',
   });
-  box.append(h('form.search-form', {
+  box.append(h('form.dict-search', {
+    role: 'search',
     onsubmit: (ev) => { ev.preventDefault(); clearTimeout(timer); run(field.value); },
-  }, field, h('button.btn.btn-primary', { type: 'submit', text: '找' })));
+  }, field, h('button.dict-go', { type: 'submit', 'aria-label': '搜尋' }, icon('find'))));
 
   const out = h('div.browse-out', { 'aria-live': 'polite', 'aria-busy': 'false' });
   box.append(out);
-  clear(out).append(hint());
+  const example = (q) => { field.value = q; field.focus(); run(q); };
+  clear(out).append(hint(example));
   queueMicrotask(() => field.focus());
 
   // 打字時延遲 220ms 再送，避免每個鍵都打一次 SQL LIKE。
@@ -83,7 +79,7 @@ export function browseView(root) {
   /** reopen：從變位表回來時帶著剛才打開的動詞與它是第幾列，好把焦點放回那一列。 */
   async function run(raw, reopen = null) {
     const q = raw.trim();
-    if (!q) return void clear(out).append(hint());
+    if (!q) return void clear(out).append(hint(example));
     const mine = ++seq;
     out.setAttribute('aria-busy', 'true');
     try {
@@ -92,9 +88,9 @@ export function browseView(root) {
       if (mine !== seq) return; // 已經有更新的查詢，這一份丟掉
       clear(out);
       if (!hits.length) {
-        out.append(h('div.card.empty', {}, icon('find'),
-          h('p', {}, '題庫裡沒有 ', h('span.fr', { text: q }), ' 。'),
-          h('p.sub', { text: '題庫只收 A1–B1 的高頻詞與 784 個不規則動詞，不是完整字典。中文釋義與題目句子也在搜尋範圍內。' })));
+        out.append(h('div.dict-empty', {},
+          h('p.dict-empty-lead', {}, '題庫裡沒有 ', h('span.fr', { lang: 'fr', text: q }), '。'),
+          h('p.dict-empty-note', { text: '題庫只收 A1–B1 高頻詞與 784 個不規則動詞，不是完整字典。' })));
         return;
       }
       const rows = group(hits);
@@ -118,11 +114,14 @@ export function browseView(root) {
       }
     } catch (err) {
       if (mine !== seq) return;
-      clear(out).append(h('div.card.errorbox', {}, h('p', { text: err.message })));
+      clear(out).append(h('div.sec-err', {}, h('p', { text: `查不到：${err.message}` })));
     } finally {
       if (mine === seq) out.setAttribute('aria-busy', 'false');
     }
   }
+
+  // 換頁時還在等的那一份查詢與 220ms 計時器要作廢，不然結果會畫進已經拆掉的節點。
+  return () => { clearTimeout(timer); seq += 1; motion.killWithin(box); };
 }
 
 /** 同一個詞的兩個方向。收成一列時的標籤順序照這個陣列，不照命中順序。 */
@@ -190,15 +189,15 @@ function countLine(res, rows) {
   const cards = verbs.reduce((a, r) => a + r.count, 0);
   // 兩個方向都命中的詞才算「收掉一列」；只命中一個方向的收合前後都是一列。
   const merged = rows.filter((r) => r.kinds && r.count > 1);
-  const parts = [`共 ${res.total} 張卡命中`];
-  if (verbs.length) parts.push(`其中 ${cards} 張變位卡收成 ${verbs.length} 個動詞`);
-  if (merged.length) parts.push(`${merged.length} 個詞的兩個方向各併成一列`);
+  const parts = [`命中 ${res.total} 張卡`];
+  if (verbs.length) parts.push(`${cards} 張變位卡收成 ${verbs.length} 個動詞`);
+  if (merged.length) parts.push(`${merged.length} 個詞的兩個方向併成一列`);
   parts.push(`顯示 ${rows.length} 組`);
-  const line = h('p.hits-count', { text: `${parts.join('，')}。` });
+  const line = h('p.hits-count', { text: parts.join('・') });
   if (!res.truncated) return line;
   return h('p.hits-count', {},
-    `${parts.join('，')}。`,
-    h('span.more', { text: ' 還有更多——把關鍵字寫長一點可以縮小範圍。' }),
+    parts.join('・'),
+    h('span.more', { text: '。還有更多，把關鍵字寫長一點可以縮小範圍。' }),
   );
 }
 
@@ -208,14 +207,14 @@ function verbRow(entry, out, back) {
   const left = h('div.hit-main', {},
     h('div.w.fr', { lang: 'fr', text: entry.verb }),
     h('div.m', { text: [f.gloss, `${entry.tenses.size} 個時態共 ${entry.count} 張`].filter(Boolean).join('・') }),
-    h('div.m.open-hint', { text: '按一下看完整變位表' }),
   );
   const right = h('div.hit-state', {},
     h('span.tag', { text: '動詞變位' }),
-    f.level ? h('span.tag', { text: f.level }) : null,
+    f.level ? h('span.lv', { text: f.level }) : null,
     entry.seen
       ? h('span.s.num', { text: `已學 ${entry.seen}/${entry.count} 張` })
       : h('span.s.dim', { text: '未學過' }),
+    openHint(),
   );
   return openable(h('div.hit', {}, left, right), entry.verb, out, back);
 }
@@ -231,8 +230,9 @@ function vocabRow(entry, out, back) {
     h('div.m', { text: [f.posZh, f.gloss].filter(Boolean).join('・') }),
   );
   const right = h('div.hit-state', {},
-    ...VOCAB_KINDS.filter((k) => entry.kinds.has(k)).map((k) => h('span.tag', { text: KIND_ZH[k] })),
-    f.level ? h('span.tag', { text: f.level }) : null,
+    // 兩個方向並排時用間隔號連成一句，不排成兩顆膠囊。
+    h('span.tag', { text: VOCAB_KINDS.filter((k) => entry.kinds.has(k)).map((k) => KIND_ZH[k]).join('・') }),
+    f.level ? h('span.lv', { text: f.level }) : null,
     entry.seen
       ? h('span.s.num', { text: `已學 ${entry.seen}/${entry.count} 個方向` })
       : h('span.s.dim', { text: '未學過' }),
@@ -241,7 +241,7 @@ function vocabRow(entry, out, back) {
   const row = h('div.hit', {}, left, right);
   // 詞彙卡查到動詞時一樣可以攤開變位表，這個入口不能因為收合而消失。
   if (f.pos !== 'VER') return row;
-  left.append(h('div.m.open-hint', { text: '按一下看完整變位表' }));
+  right.append(openHint());
   return openable(row, f.word, out, back);
 }
 
@@ -277,14 +277,14 @@ function hitRow({ card, state }, out, back, q = '') {
   if (card.kind === 'conj') {
     left.append(h('div.m', {},
       h('span.fr', { lang: 'fr', text: `${f.pronoun} ${card.answer}` }),
-      ` — ${f.tenseZh}`));
+      `・${f.tenseZh}`));
   }
 
   const right = h('div.hit-state', {},
     h('span.tag', { text: KIND_ZH[card.kind] ?? card.kind }),
-    f.level ? h('span.tag', { text: f.level }) : null,
+    f.level ? h('span.lv', { text: f.level }) : null,
     state
-      ? h('span.s.num', { text: `S ${state.stability.toFixed(1)}d・${relDays(daysTo(state.due))}` })
+      ? h('span.s.num', { text: `穩定 ${state.stability.toFixed(1)} 天・${relDays(daysTo(state.due))}到期` })
       : h('span.s.dim', { text: '未學過' }),
   );
 
@@ -292,8 +292,16 @@ function hitRow({ card, state }, out, back, q = '') {
 
   const verb = f.pos === 'VER' ? f.word : null;
   if (!verb) return row;
-  left.append(h('div.m.open-hint', { text: '按一下看完整變位表' }));
+  right.append(openHint());
   return openable(row, verb, out, back);
+}
+
+/**
+ * 可以攤開變位表的列，右端多一個「變位表 →」。平常藏著、滑過或鍵盤停到才出現：
+ * 一整頁結果每列都掛著同一句話只是噪音。報讀器不念它，整列的 aria-label 已經講了。
+ */
+function openHint() {
+  return h('span.open-hint', { 'aria-hidden': 'true', text: '變位表 →' });
 }
 
 /**
@@ -348,22 +356,20 @@ async function showVerb(name, out, back) {
   try {
     data = await api.verb(name);
   } catch (err) {
-    const retreat = h('button.btn', { text: '← 回搜尋結果', onclick: back });
-    clear(panel).append(h('div.card.errorbox', {}, h('p', { text: err.message }), retreat));
+    const retreat = h('button.btn.btn-sm', { text: '← 回結果', onclick: back });
+    clear(panel).append(h('div.sec-err', {}, h('p', { text: `讀不到變位表：${err.message}` }), retreat));
     retreat.focus();
     return;
   }
 
   clear(panel);
   // 回去要回到剛才那份結果，不是回到空白頁——查完一個動詞常常還要查下一個。
-  const backBtn = h('button.btn.btn-quiet.btn-sm', { text: '← 回搜尋結果', onclick: back });
+  // 返回鈕放在字頭上方而不是右邊：它是這一頁的「上一層」，位置跟麵包屑一樣。
+  const backBtn = h('button.btn.btn-quiet.btn-sm.verb-back', { text: '← 回結果', onclick: back });
   const title = heading();
-  panel.append(h('div.verb-head', {},
-    h('div', {},
-      title,
-      h('p.verb-sub', { text: verbSub(data) }),
-    ),
-    backBtn,
+  panel.append(backBtn, h('div.verb-head', {},
+    title,
+    h('p.verb-sub', { text: verbSub(data) }),
   ));
   title.focus({ preventScroll: true });
   if (data.impersonal) {
@@ -381,7 +387,9 @@ async function showVerb(name, out, back) {
   ];
   for (const tense of names) grid.append(tenseTable(tense, all[tense], data.impersonal));
   panel.append(grid);
-  panel.append(h('p.verb-foot', { text: '有點的時態會出現在複習題裡；其餘只供查閱。' }));
+  panel.append(h('p.verb-foot', {}, h('span.dot', { 'aria-hidden': 'true' }), '會出題的時態。其餘只供查閱。'));
+  // 十二張表由左上往右下依序落下，眼睛跟著順序掃一遍，就知道這一頁有多少東西。
+  motion.rise(grid.children, { y: 8, stagger: 0.025, duration: 0.4 });
 }
 
 function verbSub(data) {
@@ -416,16 +424,18 @@ function tenseTable(tense, forms, impersonal) {
 }
 
 /**
- * 三句話拆成兩段，不是排版潔癖：`.empty p` 的 42ch 與置中是為了「一兩句短文」設計的，
- * 三句擠成一段就變成四行置中的字，每一行起點都不一樣，掃過去像散開的。
- * 拆開之後每段各佔一到兩行，置中才讀得順。
+ * 空白時的說明。靠左對齊、跟搜尋框同一條左緣，不做置中的空狀態卡：
+ * 這一頁的主角是那條底線，說明是它的註腳。
+ * 三個例子各代表一種查法（動詞、連接詞、中文），點一下就知道中文也查得到，
+ * 比寫一句「中文釋義也搜得到」好懂。
  */
-function hint() {
-  return h('div.card.empty', {}, icon('find'),
-    h('h2', { text: '查一個字' }),
-    h('p', { text: '查詢不會改動任何卡片的排程，也不會被記成一次作答。' }),
-    h('p.sub', { text: '搜尋範圍是題庫本身：A1–B1 詞彙、784 個不規則動詞、50 個連接詞。' }),
-    h('p.sub', { text: '中文釋義也搜得到。查到動詞時可以展開完整變位表。' }),
+function hint(example) {
+  return h('div.dict-empty', {},
+    h('p.dict-empty-note', { text: '查字不動排程，也不算作答。範圍就是題庫：A1–B1 詞彙、784 個不規則動詞、50 個連接詞。' }),
+    h('p.dict-try', {}, h('span', { text: '例如' }),
+      ...['accueillir', 'pourtant', '去'].map((q) => h('button.dict-eg', {
+        type: 'button', lang: /[㐀-鿿]/.test(q) ? 'zh-Hant' : 'fr', text: q, onclick: () => example(q),
+      }))),
   );
 }
 

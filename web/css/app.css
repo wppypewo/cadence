@@ -20,22 +20,24 @@ body {
   font: 400 var(--t-md)/1.6 var(--font-ui);
   font-feature-settings: "kern" 1;
   text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 }
 
 h1, h2, h3 { margin: 0; font-weight: 600; line-height: 1.25; letter-spacing: -0.01em; }
 p { margin: 0; }
-button, input, select { font: inherit; color: inherit; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
 
 :focus-visible {
-  outline: 2px solid var(--focus);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
-  border-radius: 3px;
+  border-radius: var(--r);
 }
 :focus:not(:focus-visible) { outline: none; }
-/* 程式移過去的焦點落點（換卡後的選項群組、做完一輪的標題、變位表的動詞）。
-   它們只是讓報讀器念到這裡、讓下一個 Tab 從這裡接著走，本身不能按，
-   畫一圈外框反而像在說「這可以點」。 */
-.landing:focus { outline: none; }
+/* 程式移過去的焦點落點（換卡後的選項群組、做完一輪的標題、變位表的動詞，
+   以及換頁時的 .main）。它們只是讓報讀器念到這裡、讓下一個 Tab 從這裡接著走，本身不能按，
+   畫一圈外框反而像在說「這可以點」。.main 那一圈還會沿著側欄邊緣畫出一整條藍線。 */
+.landing:focus, .main:focus { outline: none; }
 
 .sr {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
@@ -45,109 +47,133 @@ button, input, select { font: inherit; color: inherit; }
 .skip {
   position: absolute; left: var(--s3); top: -100px; z-index: var(--z-toast);
   padding: var(--s2) var(--s4); background: var(--surface); color: var(--text);
-  border: 1px solid var(--border-strong); border-radius: var(--r-control);
+  border: 1px solid var(--line-strong); border-radius: var(--r);
 }
 .skip:focus { top: var(--s3); }
 
-/* 數字一律等寬對齊，統計數字才不會左右跳。 */
-.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+/* 數字一律 tabular，統計數字才不會左右跳。字形與法文同一套襯線。 */
+.num { font-family: var(--font-num); font-variant-numeric: lining-nums tabular-nums; }
 
 /* 法文一律用襯線，而且標好語言讓瀏覽器套對的斷字與引號規則。 */
 .fr { font-family: var(--font-fr); }
+
+kbd {
+  display: inline-block; min-width: 18px; padding: 1px 5px;
+  border: 1px solid var(--line-strong); border-radius: var(--r);
+  font: 500 var(--t-2xs)/1.4 var(--font-ui); text-align: center;
+  color: var(--text-muted);
+}
 
 /* ---- 版面骨架 --------------------------------------------------------- */
 
 .shell {
   display: grid;
-  grid-template-columns: 216px minmax(0, 1fr);
+  grid-template-columns: 200px minmax(0, 1fr);
   min-height: 100dvh;
 }
 
+/* 導覽列：沒有圖示框、沒有底色塊，選中的那一項用墨色與左側細線標出。 */
 .rail {
   position: sticky; top: 0; align-self: start;
   height: 100dvh; display: flex; flex-direction: column;
-  padding: var(--s5) var(--s3) var(--s4);
-  border-right: 1px solid var(--border);
-  background: var(--surface);
+  padding: var(--s5) 0 var(--s4);
+  border-right: 1px solid var(--line);
 }
 
 .brand {
-  display: flex; align-items: baseline; gap: var(--s2);
-  padding: 0 var(--s2) var(--s5);
+  display: flex; flex-direction: column; gap: 2px;
+  margin: 0 0 var(--s6); padding: 0 var(--s5);
+  color: inherit; text-decoration: none;
 }
-.brand b { font-size: var(--t-lg); font-weight: 600; letter-spacing: -0.02em; }
+.brand b { font: 500 var(--t-xl)/1 var(--font-fr); letter-spacing: -0.01em; }
 .brand span { font-size: var(--t-xs); color: var(--text-faint); }
+.brand:hover b { color: var(--accent); }
 
 .nav { display: flex; flex-direction: column; gap: 2px; }
-
 .nav a {
-  display: flex; align-items: center; gap: var(--s3);
-  min-height: 40px; padding: 0 var(--s3);
-  border-radius: var(--r-control);
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding: var(--s2) var(--s5);
+  border-left: 2px solid transparent;
   color: var(--text-muted); text-decoration: none;
-  transition: background var(--dur-out) var(--ease), color var(--dur-out) var(--ease);
+  transition: color var(--dur-out) var(--ease-out), border-color var(--dur-out) var(--ease-out);
 }
-.nav a:hover { background: var(--sunken); color: var(--text); }
-.nav a[aria-current="page"] {
-  background: var(--accent-weak); color: var(--accent); font-weight: 600;
-}
-.nav a svg { flex: none; width: 18px; height: 18px; }
+.nav a:hover { color: var(--text); }
+.nav a[aria-current="page"] { color: var(--text); font-weight: 600; border-left-color: var(--accent); }
 .nav .badge {
-  margin-left: auto; min-width: 22px; padding: 1px 6px;
-  border-radius: var(--r-pill); background: var(--accent); color: var(--accent-on);
-  font-family: var(--font-num); font-size: var(--t-xs); text-align: center;
-}
-.nav a[aria-current="page"] .badge { background: var(--accent); }
-
-.rail-foot {
-  margin-top: auto; padding-top: var(--s4);
-  display: flex; align-items: center; justify-content: space-between; gap: var(--s2);
-  border-top: 1px solid var(--border);
-  font-size: var(--t-xs); color: var(--text-faint);
+  font: 500 var(--t-sm)/1 var(--font-num); font-variant-numeric: lining-nums tabular-nums;
+  color: var(--accent);
 }
 
-.main { min-width: 0; padding: var(--s6) var(--s6) var(--s8); }
-.wrap { max-width: 940px; margin: 0 auto; }
+.rail-foot { margin-top: auto; padding: 0 var(--s5); }
+.rail-more {
+  display: flex; justify-content: space-between; align-items: center; width: 100%;
+  padding: var(--s3) 0 0;
+  background: none; border: 0; border-top: 1px solid var(--line);
+  font-size: var(--t-sm); color: var(--text-muted); text-align: left;
+}
+.rail-more:hover { color: var(--text); }
+.rail-more::after { content: '···'; letter-spacing: 0.1em; color: var(--text-faint); }
 
+.main { min-width: 0; padding: var(--s6) clamp(var(--s5), 4vw, var(--s7)) var(--s8); }
+.wrap { max-width: 1040px; margin: 0 auto; }
+
+/*
+ * 專注模式：複習時整條導覽收起來，畫面只剩一張卡。
+ * 用 body 上的屬性，toast 與底部導覽都在 .shell 外面也吃得到。
+ */
+body[data-focus] .shell { grid-template-columns: minmax(0, 1fr); }
+body[data-focus] .rail { display: none; }
+body[data-focus] .main { padding: 0; }
+
+/* 頁首：標題用襯線、底下一條實線，像辭典的欄頭。 */
 .page-head {
   display: flex; align-items: flex-end; justify-content: space-between;
-  gap: var(--s4); margin-bottom: var(--s5);
+  gap: var(--s4); margin-bottom: var(--s6);
+  padding-bottom: var(--s3); border-bottom: 1px solid var(--text);
 }
-.page-head h1 { font-size: var(--t-2xl); }
+.page-head h1, .page-head h2 { font: 500 var(--t-2xl)/1.1 var(--font-fr); letter-spacing: -0.015em; }
 .page-head p { color: var(--text-muted); font-size: var(--t-sm); margin-top: var(--s1); }
+
+/* 區段小標：全大寫式的細字，給側欄與表格欄頭用。 */
+.kicker {
+  margin: 0 0 var(--s3);
+  font: 600 var(--t-xs)/1 var(--font-ui); letter-spacing: 0.08em; color: var(--text-faint);
+}
 
 /* ---- 元件 ------------------------------------------------------------- */
 
+/* 版面內不用浮起的卡片，只用細線圈出一塊。 */
 .card {
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-card);
-  box-shadow: var(--shadow-card);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
 }
 
+/* 按鈕只有三種：預設（細線框）、主要（墨色實心）、安靜（純文字）。 */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: var(--s2);
-  min-height: 40px; padding: 0 var(--s4);
-  border: 1px solid var(--border-strong); border-radius: var(--r-control);
-  background: var(--surface); color: var(--text);
-  font-size: var(--t-md); font-weight: 500; cursor: pointer;
-  white-space: nowrap;
-  transition: background var(--dur-out) var(--ease), border-color var(--dur-out) var(--ease),
-              transform var(--dur-out) var(--ease);
+  min-height: 36px; padding: 0 var(--s4);
+  border: 1px solid var(--line-strong); border-radius: var(--r);
+  background: transparent; color: var(--text);
+  font-size: var(--t-sm); font-weight: 500;
+  white-space: nowrap; text-decoration: none;
+  transition: border-color var(--dur-out) var(--ease-out), color var(--dur-out) var(--ease-out),
+              background var(--dur-out) var(--ease-out), transform var(--dur-out) var(--ease-out);
 }
-.btn:hover:not(:disabled) { background: var(--sunken); }
+.btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .btn:active:not(:disabled) { transform: translateY(1px); }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn svg { flex: none; width: 16px; height: 16px; }
 
-.btn-primary {
-  background: var(--accent); border-color: var(--accent); color: var(--accent-on);
-}
-.btn-primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-on); }
+.btn-primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-on); }
 
-.btn-quiet { border-color: transparent; background: transparent; color: var(--text-muted); }
-.btn-quiet:hover:not(:disabled) { background: var(--sunken); color: var(--text); }
+.btn-quiet { border-color: transparent; padding: 0 var(--s2); color: var(--text-muted); }
+.btn-quiet:hover:not(:disabled) { border-color: transparent; color: var(--text); }
 
-.btn-sm { min-height: 32px; padding: 0 var(--s3); font-size: var(--t-sm); }
+.btn-sm { min-height: 30px; padding: 0 var(--s3); font-size: var(--t-xs); }
+.btn-lg { min-height: 52px; padding: 0 var(--s5); font-size: var(--t-lg); font-weight: 600; }
+.btn-lg .num { font-size: 1.15em; font-weight: 500; }
 
 .field { display: flex; flex-direction: column; gap: var(--s1); }
 .field label { font-size: var(--t-sm); font-weight: 500; }
@@ -156,39 +182,79 @@ button, input, select { font: inherit; color: inherit; }
    讀起來是數字框的修飾，不是另一個欄位。 */
 .inline-check { display: inline-flex; align-items: center; gap: var(--s1); font-size: var(--t-sm); white-space: nowrap; }
 .inline-check input { accent-color: var(--accent); }
-.input:disabled { opacity: .55; cursor: not-allowed; }
 
 .input {
-  min-height: 40px; padding: 0 var(--s3);
-  background: var(--surface); border: 1px solid var(--border-strong);
-  border-radius: var(--r-control); color: var(--text);
+  min-height: 36px; padding: 0 var(--s3);
+  background: var(--surface); border: 1px solid var(--line-strong);
+  border-radius: var(--r); color: var(--text);
 }
 .input:focus-visible { border-color: var(--accent); }
+.input:disabled { opacity: .55; cursor: not-allowed; }
 
 .chip {
   display: inline-flex; align-items: center; gap: var(--s1);
-  padding: 2px var(--s2); border-radius: var(--r-pill);
+  padding: 1px var(--s2); border-radius: var(--r);
   background: var(--sunken); color: var(--text-muted);
   font-size: var(--t-xs); white-space: nowrap;
 }
 .chip-accent { background: var(--accent-weak); color: var(--accent); }
 
-/* 篩選用的多選 chip。用真的 checkbox，鍵盤與螢幕閱讀器都能用。 */
+/* 篩選用的多選鈕。用真的 checkbox，鍵盤與螢幕閱讀器都能用。 */
 .toggle { position: relative; display: inline-flex; }
 .toggle input {
   position: absolute; inset: 0; opacity: 0; cursor: pointer; margin: 0;
 }
 .toggle span {
-  display: inline-flex; align-items: center; min-height: 32px; padding: 0 var(--s3);
-  border: 1px solid var(--border-strong); border-radius: var(--r-pill);
+  display: inline-flex; align-items: center; min-height: 30px; padding: 0 var(--s3);
+  border: 1px solid var(--line-strong); border-radius: var(--r);
   font-size: var(--t-sm); color: var(--text-muted);
-  transition: background var(--dur-out) var(--ease), color var(--dur-out) var(--ease);
+  transition: background var(--dur-out) var(--ease-out), color var(--dur-out) var(--ease-out);
 }
 .toggle input:checked + span {
   background: var(--accent-weak); border-color: var(--accent); color: var(--accent); font-weight: 500;
 }
-.toggle input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px; }
-.toggle:hover span { background: var(--sunken); }
+.toggle input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.toggle:hover span { border-color: var(--accent); }
+
+/* ---- 選單（原生 popover） -------------------------------------------- */
+
+/*
+ * 用 popover 屬性：Esc 關閉、點外面關閉、疊在最上層不被 overflow 裁掉，
+ * 三件事瀏覽器都做好了。位置由 app.mjs 依觸發鈕算好後用 inline style 給。
+ */
+.menu {
+  position: fixed; inset: auto; margin: 0;
+  min-width: 240px; max-width: min(360px, calc(100vw - var(--s6)));
+  padding: var(--s4);
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--line-strong); border-radius: var(--r);
+  box-shadow: var(--shadow);
+}
+.menu-list { display: flex; flex-direction: column; margin: 0 calc(-1 * var(--s2)); }
+.menu-item {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s3);
+  padding: var(--s2); background: none; border: 0; border-radius: var(--r);
+  font-size: var(--t-sm); text-align: left; color: var(--text);
+}
+.menu-item:hover { background: var(--sunken); }
+.menu-sep { height: 1px; margin: var(--s3) 0; background: var(--line); border: 0; }
+.menu-meta { font-size: var(--t-xs); color: var(--text-faint); font-variant-numeric: tabular-nums; }
+
+/* 三段切換（佈景）。按下去的那段反白，其餘只是字。 */
+.seg { display: flex; border: 1px solid var(--line-strong); border-radius: var(--r); }
+.seg button {
+  flex: 1; padding: var(--s1) var(--s2); background: none; border: 0;
+  font-size: var(--t-xs); color: var(--text-muted);
+}
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--text); color: var(--bg); }
+
+/* 範圍選單的內容。 */
+.scope-h { margin: 0 0 var(--s2); font-size: var(--t-xs); font-weight: 600; letter-spacing: 0.06em; color: var(--text-faint); }
+.scope-h + .toggles { margin-bottom: var(--s4); }
+.toggles { display: flex; flex-wrap: wrap; gap: var(--s1); }
+.scope-note { font-size: var(--t-xs); color: var(--text-faint); line-height: 1.5; }
+.scope-btn[data-narrowed] { border-color: var(--accent); color: var(--accent); }
 
 /* ---- 狀態 ------------------------------------------------------------- */
 
@@ -196,7 +262,7 @@ button, input, select { font: inherit; color: inherit; }
   display: flex; flex-direction: column; align-items: center; gap: var(--s3);
   padding: var(--s8) var(--s5); text-align: center;
 }
-.empty h2 { font-size: var(--t-lg); }
+.empty h2 { font: 500 var(--t-xl)/1.2 var(--font-fr); }
 /* icon() 產出的 svg 沒有 width/height 屬性，尺寸一律由 CSS 給。
    漏掉這一條的話它會撐成容器寬（實測 570px），空狀態變成一顆巨大的放大鏡。 */
 .empty svg, .errorbox svg { flex: none; width: 28px; height: 28px; color: var(--text-faint); }
@@ -212,8 +278,8 @@ button, input, select { font: inherit; color: inherit; }
 .empty .sub { font-size: var(--t-xs); color: var(--text-faint); }
 
 .skeleton {
-  background: var(--sunken); border-radius: var(--r-control);
-  animation: pulse 1.4s var(--ease) infinite;
+  background: var(--sunken); border-radius: var(--r);
+  animation: pulse 1.4s var(--ease-out) infinite;
 }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
 @media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
@@ -221,37 +287,14 @@ button, input, select { font: inherit; color: inherit; }
 .toast {
   display: flex; align-items: center; gap: var(--s3);
   padding: var(--s3) var(--s4);
-  background: var(--surface); border: 1px solid var(--border-strong);
-  border-radius: var(--r-control); box-shadow: var(--shadow-pop);
+  background: var(--text); color: var(--bg);
+  border-radius: var(--r); box-shadow: var(--shadow);
   font-size: var(--t-sm); max-width: min(90vw, 520px);
 }
-.toast[data-tone="bad"] { border-color: var(--bad); color: var(--bad); }
-
-/* ---- 側欄：篩選、設定、佈景 ------------------------------------------- */
-
-.brand { color: inherit; text-decoration: none; }
-.brand:hover b { color: var(--accent); }
-
-/*
- * 範圍篩選常駐在側欄，不收進選單裡。
- * 「我現在只練動詞變位」是每天都會改的東西，藏兩層就不會有人用。
- */
-.scope { padding: var(--s5) var(--s2) 0; }
-/* 「今天」與「查詢」不吃篩選，面板整個收起來。窄螢幕那邊 .scope 被改成
-   display:flex，會蓋掉瀏覽器預設的 [hidden]{display:none}，所以明寫一條。 */
-.scope[hidden] { display: none; }
-.scope-h {
-  font-size: var(--t-xs); font-weight: 500; color: var(--text-faint);
-  letter-spacing: 0.04em; margin-bottom: var(--s2);
-}
-.scope-h + .toggles { margin-bottom: var(--s4); }
-.toggles { display: flex; flex-wrap: wrap; gap: var(--s1); }
-.scope-note { font-size: var(--t-xs); color: var(--text-faint); line-height: 1.5; }
-
-.rail-foot { flex-wrap: wrap; }
-.rail-actions { display: flex; align-items: center; gap: var(--s1); }
-.built { font-family: var(--font-num); font-size: var(--t-xs); color: var(--text-faint); }
-.theme svg { width: 15px; height: 15px; }
+.toast svg { flex: none; width: 16px; height: 16px; }
+.toast .btn { color: var(--bg); border-color: transparent; text-decoration: underline; text-underline-offset: 3px; }
+.toast .btn:hover:not(:disabled) { color: var(--bg); border-color: transparent; }
+.toast[data-tone="bad"] { background: var(--bad); color: var(--bg); }
 
 /* ---- 設定面板 --------------------------------------------------------- */
 
@@ -260,19 +303,22 @@ button, input, select { font: inherit; color: inherit; }
  * 這三件事自己實作一定會漏掉其中一件。
  */
 .sheet {
-  width: min(440px, calc(100vw - var(--s6)));
-  padding: 0; border: 1px solid var(--border-strong); border-radius: var(--r-card);
+  width: min(460px, calc(100vw - var(--s6)));
+  padding: 0; border: 1px solid var(--line-strong); border-radius: var(--r);
   background: var(--surface); color: var(--text);
-  box-shadow: var(--shadow-pop);
+  box-shadow: var(--shadow);
 }
-.sheet::backdrop { background: rgba(0, 0, 0, 0.32); }
-.sheet-body { display: flex; flex-direction: column; gap: var(--s5); padding: var(--s5); }
-.sheet-body > h2 { font-size: var(--t-lg); }
+.sheet::backdrop { background: var(--scrim); }
+.sheet-body { display: flex; flex-direction: column; gap: var(--s5); padding: var(--s5) var(--s5) var(--s4); }
+.sheet-body > h2 {
+  font: 500 var(--t-xl)/1.1 var(--font-fr);
+  padding-bottom: var(--s3); border-bottom: 1px solid var(--text);
+}
 .sheet-foot { display: flex; justify-content: flex-end; gap: var(--s2); }
 .field-error { font-size: var(--t-sm); color: var(--bad); }
 .range-row { display: flex; align-items: center; gap: var(--s3); }
 .range-row input[type="range"] { flex: 1; accent-color: var(--accent); }
-.range-row output { min-width: 4ch; text-align: right; font-size: var(--t-md); }
+.range-row output { min-width: 4ch; text-align: right; font-size: var(--t-lg); }
 
 /* 位置由容器給，每一條只管自己的外觀。原本每一條各自 fixed 在同一點，
    兩條同時出現（改考試日期的「復原」加一則錯誤）會疊成一條，下面那條按不到。 */
@@ -286,7 +332,7 @@ button, input, select { font: inherit; color: inherit; }
 
 .noscript {
   margin: var(--s6) auto; max-width: 42ch; padding: var(--s4);
-  border: 1px solid var(--bad); border-radius: var(--r-card); color: var(--bad);
+  border: 1px solid var(--bad); border-radius: var(--r); color: var(--bad);
   text-align: center;
 }
 
@@ -295,46 +341,36 @@ button, input, select { font: inherit; color: inherit; }
 @media (max-width: 860px) {
   .shell { grid-template-columns: minmax(0, 1fr); }
   .rail {
-    flex-wrap: wrap;
     position: sticky; top: 0; z-index: var(--z-sticky);
     height: auto; flex-direction: row; align-items: center; gap: var(--s3);
-    padding: var(--s2) var(--s3);
-    border-right: none; border-bottom: 1px solid var(--border);
+    padding: var(--s3) var(--s4);
+    border-right: none; border-bottom: 1px solid var(--line);
+    background: var(--bg);
   }
-  .brand { padding: 0; }
-  .brand span { display: none; }
-  /* 導覽移到畫面底部。留在置頂列裡的話，品牌與設定會把它擠到剩約 105px
-     （當時還是四個分頁，實測要 207px；現在是五個，只會更擠），
-     後面的分頁就只能靠一個沒有任何提示的橫向捲軸才點得到。
-     底部列是拇指最好按的位置，也讓五個標籤都能寫出來。 */
+  .brand { margin: 0; padding: 0; flex-direction: row; align-items: baseline; gap: var(--s2); }
+  /* 導覽移到畫面底部。留在置頂列裡的話，品牌與選單會把分頁擠到只剩一條
+     沒有任何提示的橫向捲軸才點得到。底部列是拇指最好按的位置，四個標籤也寫得下。 */
   .nav {
     position: fixed; inset: auto 0 0 0; z-index: var(--z-sticky);
     flex-direction: row; gap: 0;
-    padding: var(--s1) var(--s2);
-    padding-bottom: calc(var(--s1) + env(safe-area-inset-bottom));
-    background: var(--surface); border-top: 1px solid var(--border);
+    padding: 0 var(--s2) env(safe-area-inset-bottom);
+    background: var(--bg); border-top: 1px solid var(--line);
   }
   .nav a {
-    position: relative; flex: 1 1 0; min-width: 0;
-    flex-direction: column; justify-content: center; gap: 2px;
-    min-height: 46px; padding: 0 var(--s1);
-    font-size: var(--t-xs);
+    flex: 1 1 0; min-width: 0; justify-content: center; align-items: center; gap: var(--s1);
+    min-height: 52px; padding: 0 var(--s1);
+    border-left: 0; border-top: 2px solid transparent;
   }
-  .nav a .label { white-space: nowrap; }
-  /* 直向排列時 margin-left:auto 推不動了，改用絕對定位釘在圖示右上。 */
-  .nav .badge { position: absolute; top: 2px; left: 50%; margin: 0 0 0 6px; }
-  .btn, .input, .rail .toggle, .rail-foot .btn { min-height: 44px; }
-  .rail-foot { margin: 0 0 0 auto; padding: 0; border: none; }
-  .rail-foot .built { display: none; }
-  /* 篩選改成第二列的橫向捲軸；標題與說明在這個寬度只是噪音。 */
-  .scope { order: 9; flex-basis: 100%; display: flex; gap: var(--s1);
-           overflow-x: auto; padding: var(--s1) 0 0; }
-  .scope-h, .scope-note { display: none; }
-  .scope .toggles { flex-wrap: nowrap; margin: 0; }
-  .toggle span { white-space: nowrap; }
-  /* toast 也要避開底部導覽，不然批改結果會被蓋掉一半。 */
-  .toasts { bottom: calc(var(--s5) + 60px + env(safe-area-inset-bottom)); }
+  .nav a[aria-current="page"] { border-top-color: var(--accent); }
+  .rail-foot { margin: 0 0 0 auto; padding: 0; }
+  .rail-more { width: auto; padding: 0; border: 0; min-height: 44px; }
+  .btn, .input { min-height: 44px; }
+  .toggle span { min-height: 40px; }
+  /* toast 也要避開底部導覽（52px），不然批改結果會被蓋掉一半。 */
+  .toasts { bottom: calc(var(--s5) + 52px + env(safe-area-inset-bottom)); }
   /* 底部導覽是 fixed，內容要自己讓出那一條的高度，否則最後一列永遠被蓋住。 */
-  .main { padding: var(--s4) var(--s4) calc(var(--s8) + 60px + env(safe-area-inset-bottom)); }
+  .main { padding: var(--s5) var(--s4) calc(var(--s8) + 52px + env(safe-area-inset-bottom)); }
+  body[data-focus] .main { padding: 0 0 env(safe-area-inset-bottom); }
+  body[data-focus] .toasts { bottom: calc(var(--s5) + env(safe-area-inset-bottom)); }
   .page-head { flex-direction: column; align-items: stretch; }
 }

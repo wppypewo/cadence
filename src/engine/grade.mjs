@@ -65,25 +65,73 @@ export function grade(input, accepted) {
 }
 
 /**
- * 逐字比對，標出哪幾個位置不同，讓畫面可以只把錯的地方標紅。
- * 用最單純的等長對齊 + 長度差補尾巴：答案通常只差一兩個字元，
- * 上完整的編輯距離對齊在這裡沒有收益。
+ * 把作答對齊到答案上：最短編輯距離（Levenshtein），回傳每個答案字元對到的作答字元。
+ *
+ * 原本用等長逐位比對，前面少打或多打一個字母，後面整排都會錯位標紅：
+ * `etais` 對 `serais` 六格全紅，實際上只錯了開頭的 s 與中間的 r。
+ * 對齊之後只標真正不同的那兩格。
+ *
+ * 平手時優先「對上」，其次「替換」，最後才是「漏打／多打」：
+ * `ecole` 對 `école` 應該是 e 換成 é（漏重音），而不是漏一個 é 再多一個 e。
+ *
+ * @returns {Array<string|null>} 長度等於答案；null 代表這一格作答裡沒有對應字元
+ */
+function align(a, b) {
+  const n = a.length;
+  const m = b.length;
+  // d[i][j]：a 的前 i 個字對到 b 的前 j 個字的最小代價
+  const d = Array.from({ length: n + 1 }, (_, i) => {
+    const row = new Array(m + 1).fill(0);
+    row[0] = i;
+    return row;
+  });
+  for (let j = 0; j <= m; j += 1) d[0][j] = j;
+  for (let i = 1; i <= n; i += 1) {
+    for (let j = 1; j <= m; j += 1) {
+      d[i][j] = Math.min(
+        d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+        d[i - 1][j] + 1,
+        d[i][j - 1] + 1,
+      );
+    }
+  }
+  const out = new Array(m).fill(null);
+  let i = n;
+  let j = m;
+  while (i > 0 && j > 0) {
+    const diag = d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1);
+    if (d[i][j] === diag) {
+      out[j - 1] = a[i - 1];
+      i -= 1;
+      j -= 1;
+    } else if (d[i][j] === d[i][j - 1] + 1) {
+      j -= 1;
+    } else {
+      i -= 1;
+    }
+  }
+  return out;
+}
+
+/**
+ * 逐字比對，標出答案裡哪幾格沒打對，讓畫面只把錯的地方標紅。
+ * 先對齊再比（見 align），少打或多打一個字不會讓後面整排跟著錯。
  *
  * @returns {Array<{ch:string, ok:boolean}>} 以「正確答案」為骨架
  */
 export function diffChars(input, answer) {
-  const a = [...normalize(input)];
   const b = [...normalize(answer)];
-  return b.map((ch, i) => ({ ch, ok: a[i] === ch }));
+  const got = align([...normalize(input)], b);
+  return b.map((ch, i) => ({ ch, ok: got[i] === ch }));
 }
 
-/** 作答裡出現的所有變音字母，用來回報「你漏了哪個符號」。 */
+/** 作答裡漏掉的變音字母，用來回報「你漏了哪個符號」。與 diffChars 共用同一份對齊。 */
 export function missingAccents(input, answer) {
-  const a = [...normalize(input)];
   const b = [...normalize(answer)];
+  const got = align([...normalize(input)], b);
   const out = [];
   for (let i = 0; i < b.length; i += 1) {
-    if (a[i] !== b[i] && stripAccents(b[i]) === stripAccents(a[i] ?? '')) out.push(b[i]);
+    if (got[i] !== null && got[i] !== b[i] && stripAccents(b[i]) === stripAccents(got[i])) out.push(b[i]);
   }
   return [...new Set(out)];
 }

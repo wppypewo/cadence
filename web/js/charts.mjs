@@ -132,8 +132,12 @@ export function line(data, { height = 170, title = '', marks = [], cap = '' } = 
   for (const m of marks) {
     const x = sc.x(m.at);
     node.append(s('line.marker', { x1: x, x2: x, y1: PAD.top, y2: base }));
+    // 標籤原本固定貼頂端。推演「要學多少新卡」那張曲線在標記處已經爬到頂，
+    // 字直接壓在線上（1440 寬實測）；線太靠頂時改放到線下方。
+    const lineY = sc.y(data[m.at]?.a ?? 0);
     node.append(s('text.marker-t', {
-      x: Math.min(x + 4, w - PAD.right - 40), y: PAD.top + 10,
+      x: Math.min(x + 4, w - PAD.right - 40),
+      y: lineY - PAD.top < 20 ? lineY + 16 : PAD.top + 10,
     }, m.label));
   }
 

@@ -1,7 +1,9 @@
 /** 四科模考共同紀錄。分科與總分分開顯示，避免總分蓋掉單科低於門檻。 */
 
-import { h, clear, icon, announce } from './dom.mjs';
+import { h, clear, announce } from './dom.mjs';
 import { api } from './net.mjs';
+import { workbenchHead, donePanel, field, afterSection, skillName } from './practice.mjs';
+import * as motion from './motion.mjs';
 
 const SKILLS = ['CE', 'CO', 'PE', 'PO'];
 
@@ -20,31 +22,33 @@ export function mockView(root, ctx) {
     const got = h('input.input', { type: 'number', min: 0, max: 25, step: 0.5, inputmode: 'decimal', required: true, 'aria-label': `${skill} 得分`, oninput: update });
     const max = h('input.input', { type: 'number', min: 0.5, max: 100, step: 0.5, value: '25', inputmode: 'decimal', required: true, 'aria-label': `${skill} 滿分`, oninput: update });
     inputs.set(skill, { got, max });
-    scores.append(h('div.mock-score', {}, h('strong', { text: skill }), got, h('span', { text: '/' }), max));
+    scores.append(h('div.mock-score', {}, h('strong', { text: skill }), got, h('span.of', { text: '/' }), max));
   }
 
   box.append(
-    h('header.page-head', {},
-      h('div', {}, h('h2', { text: 'B1 基準模考' }), h('p', { text: '先建立四科基線；完成一科就回來填分，最後一次儲存。' })),
-      h('button.btn.btn-quiet', { type: 'button', text: '返回統計', onclick: () => ctx.go('stats') }),
-    ),
-    h('section.card.baseline-flow', { 'aria-label': '基準模考流程' },
-      ...SKILLS.map((skill, index) => h('div.baseline-step', {},
-        h('span.num', { text: String(index + 1) }),
-        h('div', {}, h('strong', { text: skill }), h('small', { text: baselineInstruction(skill) })),
-        h('button.btn.btn-sm', { type: 'button', text: `開 ${skill} 工作台`, onclick: () => ctx.openPractice(skill) }),
-      )),
-    ),
-    h('form.card.practice-form', { onsubmit: save },
-      h('div.form-grid', {},
-        h('div.field', {}, h('label', { text: '模考來源' }), source),
-        h('div.field', {}, h('label', { text: '日期' }), date),
+    workbenchHead({
+      back: '← 進度', onBack: () => ctx.go('stats'), code: '模考', title: 'B1 基準模考',
+      sub: '四科各做一次，完成一科就回來填分，最後一起儲存。',
+    }),
+    h('div.wb-grid', {},
+      h('ol.baseline-flow', { 'aria-label': '基準模考流程' },
+        ...SKILLS.map((skill, index) => h('li.baseline-step', {},
+          h('span.num', { 'aria-hidden': 'true', text: String(index + 1) }),
+          h('div', {}, h('strong', { text: skill }), h('small', { text: baselineInstruction(skill) })),
+          h('button.btn.btn-sm', { type: 'button', text: `開 ${skill} 工作台`, onclick: () => ctx.openPractice(skill) }),
+        )),
       ),
-      h('fieldset.mock-fieldset', {}, h('legend', { text: '四科分數' }), scores),
-      result,
-      h('div.field', {}, h('label', { text: '檢討' }), notes),
-      status,
-      h('div.practice-actions', {}, h('button.btn.btn-primary', { type: 'submit', text: '儲存模考' })),
+      h('form.practice-form', { onsubmit: save },
+        h('div.form-grid', {},
+          field('模考來源', source),
+          field('日期', date),
+        ),
+        h('fieldset.mock-fieldset', {}, h('legend', { text: '四科分數' }), scores),
+        result,
+        field('檢討', notes),
+        status,
+        h('div.practice-actions', {}, h('button.btn.btn-primary', { type: 'submit', text: '儲存模考' })),
+      ),
     ),
   );
   update();
@@ -63,14 +67,19 @@ export function mockView(root, ctx) {
     try {
       const record = await api.mock({ baseline: true, source: source.value.trim() || null, day: date.value, scores: parsed, notes: notes.value.trim() || null });
       announce('模考已儲存');
-      clear(box).append(h('div.card.empty', {},
-        icon('check'), h('h2.landing', { tabindex: -1, text: '模考已記錄' }),
-        h('p', { text: `${record.day}・${record.total}/${record.maxTotal}` }),
-        h('div.practice-actions', {},
-          h('button.btn.btn-primary', { text: '看統計', onclick: () => ctx.go('stats') }),
-          h('button.btn', { text: '回今天', onclick: () => ctx.go('today') }),
-        ),
-      ));
+      const done = donePanel({
+        code: '模考',
+        title: 'B1 基準模考',
+        line: `${record.day}・${record.total}/${record.maxTotal}`,
+        actions: [
+          h('button.btn.btn-primary', { type: 'button', text: '看進度', onclick: () => ctx.go('stats') }),
+          h('button.btn', { type: 'button', text: '回今天', onclick: () => ctx.go('today') }),
+        ],
+        after: breakdown(record),
+      });
+      clear(box).append(done);
+      done.querySelector('.landing')?.focus();
+      motion.stamp(done.querySelector('.stamp'));
     } catch (err) {
       status.textContent = err.message;
       status.hidden = false;
@@ -112,4 +121,23 @@ function readScores(inputs) {
     out[skill] = { score, maxScore };
   }
   return out;
+}
+
+/**
+ * 分科分數。完成面板那一行只寫總分，總分過半仍可能有一科低於單科門檻，
+ * 所以四科逐列攤開，低於門檻的那列標出來；也順便填掉面板下方的空白。
+ */
+function breakdown(record) {
+  const list = h('ul.skills');
+  for (const skill of SKILLS) {
+    const v = record.scores?.[skill];
+    if (!v) continue;
+    const low = v.score / v.maxScore < 0.2;
+    list.append(h('li.skill', { dataset: { low: low ? '1' : '0' } },
+      h('span.skill-code', { text: skill }),
+      h('div.skill-main', {}, h('span', { text: skillName(skill) }), low ? h('span.dim', { text: '低於單科門檻' }) : null),
+      h('span.tally.num', { text: `${v.score}/${v.maxScore}` }),
+    ));
+  }
+  return afterSection('分科', list);
 }

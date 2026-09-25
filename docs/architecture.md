@@ -36,11 +36,15 @@ web/
   css/app.css        外框：導覽、卡片、按鈕、toast
   css/views.css      主要檢視與次級工作台的樣式
   js/app.mjs         路由（一個 hashchange 監聽器加一張表）
-  js/dom.mjs         建 DOM 的小工具、十個手寫圖示
+  js/dom.mjs         建 DOM 的小工具、十一個手寫圖示
   js/charts.mjs      手寫 SVG 圖表
   js/markdown.mjs    最小 Markdown 渲染器，只認 study/ 三份文件用到的語法（連結限 http／https）
-  js/{today,review,stats,forecast,browse}.mjs   五個主要檢視
+  js/motion.mjs      所有 GSAP 動畫的唯一入口；系統要求減少動態時一律不跑
+  js/kinds.mjs       七種題型的中文名，鍵的順序就是各頁的顯示順序
+  js/{today,review,stats,forecast,browse}.mjs   主要檢視（stats 與 forecast 是「進度」的兩個分頁，browse 是「辭典」）
   js/{practice,mock}.mjs   四科實作與模考工作台
+  vendor/gsap.mjs    GSAP 3.15.0，非開源的標準免費授權，檔首聲明不得刪（見 README〈資料與授權〉）
+  fonts/             Newsreader 兩個 woff2（OFL 1.1）
 ```
 
 ## 資料流
@@ -87,7 +91,7 @@ web/
 | GET | `/api/queue` | 今天的複習佇列 |
 | GET | `/api/reveal` | 使用者翻面後才取回看字回想題的釋義 |
 | GET | `/api/preview` | 名詞化與改寫整句的新卡第一次出現時先看解答。只讀，學過的卡回 400 |
-| GET | `/api/stats` | 統計頁全部資料 |
+| GET | `/api/stats` | 進度頁「現況」分頁的全部資料 |
 | GET | `/api/forecast` | 考前推演 |
 | GET | `/api/search` | 查字 |
 | GET | `/api/verb/:word` | 完整變位表 |
@@ -104,11 +108,12 @@ web/
 
 伺服器只綁 `127.0.0.1`，不接受外部連線。
 
-## 前端的三條規則
+## 前端的四條規則
 
 1. **不用 `innerHTML`。** `dom.mjs` 只提供 `h()` 與 `s()`，一律走 `createElement` 與 `textContent`。題庫裡的字串永遠不會被當成 HTML 解析，比在每個地方記得跳脫可靠。
 2. **顏色只從 token 拿。** `tokens.css` 之外的檔案不寫十六進位色碼。明暗兩套主題各自算過對比度。
-3. **圖表手寫。** 四種圖（長條、折線、熱力圖、比例條）加起來 208 行 SVG，引一個圖表庫會讓「零依賴」變成一句空話。
+3. **圖表手寫。** 四種圖（長條、折線、熱力圖、比例條）加起來 214 行 SVG，引一個圖表庫會讓「零依賴」變成一句空話。
+4. **動畫只從 `motion.mjs` 出去。** 各頁不直接 import GSAP。這樣「減少動態效果」只要在一個地方判斷，換掉 GSAP 也只動一個檔。進場淡入之外，每頁最多三個招牌動作（例如今天頁：倒數滾動、帳本進度條、打卡章），其餘狀態變化用 CSS 過渡。
 
 ## 前後端共用的那一個檔案
 

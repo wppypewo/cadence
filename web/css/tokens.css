@@ -1,153 +1,173 @@
 /*
- * cadence design tokens
+ * cadence design tokens（2026-09-25 改版）
  *
  * 設計判斷（寫下來是為了以後改的人知道哪些是刻意的）：
  *
- * 字體　　零依賴代表不能載 webfont，所以全部走系統字。這不是妥協——
- *         法文重音與繁體中文都要正確排版，系統字是唯一能保證兩者都對的選擇，
- *         而且離線可用。分三套：
- *           --font-fr   法文詞本身，用系統襯線（Iowan Old Style / Palatino）。
- *                       這個 App 的主角是單字，襯線讓它看起來像辭典條目而不是表單欄位。
- *           --font-ui   介面與中文，系統無襯線 + PingFang TC。
- *           --font-num  數字，等寬且 tabular，避免統計數字跳動。
- * 顏色　　單一強調色 teal。刻意避開紅／綠／琥珀，因為那三個顏色在這個 App 裡
- *         已經被批改語意佔用了（對／只差重音／錯），強調色再用同色系會混淆。
- *         也刻意避開藍紫漸層那一套。
- * 圓角　　三檔，規則固定：控制項與輸入框 8px、卡片 12px、標籤 999px。
- * 動態　　進場 140ms、離場 90ms，全部 ease-out。
+ * 方向　　辭典／編輯感。冷調紙色底、鈷藍墨水當唯一強調色、細線取代灰框。
+ * 字體　　法文字與數字用打包的 Newsreader（OFL 1.1，見 /fonts/OFL.txt）。
+ *         這個 App 的主角是單字，襯線讓它看起來像辭典條目而不是表單欄位；
+ *         系統襯線在各平台長得不一樣，打包一套才能讓字級與行高算得準。
+ *         中文不打包字檔：繁中字檔動輒數 MB，落到系統的蘋方已經夠好。分四套：
+ *           --font-fr    法文詞本身與大數字。
+ *           --font-ui    介面與中文，系統無襯線 + PingFang TC。
+ *           --font-num   統計數字。與 --font-fr 同一套，靠 tabular-nums 對齊，不再用等寬。
+ *           --font-mono  只給程式碼與檔案路徑（Markdown 的 code、文件路徑）。
+ * 顏色　　單一強調色鈷藍。紅／綠／琥珀三色只留給批改與評分（錯／對／只差重音），
+ *         其他地方不用，才不會稀釋它們的意思。也刻意避開藍紫漸層那一套。
+ * 圓角　　全部 2px（--r）。辭典的版面是直角的，圓角只是讓邊緣不刺。
+ * 動態　　CSS 過渡進場 160ms、離場 100ms，全部 ease-out。GSAP 的招牌動作另見 js/motion.mjs。
  *         prefers-reduced-motion 時整組歸零，不是減半。
+ *
+ * 對比度（WCAG 相對亮度公式，2026-09-25 實算）：
+ *   淺色  text/bg 16.13、muted/bg 7.85、faint/bg 5.33、faint/sunken 4.87
+ *         accent/bg 7.97、ok 5.93、warn 5.69、bad 5.72、accent-on/accent 8.86
+ *         line-strong/bg 3.19、line-strong/surface 3.43（控制元件外框門檻 3:1）
+ *         ok／warn／bad 對各自的 -weak 底 5.57／5.32／5.15
+ *   深色  text/bg 15.41、muted/bg 9.25、faint/surface 5.56
+ *         accent/bg 8.81、ok 8.58、warn 8.85、bad 7.72、accent-on/accent 8.49
+ *         line-strong/bg 3.47、line-strong/surface 3.28
+ *         ok／warn／bad 對各自的 -weak 底 7.32／7.48／6.90
+ * --line 只拿來畫裝飾性分隔線，不是控制元件的外框，所以不受 3:1 約束。
+ * --scrim 只用在 .sheet::backdrop，蓋在頁面上表示「後面暫時不能點」，上面不放字，也不受對比門檻約束。
  */
 
+/* Newsreader（Production Type，OFL 1.1）。
+ * 檔案取自 @fontsource-variable/newsreader 5.3.0 的 latin opsz 子集，
+ * 同時帶 opsz 與 wght 兩軸；latin 子集已涵蓋法文全部重音與 œ æ。 */
+@font-face {
+  font-family: 'Newsreader';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('/fonts/newsreader-latin-opsz-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Newsreader';
+  font-style: italic;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('/fonts/newsreader-latin-opsz-italic.woff2') format('woff2');
+}
+
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
 
-  /* 間距：4px 級距 */
-  --s1: 4px;  --s2: 8px;  --s3: 12px; --s4: 16px;
-  --s5: 24px; --s6: 32px; --s7: 48px; --s8: 64px;
+  --font-fr: 'Newsreader', 'Iowan Old Style', Georgia, 'PingFang TC', serif;
+  --font-ui: -apple-system, BlinkMacSystemFont, 'PingFang TC', 'Noto Sans TC', 'Segoe UI', sans-serif;
+  --font-num: 'Newsreader', Georgia, serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 
-  /* 圓角 */
-  --r-control: 8px;
-  --r-card: 12px;
-  --r-pill: 999px;
+  /* 字級：UI 維持小而清楚，法文字與數字才放大，兩者差距刻意拉開。
+     11 只給 kbd 用：鍵名寫在按鈕角落，12 會蓋到按鈕文字。 */
+  --t-2xs: 11px;
+  --t-xs: 12px;
+  --t-sm: 13px;
+  --t-md: 15px;
+  --t-lg: 18px;
+  --t-xl: 24px;
+  --t-2xl: 36px;
+  --t-3xl: 56px;
+  --t-word: clamp(56px, 7vw, 96px);
+  --t-hero: clamp(96px, 13vw, 176px);
 
-  /* 字級：11 12 13 15 17 21 28 40。11 只給 kbd 用：鍵名寫在按鈕角落，12 會蓋到按鈕文字。 */
-  --t-2xs: 0.6875rem;
-  --t-xs: 0.75rem;
-  --t-sm: 0.8125rem;
-  --t-md: 0.9375rem;
-  --t-lg: 1.0625rem;
-  --t-xl: 1.3125rem;
-  --t-2xl: 1.75rem;
-  --t-3xl: 2.5rem;
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+  --s7: 48px;
+  --s8: 64px;
+  --s9: 96px;
 
-  --font-fr: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
-  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC",
-             "PingFang TC", "Microsoft JhengHei", "Helvetica Neue", Arial, sans-serif;
-  --font-num: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --r: 2px;
 
-  --dur-in: 140ms;
-  --dur-out: 90ms;
-  --ease: cubic-bezier(0.2, 0, 0.1, 1);
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --dur-in: 160ms;
+  --dur-out: 100ms;
 
   --z-sticky: 10;
   --z-overlay: 100;
   --z-toast: 200;
 
-  /* 淺色：紙感中性底，不是米白也不是純白 */
-  --bg: #f6f5f3;
-  --surface: #ffffff;
-  --sunken: #eceae6;
-  /* --border 只畫分隔線（WCAG 對純裝飾線沒有對比度要求）；
-     --border-strong 畫按鈕、輸入框、篩選鈕的外框，那是 interface component，
-     受 WCAG 1.4.11 的 3:1 管。這個值對 bg / surface / sunken 分別是
-     3.41 / 3.72 / 3.09，三個都過。改色前先算過再改。 */
-  --border: #cdc8be;
-  --border-strong: #8a8478;
-  --text: #1c1b19;
-  /* muted 原本對 faint 只有 1.17:1，兩層文字在畫面上是同一層。這個值對
-     surface / sunken / bg 是 8.26 / 6.88 / 7.58，對 faint 1.52。 */
-  --text-muted: #524e48;
-  --text-faint: #6e6961;
-
-  --accent: #0e6259;
-  --accent-hover: #0a4b44;
+  --bg: #f3f3f0;
+  --surface: #fbfbf9;
+  --sunken: #e9e9e5;
+  --text: #15171c;
+  --text-muted: #474b55;
+  --text-faint: #5f6470;
+  --line: #d6d6d0;
+  --line-strong: #85888f;
+  --accent: #2340a8;
+  --accent-hover: #1a3288;
   --accent-on: #ffffff;
-  --accent-weak: #dfece9;
-  /* 統計條「學過但未穩」那段。原本借 --accent-weak，對未學的底色 --sunken 只有 1.01:1，
-     整段等於看不見。這個值對 sunken / surface 是 3.14 / 3.77（WCAG 1.4.11 的 3:1）。
-     它對 --accent 只有 1.91，兩段之間的分界靠 .meter 的 gap 露出 sunken，不靠色差。 */
-  --accent-mid: #518e87;
-
-  --ok: #256b41;
-  --ok-weak: #dfeee5;
-  --warn: #855206;
-  --warn-weak: #f6ead6;
-  --bad: #a2352a;
-  --bad-weak: #f7e3e0;
-
-  --focus: #0e6259;
-  --shadow-card: 0 1px 2px rgba(28, 27, 25, 0.05), 0 1px 1px rgba(28, 27, 25, 0.04);
-  --shadow-pop: 0 8px 24px rgba(28, 27, 25, 0.12), 0 2px 6px rgba(28, 27, 25, 0.08);
+  --accent-weak: #e4e8f6;
+  /* 統計條「學過但未穩」那段。對 surface / sunken 是 3.97 / 3.38（WCAG 1.4.11 的 3:1）。
+     它對 --accent 只有 2.15，兩段之間的分界靠 .meter 的 gap 露出底色，不靠色差。 */
+  --accent-mid: #6178d0;
+  --ok: #1f6a3d;
+  --ok-weak: #e3efe7;
+  --warn: #8a5300;
+  --warn-weak: #f5ead8;
+  --bad: #b0302a;
+  --bad-weak: #f6e3e1;
+  /* 陰影只給浮在版面上的東西（選單、對話框、提示條），版面內一律用細線。 */
+  --shadow: 0 1px 0 rgba(21, 23, 28, 0.04), 0 12px 32px -12px rgba(21, 23, 28, 0.18);
+  /* 對話框背後的遮罩。原本寫死在 app.css；深色底本來就暗，同樣 0.32 幾乎看不出來，所以深色給 0.6。 */
+  --scrim: rgba(21, 23, 28, 0.32);
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #121211;
-    --surface: #1b1b19;
-    --sunken: #0d0d0c;
-    --border: #3a3933;
-    --border-strong: #6a695f;
-    --text: #ecebe7;
-    /* 對 surface / sunken / bg 是 8.28 / 9.33 / 8.99，對 faint 1.58。理由見淺色那條。 */
-    --text-muted: #b8b3ab;
-    --text-faint: #928d85;
-
-    --accent: #49bdb0;
-    --accent-hover: #6ad2c6;
-    --accent-on: #06211e;
-    --accent-weak: #12302d;
-    /* 對 sunken / surface 是 3.57 / 3.17，對 --accent 2.38。理由見淺色那條。 */
-    --accent-mid: #34746c;
-
-    --ok: #6cb98b;
-    --ok-weak: #14271c;
-    --warn: #d5a24f;
-    --warn-weak: #2b2213;
-    --bad: #e28175;
-    --bad-weak: #2e1a17;
-
-    --focus: #49bdb0;
-    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.5);
-    --shadow-pop: 0 10px 30px rgba(0, 0, 0, 0.6);
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --bg: #101216;
+    --surface: #16181e;
+    --sunken: #0b0c0f;
+    --text: #e9e9e6;
+    --text-muted: #b4b6bd;
+    --text-faint: #8d9099;
+    --line: #2a2d35;
+    --line-strong: #666a75;
+    --accent: #9aaeff;
+    --accent-hover: #b7c5ff;
+    --accent-on: #0c1433;
+    --accent-weak: #1a2142;
+    /* 對 surface / sunken 是 3.34 / 3.68。 */
+    --accent-mid: #5566b5;
+    --ok: #6fc08f;
+    --ok-weak: #15251c;
+    --warn: #e0a857;
+    --warn-weak: #2a2113;
+    --bad: #f08a80;
+    --bad-weak: #2d1816;
+    --shadow: 0 1px 0 rgba(0, 0, 0, 0.3), 0 16px 40px -16px rgba(0, 0, 0, 0.6);
+    --scrim: rgba(0, 0, 0, 0.6);
   }
 }
 
-[data-theme="dark"] {
-  --bg: #121211;
-  --surface: #1b1b19;
-  --sunken: #0d0d0c;
-  --border: #3a3933;
-  --border-strong: #6a695f;
-  --text: #ecebe7;
-  --text-muted: #b8b3ab;
-  --text-faint: #928d85;
-
-  --accent: #49bdb0;
-  --accent-hover: #6ad2c6;
-  --accent-on: #06211e;
-  --accent-weak: #12302d;
-  --accent-mid: #34746c;
-
-  --ok: #6cb98b;
-  --ok-weak: #14271c;
-  --warn: #d5a24f;
-  --warn-weak: #2b2213;
-  --bad: #e28175;
-  --bad-weak: #2e1a17;
-
-  --focus: #49bdb0;
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.5);
-  --shadow-pop: 0 10px 30px rgba(0, 0, 0, 0.6);
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #101216;
+  --surface: #16181e;
+  --sunken: #0b0c0f;
+  --text: #e9e9e6;
+  --text-muted: #b4b6bd;
+  --text-faint: #8d9099;
+  --line: #2a2d35;
+  --line-strong: #666a75;
+  --accent: #9aaeff;
+  --accent-hover: #b7c5ff;
+  --accent-on: #0c1433;
+  --accent-weak: #1a2142;
+  --accent-mid: #5566b5;
+  --ok: #6fc08f;
+  --ok-weak: #15251c;
+  --warn: #e0a857;
+  --warn-weak: #2a2113;
+  --bad: #f08a80;
+  --bad-weak: #2d1816;
+  --shadow: 0 1px 0 rgba(0, 0, 0, 0.3), 0 16px 40px -16px rgba(0, 0, 0, 0.6);
+  --scrim: rgba(0, 0, 0, 0.6);
 }
 
 @media (prefers-reduced-motion: reduce) {

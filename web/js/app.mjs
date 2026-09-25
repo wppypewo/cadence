@@ -1,13 +1,15 @@
 /**
  * 外殼與路由。
  *
- * 沒有路由函式庫，就是一個 hashchange 監聽器加一張表。五個主要頁面、兩個次級工作台，
- * 沒有巢狀路由、沒有參數——這種規模引框架，維護成本會比省下的多。
+ * 沒有路由函式庫，就是一個 hashchange 監聽器加一張表。導覽列四項（今天／複習／進度／辭典），
+ * 「進度」底下是統計與推演兩頁，另有兩個次級工作台；沒有巢狀路由、沒有參數——
+ * 這種規模引框架，維護成本會比省下的多。
  *
- * 這一層負責三件跨頁面的事：
+ * 這一層負責四件跨頁面的事：
  *   範圍篩選　選了哪些題型與程度。複習／統計／推演三頁吃這組條件，所以它屬於外殼，
- *   　　　　　不屬於任何一頁；存在 localStorage，關掉再開還在。「今天」與「查詢」
- *   　　　　　刻意不吃，那兩頁的面板會收起來（見 PAGES.scoped）。
+ *   　　　　　不屬於任何一頁；存在 localStorage，關掉再開還在。面板只有一份，
+ *   　　　　　由各頁用 ctx.scopeMenu() 放進自己的頁首（見 PAGES.scoped）。
+ *   專注模式　複習時整條導覽收起來。由複習頁自己開，換頁時外殼一律關掉。
  *   到期數量　側欄那顆數字。作答後由 review 頁呼叫 refreshBadge() 更新，
  *             因為只有它知道自己剛剛改了什麼。
  *   設定　　　目標記憶率、每天新卡量與考試日期。三個都會改變往後所有卡的排程，
@@ -23,32 +25,34 @@ import { forecastView } from './forecast.mjs';
 import { browseView } from './browse.mjs';
 import { practiceView } from './practice.mjs';
 import { mockView } from './mock.mjs';
+import { KIND_ZH } from './kinds.mjs';
 
-// scoped 標的是「這一頁的內容真的會跟著側欄的題型／程度變」。
+// scoped 標的是「這一頁的內容真的會跟著範圍選單的題型／程度變」，也只有這幾頁的頁首放得出那顆範圍鈕。
 // 沒標的兩頁各有理由：「今天」問的是今天整體該做什麼，本來就要看全部四科；
-// 「查詢」查的是整個題庫，把它限制在勾選範圍內只會讓人以為題庫裡沒有那個字。
-// 標了才有意義——面板一直亮著卻不生效，比沒有面板還糟。
+// 「辭典」查的是整個題庫，把它限制在勾選範圍內只會讓人以為題庫裡沒有那個字。
+// 標了才有意義——選單一直在卻不生效，比沒有選單還糟。
 const PAGES = [
   // 「今天」排第一也是預設頁：這個 App 最常見的失敗不是練錯，是根本沒打開來練。
-  { id: 'today', label: '今天', icon: 'today', view: todayView, scoped: false },
-  { id: 'review', label: '複習', icon: 'cards', view: reviewView, badge: true, scoped: true },
-  { id: 'stats', label: '統計', icon: 'chart', view: statsView, scoped: true },
-  { id: 'forecast', label: '推演', icon: 'route', view: forecastView, scoped: true },
-  { id: 'browse', label: '查詢', icon: 'find', view: browseView, scoped: false },
-  // 工作台由今天／統計頁帶著科目進入，不佔用主要導覽的五個固定位置。
-  { id: 'practice', label: '練習工作台', icon: 'cards', view: practiceView, scoped: false, nav: false },
-  { id: 'mock', label: '模考紀錄', icon: 'chart', view: mockView, scoped: false, nav: false },
+  { id: 'today', label: '今天', view: todayView, scoped: false },
+  { id: 'review', label: '複習', view: reviewView, scoped: true },
+  { id: 'stats', label: '進度', view: statsView, scoped: true },
+  { id: 'forecast', label: '推演', view: forecastView, scoped: true },
+  { id: 'browse', label: '辭典', view: browseView, scoped: false },
+  // 工作台由今天／進度頁帶著科目進入，不佔導覽列的位置。
+  { id: 'practice', label: '練習', view: practiceView, scoped: false },
+  { id: 'mock', label: '模考紀錄', view: mockView, scoped: false },
 ];
 
-const KINDS = [
-  { id: 'vocab-recall', label: '看字回想' },
-  { id: 'vocab-produce', label: '中翻法' },
-  { id: 'conj', label: '動詞變位' },
-  { id: 'connector', label: '連接詞' },
-  { id: 'pick', label: '挑連接詞' },
-  { id: 'rw', label: '改寫整句' },
-  { id: 'nom', label: '名詞化' },
+// 導覽列。pages 列出哪些頁面算在這一項底下，停在那些頁時這一項亮起來——
+// 從今天頁進工作台、從進度頁進推演，側欄都不該看起來像是跳到別的地方。
+const NAV = [
+  { id: 'today', label: '今天', pages: ['today', 'practice'] },
+  { id: 'review', label: '複習', pages: ['review'], badge: true },
+  { id: 'stats', label: '進度', pages: ['stats', 'forecast', 'mock'] },
+  { id: 'browse', label: '辭典', pages: ['browse'] },
 ];
+
+const KINDS = Object.entries(KIND_ZH).map(([id, label]) => ({ id, label }));
 const LEVELS = ['A2', 'B1'];
 
 const STORE_KEY = 'cadence.scope';
@@ -65,12 +69,14 @@ const state = {
   guided: false,
 };
 
-const els = {};
+const els = { popovers: [] };
 
 const ctx = {
   get settings() { return state.settings; },
   scopeQuery,
+  scopeMenu,
   setScope,
+  setFocus,
   refreshBadge,
   toast,
   go,
@@ -125,28 +131,17 @@ function buildShell() {
   const rail = document.getElementById('rail');
   const nav = h('nav.nav', { 'aria-label': '主要導覽' });
   els.tabs = new Map();
-  for (const page of PAGES) {
-    if (page.nav === false) continue;
-    const badge = page.badge ? h('span.badge.num', { text: '', hidden: true }) : null;
-    const a = h('a', { href: `#${page.id}` },
-      icon(page.icon), h('span.label', { text: page.label }), badge);
-    els.tabs.set(page.id, { a, badge });
+  for (const item of NAV) {
+    const badge = item.badge ? h('span.badge', { text: '', hidden: true }) : null;
+    const a = h('a', { href: `#${item.id}` }, h('span.label', { text: item.label }), badge);
+    els.tabs.set(item.id, { a, badge, pages: item.pages, label: item.label });
     nav.append(a);
   }
   rail.append(nav);
   els.scope = scopePanel();
-  rail.append(els.scope);
 
-  const foot = h('div.rail-foot', {},
-    h('div.rail-actions', {},
-      h('button.btn.btn-quiet.btn-sm', { type: 'button', text: '匯出備份', onclick: exportBackup }),
-      h('button.btn.btn-quiet.btn-sm', { type: 'button', text: '設定', onclick: openSettings }),
-      themeButton(),
-    ),
-  );
-  els.meta = h('p.built', { text: '' });
-  foot.append(els.meta);
-  rail.append(foot);
+  const more = moreMenu();
+  rail.append(h('div.rail-foot', {}, more));
 
   els.main = document.getElementById('view');
   els.toasts = document.getElementById('toasts');
@@ -159,7 +154,56 @@ function buildShell() {
   document.getElementById('brand-sub').textContent = '法文複習';
 }
 
-/** 從今天頁或統計頁進入實作練習，科目只活在這次瀏覽器工作階段。 */
+/**
+ * 側欄底部的「更多」：匯出、設定、佈景與題庫資訊。
+ * 這幾樣一週用不到一次，原本常駐在側欄底部，每一頁都在分散注意力。
+ */
+function moreMenu() {
+  const panel = h('div.menu', { id: 'more-menu', popover: 'auto' });
+  const btn = h('button.rail-more', { type: 'button', text: '更多', 'aria-haspopup': 'true' });
+  btn.popoverTargetElement = panel;
+  els.meta = h('p.menu-meta', { text: '' });
+  panel.append(
+    h('div.menu-list', {},
+      h('button.menu-item', { type: 'button', text: '匯出備份', onclick: () => { panel.hidePopover(); exportBackup(); } }),
+      h('button.menu-item', { type: 'button', text: '設定', onclick: () => { panel.hidePopover(); openSettings(); } }),
+    ),
+    h('hr.menu-sep'),
+    h('p.scope-h', { id: 'theme-h', text: '佈景' }),
+    themeSwitch(),
+    h('hr.menu-sep'),
+    els.meta,
+  );
+  anchor(panel, btn, 'up');
+  document.body.append(panel);
+  return btn;
+}
+
+/**
+ * 把 popover 貼在觸發鈕旁邊。沒用 CSS anchor positioning：
+ * 這個 App 也會在 Safari 裡開，量一次矩形比較穩。
+ * up 往上開（側欄底部的選單），否則往下開、右緣對齊按鈕。
+ */
+function anchor(panel, btn, dir = 'down') {
+  panel.addEventListener('beforetoggle', (ev) => {
+    if (ev.newState !== 'open') return;
+    const r = btn.getBoundingClientRect();
+    const gap = 6;
+    if (dir === 'up') {
+      panel.style.left = `${Math.max(gap, r.left)}px`;
+      panel.style.bottom = `${window.innerHeight - r.top + gap}px`;
+      panel.style.top = 'auto';
+      panel.style.right = 'auto';
+    } else {
+      panel.style.right = `${Math.max(gap, window.innerWidth - r.right)}px`;
+      panel.style.top = `${r.bottom + gap}px`;
+      panel.style.left = 'auto';
+      panel.style.bottom = 'auto';
+    }
+  });
+}
+
+/** 從今天頁或進度頁進入實作練習，科目只活在這次瀏覽器工作階段。 */
 function openPractice(skill, { guided = false } = {}) {
   if (!['CE', 'PE', 'CO', 'PO'].includes(skill)) return;
   state.practiceSkill = skill;
@@ -184,10 +228,12 @@ function takeReviewPreset() {
 /**
  * 範圍篩選。用真的 checkbox，只是把外觀換掉——
  * 自己用 div 做開關，鍵盤與螢幕閱讀器就得全部自己補，做不完也做不對。
+ *
+ * 面板只建一次，各頁用 scopeMenu() 借去放進自己的選單。勾選狀態因此不會跟著頁面重建而丟失。
  */
 function scopePanel() {
   const box = h('div.scope');
-  // 「今天」頁按下去會直接改題型範圍，勾選框得跟著動，不然側欄會跟實際範圍說兩套話。
+  // 「今天」頁按下去會直接改題型範圍，勾選框得跟著動，不然選單會跟實際範圍說兩套話。
   els.toggles = new Map();
   // 這兩個字是勾選群組的名字，不是文件的一節。用 h2 的話，讀屏的標題清單會多出兩個
   // 底下沒有內文的「節」，而勾選框本身反而沒有被念出屬於哪一組。
@@ -207,6 +253,44 @@ function scopePanel() {
   return box;
 }
 
+/**
+ * 給吃範圍的頁面放在頁首的「範圍」鈕。
+ * 勾選當下只記下來，選單關掉時才重畫頁面：邊勾邊重畫的話，
+ * 選單會跟著頁面一起被拆掉，勾第二個就得再打開一次。
+ */
+function scopeMenu() {
+  const panel = h('div.menu', { popover: 'auto' }, els.scope);
+  const label = h('span', { text: scopeLabel() });
+  const btn = h('button.btn.btn-sm.scope-btn', { type: 'button', 'aria-haspopup': 'true' }, '範圍：', label);
+  btn.popoverTargetElement = panel;
+  if (isNarrowed()) btn.dataset.narrowed = '';
+  anchor(panel, btn, 'down');
+  const before = JSON.stringify(state.scope);
+  panel.addEventListener('toggle', (ev) => {
+    if (ev.newState !== 'closed') return;
+    if (JSON.stringify(state.scope) === before) return;
+    refreshBadge();
+    // 複習頁換範圍就是整批重抓，正在看的那張卡會直接換掉；不說一聲會像是卡被跳過了。
+    if (state.page === 'review') toast('已換範圍，這一批卡依新範圍重抓');
+    go(state.page, { force: true });
+  });
+  document.body.append(panel);
+  // 頁面換掉時選單也要跟著走，不然 body 底下會積一疊沒有主人的 popover。
+  els.popovers.push(panel);
+  return btn;
+}
+
+function isNarrowed() {
+  return state.scope.kinds.length > 0 || state.scope.levels.length > 0;
+}
+
+function scopeLabel() {
+  const { kinds, levels } = state.scope;
+  if (!isNarrowed()) return '全部';
+  const k = kinds.length === 1 ? KINDS.find((x) => x.id === kinds[0]).label : kinds.length ? `${kinds.length} 種題型` : null;
+  return [k, levels.length ? levels.join('／') : null].filter(Boolean).join('・');
+}
+
 function toggle(label, group, value) {
   const input = h('input', {
     type: 'checkbox',
@@ -218,10 +302,6 @@ function toggle(label, group, value) {
       else list.push(value);
       saveScope();
       updateScopeNote();
-      go(state.page, { force: true });
-      refreshBadge();
-      // 複習頁換範圍就是整批重抓，正在看的那張卡會直接換掉；不說一聲會像是卡被跳過了。
-      if (state.page === 'review') toast('已套用新範圍，這一批卡依新範圍重抓；作答紀錄不受影響');
     },
   });
   els.toggles.set(`${group}:${value}`, input);
@@ -246,8 +326,8 @@ function setScope(kinds) {
 function updateScopeNote() {
   const { kinds, levels } = state.scope;
   els.scopeNote.textContent = !kinds.length && !levels.length
-    ? '目前是全部題型與程度。'
-    : `只練 ${[kinds.length ? `${kinds.length} 種題型` : null, levels.length ? levels.join('／') : null].filter(Boolean).join('・')}。`;
+    ? '都不勾就是全部題型與程度。'
+    : `只練 ${[kinds.length ? `${kinds.length} 種題型` : null, levels.length ? levels.join('／') : null].filter(Boolean).join('・')}。關掉選單後套用。`;
 }
 
 function scopeQuery() {
@@ -297,12 +377,15 @@ function go(id, { force = false } = {}) {
   state.cleanup = null;
   state.page = page.id;
 
-  for (const [pid, { a }] of els.tabs) {
-    if (pid === page.id) a.setAttribute('aria-current', 'page');
+  for (const { a, pages } of els.tabs.values()) {
+    if (pages.includes(page.id)) a.setAttribute('aria-current', 'page');
     else a.removeAttribute('aria-current');
   }
   document.title = `${page.label} · cadence`;
-  setScopeVisible(page);
+  // 上一頁借走的範圍面板先收回來，popover 本身丟掉。
+  for (const p of els.popovers) p.remove();
+  els.popovers = [];
+  setFocus(false);
 
   // 上一頁留在 live region 的句子（例如批改結果）不清掉，讀屏換頁後可能再念一次。
   announce('');
@@ -314,16 +397,10 @@ function go(id, { force = false } = {}) {
   window.scrollTo(0, 0);
 }
 
-/**
- * 篩選面板只在真的吃 scope 的頁面出現。
- *
- * 用 hidden 而不是每次重建：勾選狀態要留著，切回「複習」時側欄得跟切走之前一樣。
- * inert 一起下，免得面板收起來之後 Tab 還跳得進去。
- */
-function setScopeVisible(page) {
-  if (!els.scope) return;
-  els.scope.hidden = !page.scoped;
-  els.scope.inert = !page.scoped;
+/** 專注模式：導覽整條收起來。只有複習頁在出卡時會開。 */
+function setFocus(on) {
+  if (on) document.body.dataset.focus = '';
+  else delete document.body.dataset.focus;
 }
 
 /* ── 到期數量 ─────────────────────────────────────────────────── */
@@ -343,7 +420,7 @@ async function refreshBadge() {
 function setBadge(due) {
   const entry = els.tabs.get('review');
   if (!entry?.badge) return;
-  entry.badge.textContent = due > 99 ? '99+' : String(due);
+  entry.badge.textContent = due > 999 ? '999+' : due.toLocaleString('zh-Hant');
   entry.badge.hidden = !due;
   entry.a.setAttribute('aria-label', due ? `複習，${due} 張到期` : '複習');
 }
@@ -422,13 +499,13 @@ function openSettings() {
     h('h2', { text: '設定' }),
 
     field('目標記憶率', h('div.range-row', {}, retention, retOut),
-      '排程時要維持的答對率。調高複習變密、總量變大；調低省時間但忘得多。FSRS 預設 0.90。'),
+      '排程要維持的答對率。調高，複習更密、量更大；調低，省時間但忘得多。FSRS 預設 0.90。'),
 
     field('每天新卡上限', freshRow,
-      '一天最多引入幾張沒學過的卡。今天學的每一張，未來幾週都會回來找你——不設上限時，到期量會跟著學的量一起變大，推演頁算得出會多多少。'),
+      '一天最多學幾張新卡。學過的卡之後幾週都會回來，不設上限時到期量會跟著變大；會多多少，「進度 › 推演」算得出來。'),
 
     field('考試日期', exam,
-      '推演頁的預設日期。留空表示還沒有確定的考試。'),
+      '「進度 › 推演」的預設日期。還沒報名就留空。'),
 
     err,
     h('div.sheet-foot', {},
@@ -489,27 +566,26 @@ function fmtPct(x) {
 
 /* ── 佈景與提示 ───────────────────────────────────────────────── */
 
-function themeButton() {
-  const btn = h('button.btn.btn-quiet.btn-sm.theme', { type: 'button' });
+function themeSwitch() {
+  const modes = [['auto', '跟隨系統'], ['light', '淺色'], ['dark', '深色']];
+  const box = h('div.seg', { role: 'group', 'aria-labelledby': 'theme-h' });
   const paint = () => {
-    const mode = document.documentElement.dataset.theme ?? 'auto';
-    clear(btn);
-    // 跟隨系統時畫太陽，會被讀成「現在是淺色」。
-    btn.append(icon(mode === 'auto' ? 'monitor' : (mode === 'dark' ? 'moon' : 'sun')),
-      h('span', { text: mode === 'auto' ? '跟隨系統' : (mode === 'dark' ? '深色' : '淺色') }));
-    btn.setAttribute('aria-label', `佈景：${mode === 'auto' ? '跟隨系統' : (mode === 'dark' ? '深色' : '淺色')}，按一下切換`);
-  };
-  btn.addEventListener('click', () => {
-    const order = ['auto', 'light', 'dark'];
     const now = document.documentElement.dataset.theme ?? 'auto';
-    const next = order[(order.indexOf(now) + 1) % order.length];
-    if (next === 'auto') delete document.documentElement.dataset.theme;
-    else document.documentElement.dataset.theme = next;
-    try { localStorage.setItem(THEME_KEY, next); } catch { /* 同上，不影響資料 */ }
-    paint();
-  });
+    for (const b of box.children) b.setAttribute('aria-pressed', String(b.dataset.mode === now));
+  };
+  for (const [mode, label] of modes) {
+    box.append(h('button', {
+      type: 'button', text: label, dataset: { mode },
+      onclick: () => {
+        if (mode === 'auto') delete document.documentElement.dataset.theme;
+        else document.documentElement.dataset.theme = mode;
+        try { localStorage.setItem(THEME_KEY, mode); } catch { /* 寫不進去只是下次回到跟隨系統，不影響資料 */ }
+        paint();
+      },
+    }));
+  }
   paint();
-  return btn;
+  return box;
 }
 
 /**
