@@ -16,6 +16,8 @@
 
 import { h, clear, icon, announce } from './dom.mjs';
 import { api } from './net.mjs';
+import { requireSession, signOut } from './auth.mjs';
+import { isCloudRuntime } from './runtime.mjs';
 import { todayView } from './today.mjs';
 import { reviewView } from './review.mjs';
 import { statsView } from './stats.mjs';
@@ -23,6 +25,7 @@ import { forecastView } from './forecast.mjs';
 import { browseView } from './browse.mjs';
 import { practiceView } from './practice.mjs';
 import { mockView } from './mock.mjs';
+import { resourcesView } from './resources.mjs';
 
 // scoped 標的是「這一頁的內容真的會跟著側欄的題型／程度變」。
 // 沒標的兩頁各有理由：「今天」問的是今天整體該做什麼，本來就要看全部四科；
@@ -35,6 +38,7 @@ const PAGES = [
   { id: 'stats', label: '統計', icon: 'chart', view: statsView, scoped: true },
   { id: 'forecast', label: '推演', icon: 'route', view: forecastView, scoped: true },
   { id: 'browse', label: '查詢', icon: 'find', view: browseView, scoped: false },
+  { id: 'resources', label: 'B2 資源', icon: 'library', view: resourcesView, scoped: false },
   // 工作台由今天／統計頁帶著科目進入，不佔用主要導覽的五個固定位置。
   { id: 'practice', label: '練習工作台', icon: 'cards', view: practiceView, scoped: false, nav: false },
   { id: 'mock', label: '模考紀錄', icon: 'chart', view: mockView, scoped: false, nav: false },
@@ -97,6 +101,8 @@ function applyStoredTheme() {
 }
 
 async function boot() {
+  const session = await requireSession();
+  if (!session) return;
   buildShell();
   window.addEventListener('hashchange', () => {
     const id = hashPage();
@@ -110,6 +116,10 @@ async function boot() {
     state.settings = s.settings;
     state.meta = s.meta;
     els.meta.textContent = metaLine(s);
+    if (isCloudRuntime() && !s.cloudReady) {
+      renderCloudWaiting();
+      return;
+    }
     // 側欄的數字要跟著篩選範圍走，summary 的 dueNow 是全題庫的，不能直接用。
     refreshBadge();
   } catch (err) {
@@ -141,6 +151,7 @@ function buildShell() {
     h('div.rail-actions', {},
       h('button.btn.btn-quiet.btn-sm', { type: 'button', text: '匯出備份', onclick: exportBackup }),
       h('button.btn.btn-quiet.btn-sm', { type: 'button', text: '設定', onclick: openSettings }),
+      isCloudRuntime() ? h('button.btn.btn-quiet.btn-sm', { type: 'button', text: '登出', onclick: signOut }) : null,
       themeButton(),
     ),
   );
@@ -157,6 +168,27 @@ function buildShell() {
     els.main.focus();
   });
   document.getElementById('brand-sub').textContent = '法文複習';
+}
+
+function renderCloudWaiting() {
+  state.page = 'cloud-setup';
+  els.scope.hidden = true;
+  els.scope.inert = true;
+  for (const { a } of els.tabs.values()) a.removeAttribute('aria-current');
+  clear(els.main);
+  els.main.dataset.page = page.id;
+  els.main.append(h('section.cloud-wait', {},
+    h('p.eyebrow', { text: 'CLOUD READY' }),
+    h('h1', { text: '登入與雲端資料庫已接通' }),
+    h('p', { text: '目前仍是空庫。下一階段會先搬入題庫與 569 筆複習紀錄，核對無誤後才啟用完整學習頁面。' }),
+    h('div.cloud-checks', {},
+      h('p', { text: '帳號驗證　已啟用' }),
+      h('p', { text: '匿名存取　已封鎖' }),
+      h('p', { text: '個人資料　尚未上傳' }),
+    ),
+  ));
+  document.title = '雲端設定 · cadence';
+  els.main.focus();
 }
 
 /** 從今天頁或統計頁進入實作練習，科目只活在這次瀏覽器工作階段。 */
@@ -309,6 +341,11 @@ function go(id, { force = false } = {}) {
   clear(els.main);
   // 每個檢視都需要一個頁面主標題；視覺層級由各頁自己的內容承擔，所以只供讀屏與文件大綱使用。
   els.main.append(h('h1.sr', { text: page.label }));
+  const motion = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (motion) {
+    els.main.classList.remove('page-enter');
+    requestAnimationFrame(() => els.main.classList.add('page-enter'));
+  }
   state.cleanup = page.view(els.main, ctx) ?? null;
   els.main.focus({ preventScroll: true });
   window.scrollTo(0, 0);

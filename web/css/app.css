@@ -22,6 +22,14 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* 兩層很淡的環境光把工作台從「管理後台」拉回紙本學習桌；不承載資訊，暗色也有獨立值。 */
+body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(circle at 78% 4%, var(--paper-glow), transparent 29rem),
+    radial-gradient(circle at 28% 94%, var(--paper-warm), transparent 34rem);
+}
+
 h1, h2, h3 { margin: 0; font-weight: 600; line-height: 1.25; letter-spacing: -0.01em; }
 p { margin: 0; }
 button, input, select { font: inherit; color: inherit; }
@@ -59,37 +67,39 @@ button, input, select { font: inherit; color: inherit; }
 
 .shell {
   display: grid;
-  grid-template-columns: 216px minmax(0, 1fr);
+  grid-template-columns: 244px minmax(0, 1fr);
   min-height: 100dvh;
 }
 
 .rail {
-  position: sticky; top: 0; align-self: start;
-  height: 100dvh; display: flex; flex-direction: column;
-  padding: var(--s5) var(--s3) var(--s4);
-  border-right: 1px solid var(--border);
-  background: var(--surface);
+  position: sticky; top: var(--s3); align-self: start;
+  height: calc(100dvh - var(--s5)); display: flex; flex-direction: column;
+  margin: var(--s3) 0 var(--s3) var(--s3); padding: var(--s5) var(--s3) var(--s4);
+  border: 1px solid var(--border); border-radius: calc(var(--r-card) + 4px);
+  background: var(--surface-glass); box-shadow: var(--shadow-float);
+  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
 }
 
 .brand {
   display: flex; align-items: baseline; gap: var(--s2);
   padding: 0 var(--s2) var(--s5);
 }
-.brand b { font-size: var(--t-lg); font-weight: 600; letter-spacing: -0.02em; }
+.brand b { font-family: var(--font-fr); font-size: var(--t-xl); font-weight: 600; letter-spacing: -0.035em; }
 .brand span { font-size: var(--t-xs); color: var(--text-faint); }
 
-.nav { display: flex; flex-direction: column; gap: 2px; }
+.nav { display: flex; flex-direction: column; gap: var(--s1); }
 
 .nav a {
   display: flex; align-items: center; gap: var(--s3);
-  min-height: 40px; padding: 0 var(--s3);
+  min-height: 42px; padding: 0 var(--s3);
   border-radius: var(--r-control);
   color: var(--text-muted); text-decoration: none;
   transition: background var(--dur-out) var(--ease), color var(--dur-out) var(--ease);
 }
 .nav a:hover { background: var(--sunken); color: var(--text); }
 .nav a[aria-current="page"] {
-  background: var(--accent-weak); color: var(--accent); font-weight: 600;
+  background: var(--accent); color: var(--accent-on); font-weight: 600;
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 .nav a svg { flex: none; width: 18px; height: 18px; }
 .nav .badge {
@@ -97,7 +107,7 @@ button, input, select { font: inherit; color: inherit; }
   border-radius: var(--r-pill); background: var(--accent); color: var(--accent-on);
   font-family: var(--font-num); font-size: var(--t-xs); text-align: center;
 }
-.nav a[aria-current="page"] .badge { background: var(--accent); }
+.nav a[aria-current="page"] .badge { background: var(--accent-on); color: var(--accent); }
 
 .rail-foot {
   margin-top: auto; padding-top: var(--s4);
@@ -106,14 +116,21 @@ button, input, select { font: inherit; color: inherit; }
   font-size: var(--t-xs); color: var(--text-faint);
 }
 
-.main { min-width: 0; padding: var(--s6) var(--s6) var(--s8); }
-.wrap { max-width: 940px; margin: 0 auto; }
+.main { min-width: 0; padding: var(--s7) clamp(var(--s5), 5vw, 76px) var(--s8); }
+.wrap { max-width: 1080px; margin: 0 auto; }
+
+/* 換頁只動一次外層，頁內互動不重播；降低動態偏好時 token 會把時間歸零。 */
+.main.page-enter > :not(.sr) { animation: page-arrive var(--dur-in) var(--ease) both; }
+@keyframes page-arrive {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 
 .page-head {
   display: flex; align-items: flex-end; justify-content: space-between;
   gap: var(--s4); margin-bottom: var(--s5);
 }
-.page-head h1 { font-size: var(--t-2xl); }
+.page-head h1 { font-family: var(--font-fr); font-size: clamp(var(--t-2xl), 3.5vw, var(--t-3xl)); font-weight: 500; letter-spacing: -0.035em; }
 .page-head p { color: var(--text-muted); font-size: var(--t-sm); margin-top: var(--s1); }
 
 /* ---- 元件 ------------------------------------------------------------- */
@@ -123,6 +140,11 @@ button, input, select { font: inherit; color: inherit; }
   border: 1px solid var(--border);
   border-radius: var(--r-card);
   box-shadow: var(--shadow-card);
+}
+
+@media (hover: hover) {
+  .card { transition: border-color var(--dur-in) var(--ease), box-shadow var(--dur-in) var(--ease), transform var(--dur-in) var(--ease); }
+  .card:hover { border-color: color-mix(in srgb, var(--border-strong) 65%, var(--border)); box-shadow: var(--shadow-float); }
 }
 
 .btn {
@@ -298,8 +320,9 @@ button, input, select { font: inherit; color: inherit; }
     flex-wrap: wrap;
     position: sticky; top: 0; z-index: var(--z-sticky);
     height: auto; flex-direction: row; align-items: center; gap: var(--s3);
-    padding: var(--s2) var(--s3);
-    border-right: none; border-bottom: 1px solid var(--border);
+    margin: 0; padding: var(--s2) var(--s3); border-radius: 0;
+    border: 0; border-bottom: 1px solid var(--border); box-shadow: none;
+    background: var(--surface); backdrop-filter: none; -webkit-backdrop-filter: none;
   }
   .brand { padding: 0; }
   .brand span { display: none; }
@@ -310,14 +333,14 @@ button, input, select { font: inherit; color: inherit; }
   .nav {
     position: fixed; inset: auto 0 0 0; z-index: var(--z-sticky);
     flex-direction: row; gap: 0;
-    padding: var(--s1) var(--s2);
+    padding: var(--s1) max(var(--s2), env(safe-area-inset-left));
     padding-bottom: calc(var(--s1) + env(safe-area-inset-bottom));
     background: var(--surface); border-top: 1px solid var(--border);
   }
   .nav a {
     position: relative; flex: 1 1 0; min-width: 0;
     flex-direction: column; justify-content: center; gap: 2px;
-    min-height: 46px; padding: 0 var(--s1);
+    min-height: 48px; padding: 0 2px;
     font-size: var(--t-xs);
   }
   .nav a .label { white-space: nowrap; }
@@ -335,6 +358,60 @@ button, input, select { font: inherit; color: inherit; }
   /* toast 也要避開底部導覽，不然批改結果會被蓋掉一半。 */
   .toasts { bottom: calc(var(--s5) + 60px + env(safe-area-inset-bottom)); }
   /* 底部導覽是 fixed，內容要自己讓出那一條的高度，否則最後一列永遠被蓋住。 */
-  .main { padding: var(--s4) var(--s4) calc(var(--s8) + 60px + env(safe-area-inset-bottom)); }
+  .main { padding: var(--s5) var(--s4) calc(var(--s8) + 60px + env(safe-area-inset-bottom)); }
   .page-head { flex-direction: column; align-items: stretch; }
+}
+
+/* ---- 雲端登入與搬移狀態 --------------------------------------------- */
+
+.auth-mode .shell { grid-template-columns: minmax(0, 1fr); }
+.auth-mode .rail {
+  position: fixed; inset: 0 auto auto 0; z-index: var(--z-sticky);
+  width: auto; height: auto; padding: var(--s5);
+  margin: 0; border: 0; border-radius: 0; box-shadow: none; background: transparent;
+}
+.auth-mode .brand { padding: 0; text-decoration: none; color: var(--text); }
+.auth-mode .main {
+  min-height: 100dvh; display: grid; place-items: center;
+  padding: var(--s8) var(--s5);
+}
+.auth-wrap { width: min(100%, 430px); }
+.auth-card {
+  display: flex; flex-direction: column; gap: var(--s3);
+  padding: var(--s6);
+}
+.auth-card h1 { margin-bottom: var(--s1); font-size: var(--t-2xl); text-wrap: balance; }
+.auth-card label { margin-top: var(--s2); font-size: var(--t-sm); font-weight: 600; }
+.auth-card .btn { margin-top: var(--s2); }
+.auth-lead { max-width: 38ch; color: var(--text-muted); text-wrap: pretty; }
+.auth-switch {
+  align-self: center; padding: var(--s1) var(--s2); border: 0; background: transparent;
+  color: var(--accent); font: inherit; font-size: var(--t-sm); cursor: pointer;
+}
+.auth-switch:hover { text-decoration: underline; text-underline-offset: 3px; }
+.field-note { margin-top: calc(-1 * var(--s2)); color: var(--text-faint); font-size: var(--t-xs); }
+.field-success { color: var(--good); font-size: var(--t-sm); }
+.eyebrow {
+  color: var(--accent); font: 600 var(--t-xs)/1.2 var(--font-num);
+  letter-spacing: .09em;
+}
+
+.cloud-wait { max-width: 680px; margin: clamp(var(--s6), 10vh, 120px) auto 0; }
+.cloud-wait h1 { margin: var(--s3) 0; font-size: clamp(var(--t-2xl), 5vw, var(--t-3xl)); text-wrap: balance; }
+.cloud-wait > p:not(.eyebrow) { max-width: 58ch; color: var(--text-muted); }
+.cloud-checks {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s2); margin-top: var(--s6);
+}
+.cloud-checks p {
+  padding: var(--s3); border-top: 2px solid var(--accent);
+  background: var(--surface); color: var(--text-muted); font-size: var(--t-sm);
+}
+
+@media (max-width: 620px) {
+  .auth-mode .rail { padding: var(--s4); }
+  .auth-mode .brand span { display: inline; }
+  .auth-mode .main { padding: var(--s8) var(--s4) var(--s5); }
+  .auth-card { padding: var(--s5); }
+  .cloud-checks { grid-template-columns: 1fr; }
 }

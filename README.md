@@ -1,8 +1,9 @@
 # cadence
 
-本地法文複習工作台。把已經存在的詞彙表、變位表與連接詞筆記，變成每天真的會打開的東西。
+法文複習工作台。把已經存在的詞彙表、文法規則、四科實作與 B2 資源，變成每天真的會打開的東西。
 
-沒有帳號、沒有雲端、沒有第三方套件。`npm start` 之後在 `http://127.0.0.1:4173` 打開，全部跑在這台機器上。
+同一份原生 ESM 前端有兩種執行模式：`npm start` 使用本機 SQLite／JSONL；正式站使用
+Vercel Functions、Supabase Auth 與 Postgres。兩邊都維持零第三方 npm 依賴。
 
 ```bash
 npm run build     # 手動從四個資料來源重建題庫（平常啟動時會自動檢查）
@@ -27,13 +28,14 @@ npm start         # 啟動伺服器並打開瀏覽器
 | 挑連接詞 | 75 | 四選一 |
 | 連接詞 | 50 | 這個連接詞後面接直陳式還是虛擬式 |
 
-五個檢視：
+六個檢視：
 
 - **今天** — DELF 四科各列一行，今天各要做什麼。預設落地頁。
 - **複習** — 今天該做的卡。打字題即時批改，錯法分成拼錯與漏重音，大小寫不算錯。
 - **統計** — 各類別進度、練習頻率熱力圖、最弱的卡、錯誤類型分布、未來 30 天工作量。
 - **推演** — 給一個考試日期，模擬到那天為止的每日負擔與預期記得的張數。
 - **查詢** — 查一個字，看它的釋義、詞性、等級與完整變位表。
+- **B2 資源** — 經日期查證的免費來源、四科篩選與可直接進入工作台的一週行動計畫。
 
 「今天」與「統計」另有兩個次級工作台：CE／PE／CO／PO 實作練習，以及四科模考紀錄。
 PE 有計時草稿與字數，CO 可播放本機音檔，PO 可在瀏覽器錄音回聽；聲音不會上傳或寫進紀錄。
@@ -90,7 +92,29 @@ A1 的單字不再出新卡（`src/db.mjs` 的 `ACTIVE_LEVELS`），但有兩個
 今天、複習、統計、推演與 `npm run stats` 都用這同一個範圍，數字對得起來。側欄明確勾了 A2 或 B1 時只照勾的。
 舊版的「新卡從哪一級開始」設定因此拿掉了，`/api/settings` 收到非 null 的 `startLevel` 會回 400。
 
-## 資料的存法
+## 雲端正式版
+
+Vercel 只部署 `web/`、白名單內的 `study/` 文件與同網域 `/api/*`。瀏覽器不直接持有
+Supabase token；登入狀態放在 HttpOnly、SameSite Cookie，伺服器端再以使用者 JWT 走 RLS。
+正式站只允許第一位 Supabase Auth 使用者，應先建立擁有者再開放登入。
+
+```bash
+# 依檔名順序套用 supabase/migrations/*.sql，建立表、RLS、查詢函式與 B2 資源索引。
+# 接著在 Vercel 設定：
+SUPABASE_URL=
+SUPABASE_PUBLISHABLE_KEY=
+CADENCE_OWNER_EMAIL=
+CADENCE_TOKEN_SECRET=   # 64 位十六進位亂數，只放 Production／Preview Secret
+
+npm run build:web
+vercel deploy --prod
+```
+
+一次性搬移用 `scripts/cloud-import.mjs`。它從本機資料建立快照後分批上傳；
+`reviews.jsonl` 的 569 筆歷史全部保留。Verbiste 衍生的變位卡與變位表不進雲端，
+相關事件仍以原始 payload 留在歷史中，避免把 GPL-2.0 衍生資料混入未隔離的正式題庫。
+
+## 本機資料的存法
 
 ```
 data/reviews.jsonl   每次作答一行 JSON，只增不改。事實來源，進版控。
@@ -145,11 +169,12 @@ cadence doctor    [--json]                    檢查資料來源、題庫、索�
 ## 開發
 
 ```bash
-npm test      # 270 題，含 732 組 FSRS 黃金向量
+npm test      # 282 題，含 732 組 FSRS 黃金向量
 npm run lint  # node --check 全檔語法檢查
+npm run build:web  # 產生 Vercel 的 dist/
 ```
 
-零執行期依賴，零建置步驟。Node ≥ 24（用到內建的 `node:sqlite`）。
+零第三方依賴。本機模式直接載入 `web/`；雲端模式只有一個複製白名單檔案的建置步驟。Node 24.x（用到內建的 `node:sqlite`）。
 測試裡有四題會呼叫 `python3`：名詞化的排除清單與構詞規則是從
 `french-exam-generator/tools/nominalize.py` 照抄的，那四題直接跑原生版本比對，
 改一邊就紅。沒有 `python3` 或那個檔不在的機器上，那四題跳過，其餘照跑。前端是原生 ESM 加手寫 CSS，瀏覽器直接載 `web/js/*.mjs`，沒有打包器。

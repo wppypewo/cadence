@@ -4,7 +4,7 @@
   "description": "本地法文複習工作台：把已經存在的詞彙表、變位表與連接詞規則變成每天真的會打開的東西",
   "type": "module",
   "private": true,
-  "engines": { "node": ">=24" },
+  "engines": { "node": "24.x" },
   "bin": { "cadence": "./bin/cadence.mjs" },
   "scripts": {
     "start": "node bin/cadence.mjs serve",
@@ -12,8 +12,9 @@
     "reindex": "node bin/cadence.mjs reindex",
     "stats": "node bin/cadence.mjs stats",
     "doctor": "node bin/cadence.mjs doctor",
+    "build:web": "node scripts/build-web.mjs",
     "test": "node --test 'tests/*.test.mjs'",
-    "lint": "node --check bin/cadence.mjs && for f in src/*.mjs src/*/*.mjs web/js/*.mjs tests/*.mjs; do node --check \"$f\" || exit 1; done && bash -n cadence.command"
+    "lint": "node --check bin/cadence.mjs && for f in src/*.mjs src/*/*.mjs web/js/*.mjs api/*.mjs scripts/*.mjs tests/*.mjs; do node --check \"$f\" || exit 1; done && bash -n cadence.command"
   },
   "dependencies": {},
   "devDependencies": {}
