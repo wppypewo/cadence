@@ -21,7 +21,7 @@
 改動前後都要綠：
 
 ```bash
-npm run lint   # node --check 全檔 ＋ bash -n cadence.command
+npm run lint   # node --check 全檔
 npm test       # 275 題，含 732 組 FSRS 黃金向量
 npm run doctor # 四個外部來源、題庫、索引三邊對帳
 ```
