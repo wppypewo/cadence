@@ -16,6 +16,13 @@ import path from 'node:path';
 
 export const FACT_FILES = ['data/reviews.jsonl', 'data/checkins.jsonl', 'data/attempts.jsonl'];
 
+function gitAt(root) {
+  return (...args) => execFileSync('git', ['-C', root, ...args], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+}
+
 /**
  * @param {string} root repo 根目錄
  * @param {string[]} [files] 相對於 root 的路徑
@@ -23,10 +30,7 @@ export const FACT_FILES = ['data/reviews.jsonl', 'data/checkins.jsonl', 'data/at
  *          只列有差異的檔；空陣列代表全都已 commit。
  */
 export function uncommittedFacts(root, files = FACT_FILES) {
-  const git = (...args) => execFileSync('git', ['-C', root, ...args], {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'ignore'],
-  });
+  const git = gitAt(root);
   try {
     git('rev-parse', '--verify', 'HEAD');
   } catch {
@@ -49,6 +53,40 @@ export function uncommittedFacts(root, files = FACT_FILES) {
     if (!stat) continue;
     const [added, removed] = stat.split('\t').map(Number);
     if (added || removed) out.push({ file, added, removed, untracked: false });
+  }
+  return out;
+}
+
+/**
+ * 事實檔有幾行還沒出現在指定的 git ref。
+ *
+ * `origin/main` 是「另一台機器拿得到」的最低可驗證門檻；只看 HEAD 會把尚未 push 的
+ * commit 誤稱為已備份。沒有遠端 ref 時回 null，不把未知狀態說成安全。
+ * 這裡刻意不連網：比的是本機快取的 refs/remotes，別處推過而本機沒 fetch 時會多報（保守），
+ * 但遠端 repo 被刪時快取還在、會少報。要確定遠端真的有，用 `git ls-remote`。
+ */
+export function factsSinceRef(root, ref = 'origin/main', files = FACT_FILES) {
+  const git = gitAt(root);
+  try {
+    git('rev-parse', '--verify', ref);
+  } catch {
+    return null;
+  }
+
+  const out = [];
+  for (const file of files) {
+    const abs = path.join(root, file);
+    if (!existsSync(abs)) continue;
+    const trackedAtRef = git('ls-tree', '-r', '--name-only', ref, '--', file).trim() !== '';
+    if (!trackedAtRef) {
+      const lines = readFileSync(abs, 'utf8').split('\n').filter((line) => line.trim()).length;
+      if (lines) out.push({ file, added: lines, removed: 0, newSinceRef: true });
+      continue;
+    }
+    const stat = git('diff', '--numstat', ref, '--', file).trim();
+    if (!stat) continue;
+    const [added, removed] = stat.split('\t').map(Number);
+    if (added || removed) out.push({ file, added, removed, newSinceRef: false });
   }
   return out;
 }

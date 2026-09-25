@@ -2,7 +2,7 @@
 
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { uncommittedFacts } from './facts-git.mjs';
+import { factsSinceRef, uncommittedFacts } from './facts-git.mjs';
 
 const FILES = ['reviews.jsonl', 'checkins.jsonl', 'attempts.jsonl', 'settings.json'];
 
@@ -25,11 +25,15 @@ export function backupStatus(dataDir) {
     }];
   }));
   const root = path.dirname(dataDir);
-  const tracked = path.basename(dataDir) === 'data' ? uncommittedFacts(root) : null;
+  const inRepo = path.basename(dataDir) === 'data';
+  const uncommitted = inRepo ? uncommittedFacts(root) : null;
+  const unpublished = inRepo ? factsSinceRef(root) : null;
   return {
     files,
-    pendingFacts: tracked?.reduce((sum, item) => sum + item.added, 0) ?? null,
-    gitAvailable: tracked !== null,
+    uncommittedFacts: uncommitted?.reduce((sum, item) => sum + item.added, 0) ?? null,
+    unpublishedFacts: unpublished?.reduce((sum, item) => sum + item.added, 0) ?? null,
+    gitAvailable: uncommitted !== null,
+    remoteAvailable: unpublished !== null,
   };
 }
 

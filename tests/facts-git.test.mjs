@@ -10,7 +10,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { uncommittedFacts } from '../src/facts-git.mjs';
+import { factsSinceRef, uncommittedFacts } from '../src/facts-git.mjs';
 
 let hasGit = true;
 try {
@@ -65,6 +65,31 @@ test('數得出追加了幾行、少了幾行，還沒進版控的打卡與練�
     // 只增不改的檔少了行，要被看見。
     writeFileSync(reviews, '{"a":1}\n');
     assert.deepEqual(uncommittedFacts(dir)[0], { file: 'data/reviews.jsonl', added: 0, removed: 1, untracked: false });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('未推送行數以遠端 ref 為準，已 commit 但未 push 仍算', { skip: !hasGit }, () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'cadence-git-'));
+  try {
+    git(dir, 'init', '-q');
+    mkdirSync(path.join(dir, 'data'));
+    const reviews = path.join(dir, 'data', 'reviews.jsonl');
+    writeFileSync(reviews, '{"a":1}\n');
+    git(dir, 'add', 'data/reviews.jsonl');
+    git(dir, 'commit', '-q', '-m', 'remote snapshot');
+    git(dir, 'branch', 'origin/main');
+
+    appendFileSync(reviews, '{"a":2}\n');
+    git(dir, 'add', 'data/reviews.jsonl');
+    git(dir, 'commit', '-q', '-m', 'local only');
+    appendFileSync(reviews, '{"a":3}\n');
+
+    assert.deepEqual(factsSinceRef(dir), [
+      { file: 'data/reviews.jsonl', added: 2, removed: 0, newSinceRef: false },
+    ]);
+    assert.equal(factsSinceRef(dir, 'missing/ref'), null);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

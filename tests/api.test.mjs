@@ -397,17 +397,17 @@ test('review 缺 cardId 是 400，卡片不存在是 404', async () => {
 test('settings 擋掉超出範圍的值，合法的值寫得進去', async () => {
   const [api, store, dir] = await open();
   try {
-    assert.deepEqual(api.settings(null), { desiredRetention: 0.9, dailyNewLimit: 15, examDate: null, startLevel: null });
+    assert.deepEqual(api.settings(null), { desiredRetention: 0.9, dailyNewLimit: 15, examDate: null });
 
     const saved = api.settings({ desiredRetention: 0.85, dailyNewLimit: 30, examDate: '2026-12-01', startLevel: null });
-    assert.deepEqual(saved, { desiredRetention: 0.85, dailyNewLimit: 30, examDate: '2026-12-01', startLevel: null });
+    assert.deepEqual(saved, { desiredRetention: 0.85, dailyNewLimit: 30, examDate: '2026-12-01' });
 
     // null 是不設上限。Number(null) 是 0，若誤丟給 clampInt 就會變成「一張都不給」。
     assert.equal(api.settings({ dailyNewLimit: null }).dailyNewLimit, null);
     assert.equal(api.settings({ dailyNewLimit: 20 }).dailyNewLimit, 20);
     assert.equal(caught(() => api.settings({ startLevel: 'C1' })).status, 400);
     assert.equal(caught(() => api.settings({ startLevel: 'A1' })).status, 400);
-    assert.equal(api.settings({ startLevel: null }).startLevel, null);
+    assert.deepEqual(api.settings({ startLevel: null }), api.settings(null));
     assert.equal(store.desiredRetention, 0.85);
 
     // 0.98 以上的目標記憶率會讓間隔塌成每天複習，擋掉比讓人踩進去好。
@@ -655,7 +655,7 @@ test('A1 單字不出新卡，但 A1 變位照出、學過的 A1 卡照常到期
     assert.equal(q.cards.some((card) => card.level === 'A1' && card.kind !== 'conj'), false);
     assert.equal(q.cards.some((card) => card.kind === 'conj' && card.level === 'A1'), true);
     assert.equal(q.remaining.new, BANK.length + 1);
-    assert.equal(api.today().startLevel, null);
+    assert.equal('startLevel' in api.today(), false);
     assert.equal(api.summary().totalCards, BANK.length + 1);
     assert.equal(api.search({ q: 'bonjour' }).hits[0].card.level, 'A1');
 

@@ -407,32 +407,12 @@ test('每日新卡上限設成 null 就不設上限，queue 用滿整批', async
   }
 });
 
-test('起始等級只擋新卡：低級新卡不出，已學過的低級卡照常到期，側欄明確勾選時以勾選為準', async () => {
+test('舊 startLevel 設定不再暗中縮小新卡範圍', async () => {
   const [store, dir] = await open();
   try {
-    const now = new Date(2026, 8, 9, 12, 0);
-    store.review({ cardId: 'a1-recall-1', rating: 1, correct: false, at: now });
-    const tomorrow = new Date(now.getTime() + DAY_MS);
     store.set('startLevel', 'A2');
-    assert.equal(store.startLevel, 'A2');
-
-    const q = store.queue({ limit: 10, now: tomorrow });
-    assert.equal(q[0].id, 'a1-recall-1');
-    assert.deepEqual(q.filter((c) => c.state === null).map((c) => c.level), ['A2', 'A2']);
-    assert.equal(store.newCount(), 2);
-
-    // 側欄只勾 A1：那是當下的明確指示，起始等級讓位。
-    const onlyA1 = store.queue({ limit: 10, now: tomorrow, levels: ['A1'] });
-    assert.deepEqual(onlyA1.filter((c) => c.state === null).map((c) => c.id).sort(), ['a1-conj-1', 'a1-recall-2']);
-
-    // byKind 的 fresh 扣掉起始等級以下的，total - seen 不扣。
-    const recall = store.byKind({}, tomorrow).find((r) => r.kind === 'vocab-recall');
-    assert.equal(recall.total - recall.seen, 2);
-    assert.equal(recall.fresh, 1);
-
-    // 不認得的值當成沒設，不會讓整個佇列空掉。
-    store.set('startLevel', 'C1');
-    assert.equal(store.startLevel, null);
+    assert.equal(store.newCount(), 5);
+    assert.equal(store.queue({ limit: 10 }).filter((c) => c.state === null).length, 5);
   } finally {
     cleanup(store, dir);
   }
@@ -573,7 +553,6 @@ test('設定另存 JSON，刪掉可重建的 SQLite 後仍能恢復', async () =
     store.set('desiredRetention', 0.86);
     store.set('dailyNewLimit', 23);
     store.set('examDate', '2027-05-15');
-    store.set('startLevel', 'B1');
     assert.equal(existsSync(path.join(dir, 'settings.json')), true);
     store.close();
     store = null;
@@ -584,7 +563,7 @@ test('設定另存 JSON，刪掉可重建的 SQLite 後仍能恢復', async () =
       assert.equal(restored.desiredRetention, 0.86);
       assert.equal(restored.dailyNewLimit, 23);
       assert.equal(restored.get('examDate'), '2027-05-15');
-      assert.equal(restored.startLevel, 'B1');
+      assert.equal(restored.get('startLevel', null), null);
       // 「不設上限」存成 null，重建後要還是 null，不能變回預設的 15。
       restored.set('dailyNewLimit', null);
     } finally {

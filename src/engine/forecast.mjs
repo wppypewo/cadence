@@ -50,6 +50,38 @@ export function ratingDistribution(rows, minSample = 50) {
   return { hard: counts[2] / total, good: counts[3] / total, easy: counts[4] / total, sample: total };
 }
 
+/** 各題型分開估計；樣本不足的題型回退到全體分布。 */
+export function ratingModel(rows, minKindSample = 20, minGlobalSample = 50) {
+  const byKind = {};
+  for (const kind of new Set(rows.map((row) => row.kind).filter(Boolean))) {
+    const distribution = ratingDistribution(rows.filter((row) => row.kind === kind), minKindSample);
+    if (distribution) byKind[kind] = distribution;
+  }
+  return { default: ratingDistribution(rows, minGlobalSample), byKind };
+}
+
+/**
+ * 新卡第一次評分包含 Again；只有足夠樣本才取代保守的 Good 假設。
+ * 呼叫端應傳入每張卡最早的一筆有效評分，而不是所有複習。
+ */
+export function firstRatingModel(rows, minKindSample = 30) {
+  const byKind = {};
+  for (const kind of new Set(rows.map((row) => row.kind).filter(Boolean))) {
+    const items = rows.filter((row) => row.kind === kind && row.rating >= 1 && row.rating <= 4);
+    if (items.length < minKindSample) continue;
+    const counts = { 1: 0, 2: 0, 3: 0, 4: 0 };
+    for (const row of items) counts[row.rating] += 1;
+    byKind[kind] = {
+      again: counts[1] / items.length,
+      hard: counts[2] / items.length,
+      good: counts[3] / items.length,
+      easy: counts[4] / items.length,
+      sample: items.length,
+    };
+  }
+  return { byKind };
+}
+
 /**
  * 一次考前推演。
  *
@@ -61,8 +93,10 @@ export function ratingDistribution(rows, minSample = 50) {
  * @param {number} opts.dailyLimit  每天最多做幾張（含新卡）
  * @param {number} opts.dailyNew    每天最多學幾張新卡
  * @param {number} opts.desiredRetention
- * @param {{hard:number,good:number,easy:number}|null} opts.ratings
+ * @param {{hard:number,good:number,easy:number}|{default:Object?,byKind:Object}|null} opts.ratings
+ * @param {{byKind:Object}|null} opts.firstRatings 新卡第一次評分分布
  * @param {number} opts.secondsPerCard 每張卡的平均作答秒數，用來換算時間成本
+ * @param {Object<string,number>} [opts.secondsByKind] 各題型作答秒數
  */
 export function simulate(opts) {
   const scheduler = createScheduler({ desiredRetention: opts.desiredRetention ?? 0.9 });
@@ -73,7 +107,9 @@ export function simulate(opts) {
   const dailyNew = opts.dailyNew ?? 15;
   const rnd = mulberry32(opts.seed ?? 0x5eed);
   const ratings = opts.ratings ?? null;
+  const firstRatings = opts.firstRatings ?? null;
   const secondsPerCard = opts.secondsPerCard ?? null;
+  const secondsByKind = opts.secondsByKind ?? {};
 
   // 卡片狀態的可變副本。不動呼叫端傳進來的物件。
   const seen = [];
@@ -83,11 +119,11 @@ export function simulate(opts) {
   let locked = 0;
   for (const c of opts.cards) {
     if (c.stability != null && c.difficulty != null) {
-      seen.push({ id: c.id, s: c.stability, d: c.difficulty, due: startOfDay(new Date(c.due)).getTime(), last: new Date(c.due).getTime() });
+      seen.push({ id: c.id, kind: c.kind, s: c.stability, d: c.difficulty, due: startOfDay(new Date(c.due)).getTime(), last: new Date(c.due).getTime() });
     } else if (c.locked) {
       locked += 1;
     } else {
-      fresh.push({ id: c.id, prerequisite: c.prerequisite ?? null, s: null, d: null, due: null, last: null });
+      fresh.push({ id: c.id, kind: c.kind, prerequisite: c.prerequisite ?? null, s: null, d: null, due: null, last: null });
     }
   }
   // 到期早的先做。逾期越久的卡遺忘越深，優先處理。
@@ -122,7 +158,7 @@ export function simulate(opts) {
     for (const card of doing) {
       const elapsed = (dayStart - card.last) / DAY_MS;
       const r = scheduler.retrievability(card.s, Math.max(0, elapsed));
-      const rating = rnd() < r ? successRating(ratings, rnd) : RATING.AGAIN;
+      const rating = rnd() < r ? successRating(modelFor(ratings, card.kind), rnd) : RATING.AGAIN;
       if (rating === RATING.AGAIN) lapsesToday += 1;
       const next = scheduler.review({ stability: card.s, difficulty: card.d }, rating, Math.max(0, elapsed));
       card.s = next.stability;
@@ -131,20 +167,24 @@ export function simulate(opts) {
       card.due = dayStart + next.intervalDays * DAY_MS;
     }
 
-    // 剩餘額度拿來學新卡。新卡當天必定是第一次見，用 Good 起手；
-    // 這一步不抽樣，因為初次評分反映的是使用者當下的自我判斷，不是記憶狀態。
+    // 剩餘額度拿來學新卡。已有足夠的同題型首次作答時照實抽樣，否則用 Good；
+    // 不能拿大量、較容易的認讀紀錄替名詞化或改寫假設第一次就會答對。
     const room = Math.min(dailyLimit - doing.length, dailyNew);
     let learned = 0;
+    let learnedSeconds = 0;
     while (availableIdx < available.length && learned < room) {
       const card = available[availableIdx];
       availableIdx += 1;
       freshRemaining -= 1;
-      const next = scheduler.review(null, RATING.GOOD, 0);
+      const firstRating = anyRating(modelFor(firstRatings, card.kind), rnd);
+      if (firstRating === RATING.AGAIN) lapsesToday += 1;
+      const next = scheduler.review(null, firstRating, 0);
       card.s = next.stability;
       card.d = next.difficulty;
       card.last = dayStart;
       card.due = dayStart + next.intervalDays * DAY_MS;
       seen.push(card);
+      learnedSeconds += secondsByKind[card.kind] ?? secondsPerCard ?? 0;
       seenIds.add(card.id);
       const unlocked = pending.get(card.id);
       if (unlocked) {
@@ -155,6 +195,8 @@ export function simulate(opts) {
     }
 
     const count = doing.length + learned;
+    const secondsToday = secondsPerCard == null ? null
+      : doing.reduce((sum, card) => sum + (secondsByKind[card.kind] ?? secondsPerCard), learnedSeconds);
     totalReviews += count;
     totalLapses += lapsesToday;
     days.push({
@@ -164,7 +206,7 @@ export function simulate(opts) {
       learned,
       deferred,
       lapses: lapsesToday,
-      minutes: secondsPerCard ? Math.round((count * secondsPerCard) / 60) : null,
+      minutes: secondsToday == null ? null : Math.round(secondsToday / 60),
     });
     seen.sort((a, b) => a.due - b.due);
   }
@@ -189,7 +231,7 @@ export function simulate(opts) {
     examDate: isoDay(exam),
     daysUntilExam: totalDays,
     cardsInScope: inScope,
-    ratingModel: ratings ? 'observed' : 'assumed-good',
+    ratingModel: hasObserved(ratings) ? 'observed' : 'assumed-good',
     dailyLimit,
     dailyNew,
     days,
@@ -273,6 +315,27 @@ function successRating(ratings, rnd) {
   if (x < ratings.hard) return RATING.HARD;
   if (x < ratings.hard + ratings.good) return RATING.GOOD;
   return RATING.EASY;
+}
+
+function anyRating(ratings, rnd) {
+  if (!ratings) return RATING.GOOD;
+  const x = rnd();
+  if (x < ratings.again) return RATING.AGAIN;
+  if (x < ratings.again + ratings.hard) return RATING.HARD;
+  if (x < ratings.again + ratings.hard + ratings.good) return RATING.GOOD;
+  return RATING.EASY;
+}
+
+function modelFor(model, kind) {
+  if (!model) return null;
+  if ('hard' in model) return model;
+  return model.byKind?.[kind] ?? model.default ?? null;
+}
+
+function hasObserved(model) {
+  if (!model) return false;
+  if ('hard' in model) return true;
+  return Boolean(model.default || Object.keys(model.byKind ?? {}).length);
 }
 
 function startOfDay(date) {

@@ -234,20 +234,25 @@ function weeklyCard(alive) {
     }
     if (!alive()) return;
     const range = `${data.from.slice(5)}～${data.to.slice(5)}`;
+    const visible = data.items.slice(0, 8);
+    const hidden = data.items.slice(8);
+    const itemList = (items) => h('ol.weekly-list', {}, items.map((it) => h('li', {},
+      h('span.weekly-label', { lang: 'fr', text: it.label }),
+      h('span.weekly-sub', { text: [KIND_LABEL[it.kind], it.sub].filter(Boolean).join('・') }),
+      h('span.weekly-day.num', { text: it.day.slice(5) }))));
     const body = data.items.length === 0
       ? [h('p.more-empty', { text: `${range} 沒有卡第一次跨過 21 天。` })]
       : [
         h('p.reading-score', {},
           h('span.num.n', { text: num(data.items.length) }),
           h('span.u', { text: `張，${range}` })),
-        h('ol.weekly-list', {}, data.items.map((it) => h('li', {},
-          h('span.weekly-label', { lang: 'fr', text: it.label }),
-          h('span.weekly-sub', { text: [KIND_LABEL[it.kind], it.sub].filter(Boolean).join('・') }),
-          h('span.weekly-day.num', { text: it.day.slice(5) })))),
+        itemList(visible),
+        hidden.length ? h('details.weekly-more', {},
+          h('summary', { text: `再看 ${num(hidden.length)} 張` }), itemList(hidden)) : null,
       ];
     card.append(...body,
       h('p.more-note', {
-        text: `穩了＝穩定度 ≥ 21 天，照模型三週後還記得的機率仍有九成。目前一共穩了 ${num(data.matureTotal)} 張。`,
+        text: `穩了＝穩定度 ≥ 21 天。目前共 ${num(data.matureTotal)} 張。`,
       }));
   }
 }
@@ -569,28 +574,22 @@ function footer(data) {
   const bits = data.newLimit === null
     ? [
       // 不設上限時「今天總共幾張」會把一萬多張沒學過的卡全算進去，那個數沒有意義，所以不寫。
-      `今天到期 ${num(data.dueTotal)} 張；新卡不設上限，今天已學 ${num(data.newToday)} 張。`,
-      // 這是使用者自己選的，但代價要寫在看得到的地方。
-      '新卡幾天內都會回來變成到期卡，累積起來有多少到推演頁算。',
+      `到期 ${num(data.dueTotal)} 張；新卡不設上限，已學 ${num(data.newToday)} 張。`,
     ]
     : [
-      `今天總共 ${num(data.dayTotal)} 張：到期 ${num(data.dueTotal)} 張，新卡最多 ${num(data.newAvailable)} 張（每日上限 ${data.newLimit}，已用 ${data.newToday}）。`,
+      `共 ${num(data.dayTotal)} 張：到期 ${num(data.dueTotal)}，新卡最多 ${num(data.newAvailable)}（已用 ${data.newToday}/${data.newLimit}）。`,
       // 額度共用是上面每一列都不寫總數的原因，所以這句要留在這裡當總解釋。
-      '新卡額度兩科共用，先打開哪一科就先用掉。',
+      '新卡額度由閱讀與寫作共用。',
     ];
   // pendingCards 為 0 已經代表每一科「到期 0、可學新卡 0」，不必再另外看額度。
   if (data.pendingCards === 0) {
-    bits.unshift('卡片的部分今天已經清空了。');
-  }
-  // 起始等級會讓某些新卡永遠不出現。不寫出來的話，A1 那一千多張會像是被弄丟了。
-  if (data.startLevel && data.startLevel !== 'A1') {
-    bits.push(`新卡從 ${data.startLevel} 起，更低等級的新卡不會出現；已經學過的照常複習。`);
+    bits.unshift('卡片已清空。');
   }
   // 卡片做完不等於今天做完：CO／PO 沒有卡片，PE 的卡片也練不到整篇作文。
   // 這句話放在頁尾，因為它問的是「今天還剩什麼」，那正是頁尾在回答的事。
   if (data.pendingChecks > 0) {
     const names = data.tasks.filter((t) => t.checkable && !t.done).map((t) => t.id).join('／');
-    bits.push(`還有 ${data.pendingChecks} 科要完成實作練習或打卡：${names}。`);
+    bits.push(`待實作：${names}。`);
   }
   return h('p.today-foot', { text: bits.join('') });
 }

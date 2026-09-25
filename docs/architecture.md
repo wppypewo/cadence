@@ -2,17 +2,19 @@
 
 ## 一句話
 
-一個 Node HTTP 伺服器把 `web/` 當靜態檔案發出去，另外開十七個 JSON 端點；瀏覽器端是原生 ESM，沒有打包器；資料在三個 append-only 的 JSONL、一份本機設定 JSON 與一個隨時可重建的 SQLite 索引裡。
+一個 Node HTTP 伺服器把 `web/` 當靜態檔案發出去，另外開二十個 JSON 端點；瀏覽器端是原生 ESM，沒有打包器；資料在三個 append-only 的 JSONL、一份本機設定 JSON 與一個隨時可重建的 SQLite 索引裡。
 
 ## 目錄
 
 ```
-bin/cadence.mjs      CLI 入口，六個指令
+bin/cadence.mjs      CLI 入口，七個指令
 src/
   server.mjs         HTTP、路由、靜態檔案
-  api.mjs            十七個端點的實作，不碰 HTTP 細節
+  api.mjs            二十個端點的實作，不碰 HTTP 細節
   db.mjs             SQLite schema、JSONL 讀寫、reindex
   attempts.mjs       四科實作與模考的 JSONL、鏡像與驗證
+  backup.mjs         匯出三份事實檔與設定
+  restore.mjs        只追加的備份還原與預覽
   engine/
     fsrs.mjs         FSRS-6 排程（純函數）
     grade.mjs        打字題批改（前後端共用）

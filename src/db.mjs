@@ -154,6 +154,8 @@ function migrate(db) {
   if (!reviewCols.includes('event_id')) db.exec('ALTER TABLE reviews ADD COLUMN event_id TEXT');
   if (!reviewCols.includes('self_rated')) db.exec('ALTER TABLE reviews ADD COLUMN self_rated INTEGER NOT NULL DEFAULT 0');
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS reviews_event ON reviews(event_id) WHERE event_id IS NOT NULL');
+  // A1 是否出新卡已改由 ACTIVE_CLAUSE 固定規則管理；舊設定若留著會暗中再縮一次範圍。
+  db.exec("DELETE FROM settings WHERE key = 'startLevel'");
 }
 
 /**
@@ -179,13 +181,7 @@ function searchHeadword(card) {
   return f.word ?? f.verb ?? f.connector ?? f.base ?? card.answer ?? '';
 }
 
-const USER_SETTINGS = ['desiredRetention', 'dailyNewLimit', 'examDate', 'startLevel'];
-
-/**
- * 題庫裡出現的等級，由低到高。api.mjs 驗證 query 與設定時 import 這一份，
- * 起始等級的「以上」也靠這個順序算——兩邊各寫一份的話，哪天多一級就會對不上。
- */
-export const LEVELS = ['A1', 'A2', 'B1'];
+const USER_SETTINGS = ['desiredRetention', 'dailyNewLimit', 'examDate'];
 
 /**
  * 日常學習的單字等級。A1 的單字已經會了，不再出新卡（2026-09-24 使用者決定）。
@@ -244,6 +240,8 @@ export class Store {
       for (const key of USER_SETTINGS) {
         if (Object.hasOwn(saved, key)) upsert.run(key, JSON.stringify(saved[key]));
       }
+      // 舊檔的 startLevel 已無效；讀到時順手正規化，避免備份繼續攜帶幽靈設定。
+      if (Object.hasOwn(saved, 'startLevel')) this.writeUserSettings();
       return;
     }
 
@@ -256,7 +254,6 @@ export class Store {
       desiredRetention: this.get('desiredRetention', 0.9),
       dailyNewLimit: this.get('dailyNewLimit', 15),
       examDate: this.get('examDate', null),
-      startLevel: this.get('startLevel', null),
     };
     const temp = `${this.settingsPath}.tmp`;
     writeFileSync(temp, `${JSON.stringify(saved, null, 2)}\n`, 'utf8');
@@ -285,27 +282,6 @@ export class Store {
   /** 每日新卡上限。null 代表不設上限——存成 null 而不是一個很大的數，畫面才知道要改說法。 */
   get dailyNewLimit() {
     return this.get('dailyNewLimit', 15);
-  }
-
-  /**
-   * 新卡從哪一級開始引入。null 代表從 A1 起、全部都學。
-   * 只管「還沒學過的卡要不要拿出來」，已經學過的低級卡照常到期、照常複習。
-   */
-  get startLevel() {
-    const v = this.get('startLevel', null);
-    return LEVELS.includes(v) ? v : null;
-  }
-
-  /**
-   * 挑新卡時實際要用的範圍：側欄明確勾了等級就照勾的，沒勾才套起始等級。
-   * 勾選是當下的明確指示，起始等級是長期偏好，前者蓋過後者——
-   * 否則「起始 B1」加上「側欄只勾 A1」會得到一個永遠空白、也不說為什麼的佇列。
-   */
-  freshScope(scope = {}) {
-    if (scope.levels?.length) return scope;
-    const start = this.startLevel;
-    if (!start) return scope;
-    return { ...scope, levels: LEVELS.slice(LEVELS.indexOf(start)) };
   }
 
   // ---- 題庫 -------------------------------------------------------------
@@ -950,9 +926,9 @@ Object.assign(Store.prototype, {
       .get(endOfLocalDay(now), ...params).n;
   },
 
-  /** 還沒複習過、而且會被拿出來當新卡的數量（起始等級以下的不算，見 freshScope）。 */
+  /** 還沒複習過、而且會被拿出來當新卡的數量。 */
   newCount(scope = {}) {
-    const [clause, params] = scopeClause(this.freshScope(scope));
+    const [clause, params] = scopeClause(scope);
     return this.db
       .prepare(
         `SELECT COUNT(*) n FROM cards c LEFT JOIN states s ON s.card_id = c.id
@@ -995,7 +971,7 @@ Object.assign(Store.prototype, {
     // 但**跨題型不能直接比頻率**：連接詞、挑連接詞、改寫三種是手寫題，建卡時 freq 一律是 0。
     // 舊版把全部題型混在一起排，那 213 張卡排在第 12,637 名之後，
     // 每天 15 張的速度要兩年多才輪得到，等於永遠不會出現。所以改成每個題型各取一條再輪流。
-    const [freshClause, freshParams] = scopeClause(this.freshScope(opts));
+    const [freshClause, freshParams] = scopeClause(opts);
     const kinds = this.db
       .prepare(`SELECT DISTINCT c.kind FROM cards c WHERE 1 = 1${freshClause}`)
       .all(...freshParams)
@@ -1167,12 +1143,7 @@ Object.assign(Store.prototype, {
   /** 每個 kind 的進度。 */
   byKind(scope = {}, now = new Date()) {
     const [clause, params] = scopeClause(scope);
-    // fresh 是「還沒學過、而且會被拿出來當新卡」的張數。設了起始等級時它比 total - seen 少，
-    // 今天頁要用這個數，不然會說還有三千張新卡，實際上一張 A1 都不會出現。
-    // 中翻法還沒放出來的（見 PRODUCE_GATE）同理不算。
-    const levels = this.freshScope(scope).levels ?? [];
-    const narrowed = !scope.levels?.length && levels.length;
-    const freshCond = narrowed ? ` AND c.level IN (${levels.map(() => '?').join(',')})` : '';
+    // 中翻法尚未解鎖的不算新卡；等級範圍已由 scopeClause 統一處理。
     return this.db
       .prepare(
         `SELECT c.kind,
@@ -1180,12 +1151,12 @@ Object.assign(Store.prototype, {
                 SUM(CASE WHEN s.card_id IS NOT NULL THEN 1 ELSE 0 END) seen,
                 SUM(CASE WHEN s.stability >= 21 THEN 1 ELSE 0 END) mature,
                 SUM(CASE WHEN s.due < ? THEN 1 ELSE 0 END) due,
-                SUM(CASE WHEN s.card_id IS NULL${freshCond}${PRODUCE_GATE} THEN 1 ELSE 0 END) fresh
+                SUM(CASE WHEN s.card_id IS NULL${PRODUCE_GATE} THEN 1 ELSE 0 END) fresh
          FROM cards c LEFT JOIN states s ON s.card_id = c.id
          WHERE 1 = 1${clause}
          GROUP BY c.kind ORDER BY c.kind`,
       )
-      .all(endOfLocalDay(now), ...(narrowed ? levels : []), ...params)
+      .all(endOfLocalDay(now), ...params)
       .map((r) => ({ kind: r.kind, total: r.total, seen: r.seen, mature: r.mature, due: r.due, fresh: r.fresh }));
   },
 

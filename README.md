@@ -135,17 +135,19 @@ cadence build     [--verbose]                 重建題庫
 cadence reindex                               從三個 JSONL 重建 SQLite 索引
 cadence stats     [--json]                    在終端機印出進度
 cadence forecast  --exam YYYY-MM-DD [--limit 60] [--new 15] [--target 0.85]
+cadence restore   --file <backup.json> [--dry-run]  預覽或還原備份
 cadence doctor    [--json]                    檢查資料來源、題庫、索引是否一致
 ```
 
-`doctor` 另外會看三個事實檔有沒有還沒 commit 的行。App 只負責追加，不會替人 commit，
-而 repo 是它們唯一的異地備份；有沒進版控的行會列在「提醒」，不影響結束碼。
+`restore` 只會在目前 JSONL 是備份前綴時追加缺少的行；先加 `--dry-run` 可只看差異。
+
+`doctor` 會分開列出尚未 commit 與尚未 push 到 `origin/main` 的事實。只有 push 後才有異地副本；提醒不影響結束碼。
 `CADENCE_DATA` 指到別處時不查。
 
 ## 開發
 
 ```bash
-npm test      # 270 題，含 732 組 FSRS 黃金向量
+npm test      # 275 題，含 732 組 FSRS 黃金向量
 npm run lint  # node --check 全檔語法檢查
 ```
 

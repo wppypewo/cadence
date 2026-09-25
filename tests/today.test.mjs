@@ -238,11 +238,10 @@ test('沒傳 newLimit 仍當 0，漏給不會被解讀成不設上限', () => {
   assert.equal(t.tasks[0].newUnlimited, false);
 });
 
-test('byKind 帶 fresh 時新卡數以它為準：起始等級擋掉的卡不算進可學的新卡', () => {
+test('byKind 帶 fresh 時新卡數以它為準', () => {
   const byKind = BY_KIND.map((r) => ({ ...r, fresh: r.kind === 'vocab-recall' ? 500 : r.total - r.seen }));
-  const t = buildToday({ ...BASE, byKind, newLimit: null, startLevel: 'B1', now: new Date('2026-09-09T10:00:00') });
+  const t = buildToday({ ...BASE, byKind, newLimit: null, now: new Date('2026-09-09T10:00:00') });
   assert.equal(t.tasks[0].unseen, 3449);
   assert.equal(t.tasks[0].fresh, 500);
   assert.equal(t.tasks[0].newAvailable, 500);
-  assert.equal(t.startLevel, 'B1');
 });

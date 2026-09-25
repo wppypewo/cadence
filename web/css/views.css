@@ -136,6 +136,8 @@
 .weekly-label { font-family: var(--font-fr); font-size: var(--t-lg); color: var(--accent); font-weight: 600; }
 .weekly-sub { grid-column: 1; font-size: var(--t-xs); color: var(--text-muted); overflow-wrap: anywhere; }
 .weekly-day { grid-column: 2; grid-row: 1; font-size: var(--t-xs); color: var(--text-faint); }
+.weekly-more summary { margin-top: var(--s1); color: var(--text-muted); font-size: var(--t-xs); cursor: pointer; }
+.weekly-more[open] summary { margin-bottom: var(--s2); }
 
 .tasks { display: flex; flex-direction: column; gap: var(--s3); }
 

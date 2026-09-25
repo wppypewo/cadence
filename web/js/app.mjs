@@ -56,7 +56,7 @@ const THEME_KEY = 'cadence.theme';
 
 const state = {
   scope: loadScope(),
-  settings: { desiredRetention: 0.9, dailyNewLimit: 15, examDate: null, startLevel: null },
+  settings: { desiredRetention: 0.9, dailyNewLimit: 15, examDate: null },
   meta: null,
   page: null,
   cleanup: null,
@@ -350,8 +350,13 @@ function setBadge(due) {
 
 function metaLine(summary) {
   const total = summary.totalCards ?? 0;
-  const pending = summary.backup?.pendingFacts;
-  const backup = pending === 0 ? '事實已進版控' : Number.isInteger(pending) ? `${pending} 筆待備份` : null;
+  const local = summary.backup?.uncommittedFacts;
+  const remote = summary.backup?.unpublishedFacts;
+  const backup = remote === 0
+    ? '紀錄已推送'
+    : Number.isInteger(remote)
+      ? `${Number.isInteger(local) && local > 0 ? `${local} 未提交・` : ''}${remote} 未推送`
+      : Number.isInteger(local) && local > 0 ? `${local} 筆未提交` : null;
   return [`A2–B1・${total.toLocaleString('zh-Hant')} 張`, backup]
     .filter(Boolean).join('・');
 }
@@ -438,7 +443,6 @@ function openSettings() {
         desiredRetention: Number(retention.value),
         dailyNewLimit: noCap.checked ? null : Number(fresh.value),
         examDate: exam.value || null,
-        startLevel: null,
       });
       dismiss();
       // 今天與推演直接顯示考試日期或新卡額度，儲存後若不重畫會繼續顯示舊值。

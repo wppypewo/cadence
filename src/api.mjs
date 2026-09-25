@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { grade, gradePick, gradeRewrite, gradeNom } from './engine/grade.mjs';
-import { simulate, solveDailyNew, ratingDistribution } from './engine/forecast.mjs';
+import { simulate, solveDailyNew, ratingModel, firstRatingModel } from './engine/forecast.mjs';
 import { buildToday } from './engine/today.mjs';
 import { localDay, CHECKIN_SKILLS, MATURE_DAYS, ACTIVE_LEVELS, scopeClause } from './db.mjs';
 import { readCheck } from './engine/lexicon.mjs';
@@ -80,7 +80,6 @@ export class Api {
         desiredRetention: this.store.desiredRetention,
         dailyNewLimit: this.store.dailyNewLimit,
         examDate: this.store.get('examDate', null),
-        startLevel: null,
       },
       meta: this.store.get('bankMeta', null),
     };
@@ -303,9 +302,7 @@ export class Api {
 
     const scope = Api.activeScope(Api.scope(query));
     const cards = this.scopedStates(scope);
-    const rows = this.store.db.prepare('SELECT rating FROM reviews WHERE correct = 1').all();
-    const ratings = ratingDistribution(rows);
-    const secondsPerCard = this.medianSeconds();
+    const models = this.forecastModels();
 
     const base = {
       cards,
@@ -313,8 +310,10 @@ export class Api {
       examDate: exam,
       dailyLimit: clampInt(query.limit, 5, 500, 60),
       desiredRetention: this.store.desiredRetention,
-      ratings,
-      secondsPerCard,
+      ratings: models.ratings,
+      firstRatings: models.firstRatings,
+      secondsPerCard: models.secondsPerCard,
+      secondsByKind: models.secondsByKind,
     };
 
     // 設定成不設上限時沒有「照設定推演」這回事，前端會請使用者自己填一個數；
@@ -334,9 +333,12 @@ export class Api {
         ceiling: dropResult(solved.ceiling),
       },
       inputs: {
-        ratingSample: ratings ? ratings.sample : 0,
-        secondsPerCard,
-        secondsSource: secondsPerCard === DEFAULT_SECONDS ? 'default' : 'observed',
+        ratingSample: models.ratings.default?.sample ?? 0,
+        ratingKinds: Object.fromEntries(Object.entries(models.ratings.byKind).map(([kind, value]) => [kind, value.sample])),
+        firstRatingKinds: Object.fromEntries(Object.entries(models.firstRatings.byKind).map(([kind, value]) => [kind, value.sample])),
+        secondsPerCard: models.secondsPerCard,
+        secondsByKind: models.secondsByKind,
+        secondsSource: models.secondsPerCard === DEFAULT_SECONDS ? 'default' : 'observed',
         scope,
       },
     };
@@ -382,6 +384,34 @@ export class Api {
     return Math.round((row.ms / 1000) * 10) / 10;
   }
 
+  /** 推演分題型取樣；題型樣本不夠時各自退回全體資料或明示的預設值。 */
+  forecastModels() {
+    const correct = this.store.db.prepare(
+      `SELECT c.kind, r.rating FROM reviews r JOIN cards c ON c.id = r.card_id
+       WHERE r.correct = 1`,
+    ).all();
+    const first = this.store.db.prepare(
+      `SELECT c.kind, r.rating FROM reviews r JOIN cards c ON c.id = r.card_id
+       WHERE r.seq = (SELECT MIN(r2.seq) FROM reviews r2 WHERE r2.card_id = r.card_id)`,
+    ).all();
+    const timed = this.store.db.prepare(
+      `SELECT c.kind, r.ms FROM reviews r JOIN cards c ON c.id = r.card_id
+       WHERE r.ms BETWEEN 500 AND 120000 ORDER BY c.kind, r.ms`,
+    ).all();
+    const secondsPerCard = this.medianSeconds();
+    const secondsByKind = {};
+    for (const kind of KINDS) {
+      const values = timed.filter((row) => row.kind === kind).map((row) => row.ms);
+      if (values.length >= 10) secondsByKind[kind] = Math.round((values[Math.floor(values.length / 2)] / 1000) * 10) / 10;
+    }
+    return {
+      ratings: ratingModel(correct),
+      firstRatings: firstRatingModel(first),
+      secondsPerCard,
+      secondsByKind,
+    };
+  }
+
   /**
    * 今天四科各要做什麼。所有算術都在 engine/today.mjs，這裡只負責取數字。
    * 刻意不吃 scope：這一頁問的是「今天整體該做什麼」，
@@ -395,7 +425,6 @@ export class Api {
       byKind: this.store.byKind(scope),
       newLimit: this.store.dailyNewLimit,
       newToday: this.store.newIntroducedToday(),
-      startLevel: null,
       examDate: this.store.get('examDate', null),
       reviewsToday: s.todayReviews,
       streakDays: this.attempts.activityStreak(),
@@ -426,13 +455,16 @@ export class Api {
 
     const windowReviews = this.store.reviewsSince({ days: OUTLOOK_WINDOW, now });
     const pace = Math.round(windowReviews / OUTLOOK_WINDOW);
+    const models = this.forecastModels();
     const base = {
       cards: this.scopedStates(Api.activeScope()),
       from: now,
       examDate: exam,
       desiredRetention: this.store.desiredRetention,
-      ratings: ratingDistribution(this.store.db.prepare('SELECT rating FROM reviews WHERE correct = 1').all()),
-      secondsPerCard: this.medianSeconds(),
+      ratings: models.ratings,
+      firstRatings: models.firstRatings,
+      secondsPerCard: models.secondsPerCard,
+      secondsByKind: models.secondsByKind,
     };
     // 新卡設成不設上限時，新卡就吃掉整個節奏裡複習沒用完的額度，模擬裡本來就是這樣分的。
     const dailyNew = Math.min(this.store.dailyNewLimit ?? pace, pace);
@@ -568,14 +600,12 @@ export class Api {
       if (body.startLevel !== undefined) {
         const v = body.startLevel;
         if (v !== null) throw new HttpError(400, 'A1 已退出日常學習，起始等級不再需要設定');
-        this.store.set('startLevel', null);
       }
     }
     return {
       desiredRetention: this.store.desiredRetention,
       dailyNewLimit: this.store.dailyNewLimit,
       examDate: this.store.get('examDate', null),
-      startLevel: null,
     };
   }
 

@@ -8,6 +8,7 @@
  *   reindex   從三個 JSONL 重建 SQLite 索引
  *   stats     在終端機印出目前進度
  *   forecast  考前推演
+ *   restore   從匯出的 JSON 安全補回事實檔
  *   doctor    檢查資料來源、題庫、索引是否一致
  */
 
@@ -32,7 +33,7 @@ const DATA = process.env.CADENCE_DATA
   : path.join(ROOT, 'data');
 
 const COMMANDS = {
-  serve, build, reindex, stats, forecast, doctor,
+  serve, build, reindex, stats, forecast, restore, doctor,
 };
 
 const HELP = `cadence — 本地法文複習工作台
@@ -44,6 +45,7 @@ const HELP = `cadence — 本地法文複習工作台
   reindex                               從三個 JSONL 重建 SQLite 索引
   stats     [--json]                    印出目前進度
   forecast  --exam YYYY-MM-DD [--limit 60] [--new 15] [--target 0.85]
+  restore   --file <backup.json> [--dry-run]  還原前先預覽；事實檔只追加
   doctor    [--json]                    檢查資料來源與索引
 
   -h, --help                            顯示這份說明
@@ -228,6 +230,22 @@ async function forecast(flags) {
   store.close();
 }
 
+async function restore(flags) {
+  if (!flags.file || flags.file === true) throw new Error('restore 需要 --file <backup.json>');
+  const { applyRestore, readBackup, restorePlan } = await import('../src/restore.mjs');
+  const bundle = readBackup(path.resolve(String(flags.file)));
+  const plan = flags['dry-run'] ? restorePlan(DATA, bundle).map(({ suffix, content, ...item }) => item) : applyRestore(DATA, bundle);
+  for (const item of plan) {
+    const detail = item.action === 'append' ? `追加 ${item.lines} 行` : item.action === 'replace-settings' ? '更新設定' : '不變';
+    process.stdout.write(`${item.file}：${detail}\n`);
+  }
+  if (flags['dry-run']) {
+    process.stdout.write('只有預覽，未寫入任何檔案。\n');
+    return;
+  }
+  await reindex();
+}
+
 async function doctor(flags) {
   const { checkSources, sourceFingerprint } = await import('../src/build/sources.mjs');
   const report = { sources: await checkSources(), bank: null, index: null, journal: null, checkins: null, attempts: null };
@@ -289,8 +307,9 @@ async function doctor(flags) {
   // 行數變少才是問題，因為這三個檔只增不改。
   const warnings = [];
   if (DATA === path.join(ROOT, 'data')) {
-    const { uncommittedFacts } = await import('../src/facts-git.mjs');
+    const { factsSinceRef, uncommittedFacts } = await import('../src/facts-git.mjs');
     report.git = uncommittedFacts(ROOT);
+    report.remote = factsSinceRef(ROOT);
     for (const f of report.git ?? []) {
       if (f.removed) {
         problems.push(`${f.file} 比上一個 commit 少了 ${f.removed} 行。這個檔只增不改，先用 git diff 看是誰動的，不要直接 commit`);
@@ -298,6 +317,12 @@ async function doctor(flags) {
       if (f.added) {
         warnings.push(`${f.file} 有 ${f.added} 行還沒 commit${f.untracked ? '（整個檔還沒進版控）' : ''}，這些紀錄目前只存在這台電腦上。git add ${f.file} 後 commit`);
       }
+    }
+    for (const f of report.remote ?? []) {
+      if (f.removed) {
+        problems.push(`${f.file} 比 origin/main 少了 ${f.removed} 行。事實檔只增不改，先查清楚差異`);
+      }
+      if (f.added) warnings.push(`${f.file} 有 ${f.added} 行尚未出現在 origin/main；commit 後仍要 push 才算異地備份`);
     }
   }
 
@@ -313,7 +338,8 @@ async function doctor(flags) {
     if (report.journal) process.stdout.write(`${report.journal.inSync ? '✓' : '✗'} 複習紀錄   ${report.journal.lines} 行，${(report.journal.bytes / 1024).toFixed(1)} KB${report.journal.inSync ? '，逐筆一致' : '，內容不一致'}\n`);
     if (report.checkins?.exists || report.index?.checkins) process.stdout.write(`${report.checkins.inSync ? '✓' : '✗'} 打卡紀錄   ${report.checkins.lines} 行，索引 ${report.index.checkins} 天${report.checkins.inSync ? '，折疊後一致' : '，內容不一致'}\n`);
     if (report.attempts?.exists || report.index?.attempts) process.stdout.write(`${report.attempts.inSync ? '✓' : '✗'} 實作紀錄   ${report.attempts.lines} 行，索引 ${report.index.attempts} 筆${report.attempts.inSync ? '，逐筆一致' : '，內容不一致'}\n`);
-    if (report.git && !report.git.length) process.stdout.write('✓ 版控       三個事實檔都已 commit\n');
+    if (report.git && !report.git.length) process.stdout.write('✓ 本機版控   三個事實檔都已 commit\n');
+    if (report.remote && !report.remote.length) process.stdout.write('✓ 遠端備份   三個事實檔都已推送\n');
     if (problems.length) process.stdout.write(`\n要處理的事：\n${problems.map((p) => `  · ${p}`).join('\n')}\n`);
     if (warnings.length) process.stdout.write(`\n提醒：\n${warnings.map((p) => `  · ${p}`).join('\n')}\n`);
   }

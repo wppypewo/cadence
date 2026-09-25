@@ -67,6 +67,7 @@ export function statsView(root, ctx) {
 
   function render(d) {
     clear(body);
+    const deferred = [];
     const s = d.summary;
     const accuracy = s.todayReviews ? s.todayCorrect / s.todayReviews : null;
 
@@ -106,10 +107,15 @@ export function statsView(root, ctx) {
       }
       practice.append(h('h3.section-label', { text: '最近實作' }), recent);
     }
-    body.append(panel('四科實作', `最近 ${d.periodDays} 天・紀錄檔 ${fmtBytes(d.attemptsJournal.bytes)}`, practice));
+    const latestMock = d.practice.mocks[0];
+    if (!latestMock) {
+      practice.append(h('div.panel-actions', {}, h('button.btn', {
+        type: 'button', text: '記錄模考', onclick: () => ctx.go('mock'),
+      })));
+    }
+    deferred.push(panel('四科實作', d.practice.recent.length ? `最近 ${d.periodDays} 天` : null, practice));
 
     const mock = h('div.body');
-    const latestMock = d.practice.mocks[0];
     if (latestMock) {
       mock.append(h('div.mock-latest', {},
         h('div', {},
@@ -132,11 +138,9 @@ export function statsView(root, ctx) {
         ));
       }
       mock.append(history);
-    } else {
-      mock.append(emptyLine('還沒有完整模考紀錄。'));
+      mock.append(h('div.panel-actions', {}, h('button.btn', { type: 'button', text: '記錄模考', onclick: () => ctx.go('mock') })));
+      deferred.push(panel('模考趨勢', '最近一次完整四科', mock));
     }
-    mock.append(h('div.panel-actions', {}, h('button.btn', { type: 'button', text: '記錄一次模考', onclick: () => ctx.go('mock') })));
-    body.append(panel('模考趨勢', latestMock ? '最近一次完整四科' : '總分與單科門檻分開記', mock));
 
     // ---- 各類別進度 ----
     const kinds = h('div.body');
@@ -167,7 +171,7 @@ export function statsView(root, ctx) {
     // ---- 每日 ----
     const activity = h('div.body');
     if (d.daily.length === 0) {
-      activity.append(emptyLine('還沒有任何紀錄。做完第一輪之後這裡才有東西。'));
+      activity.append(emptyLine('還沒有作答紀錄。'));
     } else {
       activity.append(heatmap(d.daily, { weeks: 26, cap: '近 26 週，方塊顏色深淺是相對量' }));
       const recent = d.daily.slice(-30).map((x) => ({
@@ -184,7 +188,7 @@ export function statsView(root, ctx) {
     // ---- 弱點 ----
     const weak = h('div.body');
     if (d.weakest.length === 0) {
-      weak.append(emptyLine('目前沒有錯過的卡。等錯了再回來看——這一頁在那時候才有用。'));
+      weak.append(emptyLine('目前沒有答錯的卡。'));
     } else {
       const list = h('div.weak');
       for (const w of d.weakest) {
@@ -239,6 +243,7 @@ export function statsView(root, ctx) {
       ));
     }
     body.append(panel('未來的工作量', 'FSRS 已經替你排好的複習', up));
+    body.append(...deferred);
   }
 }
 

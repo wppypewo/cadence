@@ -97,7 +97,6 @@ export function daysToExam(examDate, now = new Date()) {
  * @param {Object}   input
  * @param {Array}    input.byKind    store.byKind() 的輸出：{kind,total,seen,mature,due}
  * @param {number|null} input.newLimit  每日新卡上限（store.dailyNewLimit），null 為不設上限
- * @param {string?}  [input.startLevel] 新卡從哪一級開始（store.startLevel），只拿來顯示
  * @param {number}   input.newToday  今天已經引入的新卡數
  * @param {string?}  input.examDate  'YYYY-MM-DD' 或 null
  * @param {number}   input.reviewsToday 今天已作答次數
@@ -195,7 +194,6 @@ export function buildToday(input) {
     newBudget: unlimited ? null : newBudget,
     newLimit: unlimited ? null : (input.newLimit ?? 0),
     newToday: input.newToday ?? 0,
-    startLevel: input.startLevel ?? null,
     reviewsToday: input.reviewsToday ?? 0,
     streakDays: input.streakDays ?? 0,
     examDate: input.examDate ?? null,

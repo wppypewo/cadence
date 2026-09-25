@@ -159,23 +159,25 @@ function verdict(p, inputs, targetRate) {
     h('b', { text: `${num(Math.round(p.expectedRecall))} 張` }),
     `（${pct(p.expectedRecallRate, 1)}）`,
   ));
-  card.append(h('p.sub', {
-    text: hit
-      ? `達到你設的 ${pct(targetRate)} 目標。這是期望值，不是保證——實際會在這個數字上下浮動。`
-      : `低於你設的 ${pct(targetRate)} 目標。往下看「要達標得學多少新卡」。`,
+  card.append(h('p.sub', { text: hit
+    ? `達到 ${pct(targetRate)} 目標；這是期望值。`
+    : `低於 ${pct(targetRate)} 目標。`,
   }));
   card.append(h('p.sub', {
-    text: `到考試日總共會做 ${num(p.totalReviews)} 張，其中預期答錯 ${num(p.totalLapses)} 次；能學到的卡佔範圍的 ${pct(p.coverage)}。`,
+    text: `總作答 ${num(p.totalReviews)} 次・預期答錯 ${num(p.totalLapses)} 次・涵蓋 ${pct(p.coverage)}`,
   }));
 
   const asm = h('div.assumptions', {}, h('span.chip', { text: '模型假設' }));
   asm.append(p.ratingModel === 'observed'
-    ? h('span.chip', { text: `評分分布取自你的 ${inputs.ratingSample} 筆答對紀錄` })
+    ? h('span.chip', { text: `答對評分：${inputs.ratingSample} 筆，樣本足夠時分題型` })
     : h('span.chip', { dataset: { kind: 'assumed' }, text: '評分分布：歷史不足，一律當作 Good' }));
+  const firstSamples = Object.values(inputs.firstRatingKinds ?? {}).reduce((sum, n) => sum + n, 0);
+  asm.append(firstSamples
+    ? h('span.chip', { text: `首次作答：${firstSamples} 張，分題型` })
+    : h('span.chip', { dataset: { kind: 'assumed' }, text: '首次作答：樣本不足，當作 Good' }));
   asm.append(inputs.secondsSource === 'observed'
-    ? h('span.chip', { text: `每張 ${inputs.secondsPerCard} 秒（你的中位數）` })
+    ? h('span.chip', { text: `時間：中位數 ${inputs.secondsPerCard} 秒，樣本足夠時分題型` })
     : h('span.chip', { dataset: { kind: 'assumed' }, text: `每張 ${inputs.secondsPerCard} 秒（預設值）` }));
-  asm.append(h('span.chip', { text: '固定亂數種子，同樣的輸入會得到同樣的結果' }));
   card.append(asm);
   return card;
 }
@@ -197,9 +199,7 @@ function solvedPanel(sv) {
       h('b', { text: pct(sv.ceiling.rate, 1) }),
       '。',
     ));
-    body.append(h('p.verdict-note', {
-      text: '要嘛把範圍縮小（只練 A1／A2、或只練動詞變位），要嘛提高每天的上限，要嘛接受這個數字。這裡不會給你一個做不到的計畫。',
-    }));
+    body.append(h('p.verdict-note', { text: '可縮小側欄範圍，或提高每天上限後重算。' }));
   }
 
   // 掃過的每一格畫成曲線。這條線的形狀就是「新卡學太多反而更差」的證據，
@@ -260,19 +260,9 @@ function achievableNote(sv) {
 
 /** 還沒推演過時的畫面。說明按鈕會做什麼、要等多久、哪些設定會影響結果。 */
 function emptyState() {
-  const list = h('ul.fc-empty-list');
-  for (const t of [
-    '拿你目前每一張卡的記憶狀態，逐日模擬到考試當天。',
-    '算出那天的期望答對率，以及需要每天做幾張才追得上。',
-    '再反推「要達到目標答對率，每天得學幾張新卡」。',
-  ]) list.append(h('li', { text: t }));
-
   return h('div.card.empty.fc-empty', {},
-    h('p.fc-empty-lead', { text: '填好上面四格，按「推演」。' }),
-    list,
-    h('p.fc-empty-note', {
-      text: '整輪大約一秒，因為反推那一步要跑六十幾次完整模擬。側欄的題型篩選會一起算進去。',
-    }),
+    h('p.fc-empty-lead', { text: '按「推演」估算考試日記憶率與每日新卡量。' }),
+    h('p.fc-empty-note', { text: '會套用側欄範圍，約需一秒。' }),
   );
 }
 
