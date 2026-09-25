@@ -14,9 +14,14 @@ data/settings.json.tmp
 
 node_modules/
 npm-debug.log*
+.env.local
+dist/
 
 .DS_Store
 *.swp
 
 # Impeccable 設計評審的本機快照，只給當次 session 對照用。
 .impeccable/
+.vercel
+.env*
+!.env.example

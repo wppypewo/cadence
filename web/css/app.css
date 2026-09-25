@@ -374,3 +374,57 @@ body[data-focus] .main { padding: 0; }
   body[data-focus] .toasts { bottom: calc(var(--s5) + env(safe-area-inset-bottom)); }
   .page-head { flex-direction: column; align-items: stretch; }
 }
+
+/* ---- 雲端登入與搬移狀態 --------------------------------------------- */
+
+.auth-mode .shell { grid-template-columns: minmax(0, 1fr); }
+.auth-mode .rail {
+  position: fixed; inset: 0 auto auto 0; z-index: var(--z-sticky);
+  width: auto; height: auto; padding: var(--s5);
+  margin: 0; border: 0; border-radius: 0; box-shadow: none; background: transparent;
+}
+.auth-mode .brand { padding: 0; text-decoration: none; color: var(--text); }
+.auth-mode .main {
+  min-height: 100dvh; display: grid; place-items: center;
+  padding: var(--s8) var(--s5);
+}
+.auth-wrap { width: min(100%, 430px); }
+.auth-card {
+  display: flex; flex-direction: column; gap: var(--s3);
+  padding: var(--s6);
+}
+.auth-card h1 { margin-bottom: var(--s1); font-size: var(--t-2xl); text-wrap: balance; }
+.auth-card label { margin-top: var(--s2); font-size: var(--t-sm); font-weight: 600; }
+.auth-card .btn { margin-top: var(--s2); }
+.auth-lead { max-width: 38ch; color: var(--text-muted); text-wrap: pretty; }
+.auth-switch {
+  align-self: center; padding: var(--s1) var(--s2); border: 0; background: transparent;
+  color: var(--accent); font: inherit; font-size: var(--t-sm); cursor: pointer;
+}
+.auth-switch:hover { text-decoration: underline; text-underline-offset: 3px; }
+.field-note { margin-top: calc(-1 * var(--s2)); color: var(--text-faint); font-size: var(--t-xs); }
+.field-success { color: var(--ok); font-size: var(--t-sm); }
+.eyebrow {
+  color: var(--accent); font: 600 var(--t-xs)/1.2 var(--font-num);
+  letter-spacing: .09em;
+}
+
+.cloud-wait { max-width: 680px; margin: clamp(var(--s6), 10vh, 120px) auto 0; }
+.cloud-wait h1 { margin: var(--s3) 0; font-size: clamp(var(--t-2xl), 5vw, var(--t-3xl)); text-wrap: balance; }
+.cloud-wait > p:not(.eyebrow) { max-width: 58ch; color: var(--text-muted); }
+.cloud-checks {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s2); margin-top: var(--s6);
+}
+.cloud-checks p {
+  padding: var(--s3); border-top: 2px solid var(--accent);
+  background: var(--surface); color: var(--text-muted); font-size: var(--t-sm);
+}
+
+@media (max-width: 620px) {
+  .auth-mode .rail { padding: var(--s4); }
+  .auth-mode .brand span { display: inline; }
+  .auth-mode .main { padding: var(--s8) var(--s4) var(--s5); }
+  .auth-card { padding: var(--s5); }
+  .cloud-checks { grid-template-columns: 1fr; }
+}

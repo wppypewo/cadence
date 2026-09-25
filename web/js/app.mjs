@@ -1,7 +1,7 @@
 /**
  * 外殼與路由。
  *
- * 沒有路由函式庫，就是一個 hashchange 監聽器加一張表。導覽列四項（今天／複習／進度／辭典），
+ * 沒有路由函式庫，就是一個 hashchange 監聽器加一張表。導覽列四項（今天／複習／進度／辭典；雲端模式多一項資源），
  * 「進度」底下是統計與推演兩頁，另有兩個次級工作台；沒有巢狀路由、沒有參數——
  * 這種規模引框架，維護成本會比省下的多。
  *
@@ -18,6 +18,8 @@
 
 import { h, clear, icon, announce } from './dom.mjs';
 import { api } from './net.mjs';
+import { requireSession, signOut } from './auth.mjs';
+import { isCloudRuntime } from './runtime.mjs';
 import { todayView } from './today.mjs';
 import { reviewView } from './review.mjs';
 import { statsView } from './stats.mjs';
@@ -26,6 +28,7 @@ import { browseView } from './browse.mjs';
 import { practiceView } from './practice.mjs';
 import { mockView } from './mock.mjs';
 import { KIND_ZH } from './kinds.mjs';
+import { resourcesView } from './resources.mjs';
 
 // scoped 標的是「這一頁的內容真的會跟著範圍選單的題型／程度變」，也只有這幾頁的頁首放得出那顆範圍鈕。
 // 沒標的兩頁各有理由：「今天」問的是今天整體該做什麼，本來就要看全部四科；
@@ -38,10 +41,13 @@ const PAGES = [
   { id: 'stats', label: '進度', view: statsView, scoped: true },
   { id: 'forecast', label: '推演', view: forecastView, scoped: true },
   { id: 'browse', label: '辭典', view: browseView, scoped: false },
+  // 資源清單只存在雲端資料庫（supabase/migrations 的種子資料），本機伺服器沒有對應端點，
+  // 本機模式列出來只會得到一頁錯誤訊息，所以只在雲端模式出現。
+  { id: 'resources', label: 'B2 資源', view: resourcesView, scoped: false, cloudOnly: true },
   // 工作台由今天／進度頁帶著科目進入，不佔導覽列的位置。
   { id: 'practice', label: '練習', view: practiceView, scoped: false },
   { id: 'mock', label: '模考紀錄', view: mockView, scoped: false },
-];
+].filter((p) => !p.cloudOnly || isCloudRuntime());
 
 // 導覽列。pages 列出哪些頁面算在這一項底下，停在那些頁時這一項亮起來——
 // 從今天頁進工作台、從進度頁進推演，側欄都不該看起來像是跳到別的地方。
@@ -50,7 +56,8 @@ const NAV = [
   { id: 'review', label: '複習', pages: ['review'], badge: true },
   { id: 'stats', label: '進度', pages: ['stats', 'forecast', 'mock'] },
   { id: 'browse', label: '辭典', pages: ['browse'] },
-];
+  { id: 'resources', label: '資源', pages: ['resources'], cloudOnly: true },
+].filter((item) => !item.cloudOnly || isCloudRuntime());
 
 const KINDS = Object.entries(KIND_ZH).map(([id, label]) => ({ id, label }));
 const LEVELS = ['A2', 'B1'];
@@ -103,6 +110,8 @@ function applyStoredTheme() {
 }
 
 async function boot() {
+  const session = await requireSession();
+  if (!session) return;
   buildShell();
   window.addEventListener('hashchange', () => {
     const id = hashPage();
@@ -116,6 +125,10 @@ async function boot() {
     state.settings = s.settings;
     state.meta = s.meta;
     els.meta.textContent = metaLine(s);
+    if (isCloudRuntime() && !s.cloudReady) {
+      renderCloudWaiting();
+      return;
+    }
     // 側欄的數字要跟著篩選範圍走，summary 的 dueNow 是全題庫的，不能直接用。
     refreshBadge();
   } catch (err) {
@@ -167,6 +180,7 @@ function moreMenu() {
     h('div.menu-list', {},
       h('button.menu-item', { type: 'button', text: '匯出備份', onclick: () => { panel.hidePopover(); exportBackup(); } }),
       h('button.menu-item', { type: 'button', text: '設定', onclick: () => { panel.hidePopover(); openSettings(); } }),
+      isCloudRuntime() ? h('button.menu-item', { type: 'button', text: '登出', onclick: () => { panel.hidePopover(); signOut(); } }) : null,
     ),
     h('hr.menu-sep'),
     h('p.scope-h', { id: 'theme-h', text: '佈景' }),
@@ -201,6 +215,27 @@ function anchor(panel, btn, dir = 'down') {
       panel.style.bottom = 'auto';
     }
   });
+}
+
+function renderCloudWaiting() {
+  state.page = 'cloud-setup';
+  els.scope.hidden = true;
+  els.scope.inert = true;
+  for (const { a } of els.tabs.values()) a.removeAttribute('aria-current');
+  clear(els.main);
+  els.main.dataset.page = 'cloud-setup';
+  els.main.append(h('section.cloud-wait', {},
+    h('p.eyebrow', { text: 'CLOUD READY' }),
+    h('h1', { text: '登入與雲端資料庫已接通' }),
+    h('p', { text: '目前仍是空庫。下一階段會先搬入題庫與複習紀錄，核對無誤後才啟用完整學習頁面。' }),
+    h('div.cloud-checks', {},
+      h('p', { text: '帳號驗證　已啟用' }),
+      h('p', { text: '匿名存取　已封鎖' }),
+      h('p', { text: '個人資料　尚未上傳' }),
+    ),
+  ));
+  document.title = '雲端設定 · cadence';
+  els.main.focus();
 }
 
 /** 從今天頁或進度頁進入實作練習，科目只活在這次瀏覽器工作階段。 */

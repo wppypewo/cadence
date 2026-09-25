@@ -3,6 +3,8 @@
  * 後端的錯誤訊息本來就是寫給人看的繁體中文，不需要在前端再翻譯一次。
  */
 
+import { isCloudRuntime } from './runtime.mjs';
+
 async function call(method, path, { query, body } = {}) {
   const url = new URL(path, location.origin);
   for (const [k, v] of Object.entries(query ?? {})) {
@@ -11,6 +13,7 @@ async function call(method, path, { query, body } = {}) {
   }
   const res = await fetch(url, {
     method,
+    credentials: 'same-origin',
     headers: body ? { 'content-type': 'application/json' } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -21,17 +24,49 @@ async function call(method, path, { query, body } = {}) {
   } catch {
     throw new Error(`伺服器回了不是 JSON 的東西（HTTP ${res.status}）`);
   }
-  if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
+  if (!res.ok) {
+    const err = new Error(data?.error ?? `HTTP ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
   return data;
 }
 
+const DOCS = {
+  co: { file: 'delf-b1-comprehension-orale.md', title: 'DELF B1 聽力' },
+  pe: { file: 'delf-b1-production-ecrite.md', title: 'DELF B1 寫作' },
+  po: { file: 'delf-b1-production-orale.md', title: 'DELF B1 口說' },
+};
+
+/**
+ * 雲端版把 study/ 當靜態檔案發出去（scripts/build-web.mjs 複製進 dist/）；
+ * 本機伺服器只發 web/，study/ 走 /api/doc 的白名單端點，直接抓 /study/ 會 404。
+ */
+async function staticDoc(id) {
+  const entry = DOCS[String(id ?? '')];
+  if (!entry) {
+    const err = new Error(`沒有這份文件：${id}`);
+    err.status = 404;
+    throw err;
+  }
+  const path = `/study/${entry.file}`;
+  const res = await fetch(path, { credentials: 'same-origin' });
+  if (!res.ok) throw new Error(`讀不到 ${path}（HTTP ${res.status}）`);
+  return { id, title: entry.title, path: path.slice(1), text: await res.text() };
+}
+
 export const api = {
+  session: () => call('GET', '/api/session'),
+  register: (body) => call('POST', '/api/auth/register', { body }),
+  login: (body) => call('POST', '/api/auth/login', { body }),
+  logout: () => call('POST', '/api/auth/logout', { body: {} }),
   summary: () => call('GET', '/api/summary'),
   today: () => call('GET', '/api/today'),
   outlook: () => call('GET', '/api/outlook'),
   sentence: (i) => call('GET', '/api/sentence', { query: i === undefined ? {} : { i } }),
   weekly: () => call('GET', '/api/weekly'),
-  doc: (id) => call('GET', '/api/doc', { query: { id } }),
+  resources: () => call('GET', '/api/resources'),
+  doc: (id) => (isCloudRuntime() ? staticDoc(id) : call('GET', '/api/doc', { query: { id } })),
   queue: (q) => call('GET', '/api/queue', { query: q }),
   reveal: (id) => call('GET', '/api/reveal', { query: { id } }),
   preview: (id) => call('GET', '/api/preview', { query: { id } }),

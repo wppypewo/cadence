@@ -2,7 +2,7 @@
 
 ## 一句話
 
-一個 Node HTTP 伺服器把 `web/` 當靜態檔案發出去，另外開二十個 JSON 端點；瀏覽器端是原生 ESM，沒有打包器；資料在三個 append-only 的 JSONL、一份本機設定 JSON 與一個隨時可重建的 SQLite 索引裡。
+同一份原生 ESM 前端支援兩個後端：本機是一個 Node HTTP 伺服器把 `web/` 當靜態檔案發出去、另外開二十個 JSON 端點，資料在三個 append-only 的 JSONL、一份本機設定 JSON 與一個隨時可重建的 SQLite 索引裡；正式站是 Vercel Functions＋Supabase Auth／Postgres。兩邊都沒有前端框架或打包器。
 
 ## 目錄
 
@@ -29,6 +29,12 @@ src/
     picks.mjs        挑連接詞（四選一）
     rewrites.mjs     改寫整句
     nominals.mjs     名詞化配對（規則照抄自 fexgen 的 nominalize.py，漂移由測試守）
+  cloud/             Supabase session、查詢、排程、實作與 Vercel 路由
+api/router.mjs       Vercel Function 入口
+scripts/
+  build-web.mjs      只複製可公開的 web/、study/ 與共用批改器
+  cloud-import.mjs   一次性搬移本機題庫、設定與 append-only 事實
+supabase/migrations/ 可從空資料庫重建表、RLS、RPC 與 B2 資源索引
 study/               給人讀的三份文件，由 /api/doc 原文送出，前端才渲染
 web/
   index.html         唯一的 HTML
@@ -42,6 +48,8 @@ web/
   js/motion.mjs      所有 GSAP 動畫的唯一入口；系統要求減少動態時一律不跑
   js/kinds.mjs       七種題型的中文名，鍵的順序就是各頁的顯示順序
   js/{today,review,stats,forecast,browse}.mjs   主要檢視（stats 與 forecast 是「進度」的兩個分頁，browse 是「辭典」）
+  js/resources.mjs   B2 資源頁。資料只在 Supabase，本機伺服器沒有對應端點，所以只在雲端模式列出
+  js/{auth,runtime}.mjs   雲端模式的登入畫面與執行模式判斷；本機模式下 auth 直接放行
   js/{practice,mock}.mjs   四科實作與模考工作台
   vendor/gsap.mjs    GSAP 3.15.0，非開源的標準免費授權，檔首聲明不得刪（見 README〈資料與授權〉）
   fonts/             Newsreader 兩個 woff2（OFL 1.1）
@@ -66,6 +74,13 @@ web/
   作答 ──POST /api/review──→ 先寫 JSONL，再更新 SQLite
   打卡 ──POST /api/checkin─→ 同一個順序，寫的是另一個 JSONL
   實作／模考 ──POST /api/practice、/api/mock──→ attempts.jsonl，再更新 SQLite
+
+正式站
+  瀏覽器 ──同網域 HttpOnly Cookie──→ Vercel /api/router.mjs
+  Vercel Function ──使用者 JWT──→ Supabase Auth／PostgREST／RLS
+  cards + card_states ──RPC──→ 今日、佇列、查詢、統計與推演
+  review/checkin/practice events ──只追加──→ Postgres
+  content_resources ──→ B2 免費來源與每週行動入口
 ```
 
 寫入順序是刻意的：**先落地不可重建的那一份**。JSONL 寫成功之後即使 SQLite 更新失敗，`reindex` 也能把狀態補回來；反過來則會永久少一筆。
@@ -99,6 +114,7 @@ web/
 | GET | `/api/sentence` | 今天頁「這句你認得幾個字」。預設依日期固定一句，`i` 指定第幾句；改寫題的句子要那張卡答過才放進來，免得先看到解答 |
 | GET | `/api/weekly` | 最近 7 天第一次跨過穩定度 21 天的卡 |
 | GET | `/api/settings` | 讀設定 |
+| GET | `/api/resources` | 讀啟用中的 B1／B2 外部資源索引 |
 | POST | `/api/review` | 記一次作答 |
 | POST | `/api/review-correction` | 以追加事件更正剛才一筆人工評分，重放後不增加作答次數 |
 | POST | `/api/checkin` | CO／PE／PO 的手動打卡。可打卡的科目取自 `engine/today.mjs` 的科目表，不另外列一份。日期由伺服器決定，不吃前端傳來的 `day` |
