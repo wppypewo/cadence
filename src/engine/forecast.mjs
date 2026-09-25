@@ -60,11 +60,14 @@ export function ratingModel(rows, minKindSample = 20, minGlobalSample = 50) {
   return { default: ratingDistribution(rows, minGlobalSample), byKind };
 }
 
+/** 一個題型要有幾張卡的首次作答，才用實測分布取代 Good。推演頁照這個數說明缺多少。 */
+export const FIRST_RATING_MIN = 30;
+
 /**
  * 新卡第一次評分包含 Again；只有足夠樣本才取代保守的 Good 假設。
  * 呼叫端應傳入每張卡最早的一筆有效評分，而不是所有複習。
  */
-export function firstRatingModel(rows, minKindSample = 30) {
+export function firstRatingModel(rows, minKindSample = FIRST_RATING_MIN) {
   const byKind = {};
   for (const kind of new Set(rows.map((row) => row.kind).filter(Boolean))) {
     const items = rows.filter((row) => row.kind === kind && row.rating >= 1 && row.rating <= 4);

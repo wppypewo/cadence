@@ -475,6 +475,9 @@ test('forecast 回傳計畫，並且不把整份模擬結果塞進候選方案',
     assert.equal(f.inputs.ratingSample, 0);
     assert.equal(f.inputs.secondsSource, 'default');
     assert.equal(f.inputs.secondsPerCard, 8);
+    // 推演頁照這個數說明「不足幾張當作 Good」，前端不另寫一份門檻。
+    assert.equal(f.inputs.firstRatingMin, 30);
+    assert.deepEqual(f.inputs.firstRatingKinds, {});
 
     assert.equal('result' in f.solved.recommended, false);
     assert.equal('result' in f.solved.ceiling, false);

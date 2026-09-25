@@ -171,15 +171,46 @@ function verdict(p, inputs, targetRate) {
   asm.append(p.ratingModel === 'observed'
     ? h('span.chip', { text: `答對評分：${inputs.ratingSample} 筆，樣本足夠時分題型` })
     : h('span.chip', { dataset: { kind: 'assumed' }, text: '評分分布：歷史不足，一律當作 Good' }));
-  const firstSamples = Object.values(inputs.firstRatingKinds ?? {}).reduce((sum, n) => sum + n, 0);
-  asm.append(firstSamples
-    ? h('span.chip', { text: `首次作答：${firstSamples} 張，分題型` })
-    : h('span.chip', { dataset: { kind: 'assumed' }, text: '首次作答：樣本不足，當作 Good' }));
+  asm.append(...firstRatingChips(inputs));
   asm.append(inputs.secondsSource === 'observed'
     ? h('span.chip', { text: `時間：中位數 ${inputs.secondsPerCard} 秒，樣本足夠時分題型` })
     : h('span.chip', { dataset: { kind: 'assumed' }, text: `每張 ${inputs.secondsPerCard} 秒（預設值）` }));
   card.append(asm);
   return card;
+}
+
+const KIND_LABEL = {
+  'vocab-recall': '看字回想',
+  'vocab-produce': '中翻法',
+  conj: '動詞變位',
+  connector: '連接詞',
+  pick: '挑連接詞',
+  rw: '改寫整句',
+  nom: '名詞化',
+};
+
+/**
+ * 新卡首次作答是逐題型取樣的，樣本不夠的題型一律當 Good。
+ * 原本只寫「260 張，分題型」，實際上那 260 張全是看字回想，另外六種都是假設——
+ * 所以把實測的題型點名，其餘的另開一個「假設」標籤，範圍只算側欄勾到的題型。
+ */
+function firstRatingChips(inputs) {
+  const min = inputs.firstRatingMin ?? 30;
+  const inScope = inputs.scope?.kinds?.length ? inputs.scope.kinds : Object.keys(KIND_LABEL);
+  const sampled = inScope.filter((kind) => inputs.firstRatingKinds?.[kind]);
+  const assumed = inScope.filter((kind) => !inputs.firstRatingKinds?.[kind]);
+  const chips = [];
+  if (sampled.length) {
+    const parts = sampled.map((kind) => `${KIND_LABEL[kind] ?? kind} ${num(inputs.firstRatingKinds[kind])}`);
+    chips.push(h('span.chip', { text: `首次作答實測：${parts.join('、')} 張` }));
+  }
+  if (assumed.length) {
+    const who = assumed.length <= 3 ? assumed.map((kind) => KIND_LABEL[kind] ?? kind).join('、')
+      : !sampled.length ? '各題型'
+        : `其餘 ${assumed.length} 種題型`;
+    chips.push(h('span.chip', { dataset: { kind: 'assumed' }, text: `首次作答：${who}不足 ${min} 張，當作 Good` }));
+  }
+  return chips;
 }
 
 function solvedPanel(sv) {

@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { grade, gradePick, gradeRewrite, gradeNom } from './engine/grade.mjs';
-import { simulate, solveDailyNew, ratingModel, firstRatingModel } from './engine/forecast.mjs';
+import { simulate, solveDailyNew, ratingModel, firstRatingModel, FIRST_RATING_MIN } from './engine/forecast.mjs';
 import { buildToday } from './engine/today.mjs';
 import { localDay, CHECKIN_SKILLS, MATURE_DAYS, ACTIVE_LEVELS, scopeClause } from './db.mjs';
 import { readCheck } from './engine/lexicon.mjs';
@@ -336,6 +336,7 @@ export class Api {
         ratingSample: models.ratings.default?.sample ?? 0,
         ratingKinds: Object.fromEntries(Object.entries(models.ratings.byKind).map(([kind, value]) => [kind, value.sample])),
         firstRatingKinds: Object.fromEntries(Object.entries(models.firstRatings.byKind).map(([kind, value]) => [kind, value.sample])),
+        firstRatingMin: FIRST_RATING_MIN,
         secondsPerCard: models.secondsPerCard,
         secondsByKind: models.secondsByKind,
         secondsSource: models.secondsPerCard === DEFAULT_SECONDS ? 'default' : 'observed',
