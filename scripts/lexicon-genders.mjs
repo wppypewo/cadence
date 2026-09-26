@@ -26,6 +26,17 @@ const CASE_FIXES = { FAUX: 'faux', VRAI: 'vrai' };
 /** 上面改寫後的字 Wiktionnaire 快取裡沒有（抓的時候用的是大寫），性別直接寫。 */
 const MANUAL_GENDERS = { vrai: { g: 'm', elide: false } };
 
+/**
+ * 依詞義變性別的同形字：parsed.json 只記頁面上第一個名詞段落的性別，常用詞義常在後面的段落。
+ * 2026-09-26 掃過「名詞段落同時有 m 與 f」的 147 字，這 11 個的卡面釋義寫的是另一性的詞義
+ * （crêpe 第一段是縐紗 m、可麗餅在第二段 f；vase 第一段是淤泥 f、花瓶在後面 m）。
+ * 只改 g，省音照 Wiktionnaire。釋義裡另一性的次要詞義由 glosses.json 以「（陰性）…」標出。
+ */
+const SENSE_GENDERS = {
+  couple: 'm', crêpe: 'f', cravate: 'f', dalle: 'f', faune: 'f', parallèle: 'm',
+  plastique: 'm', solde: 'm', tour: 'm', vague: 'f', vase: 'm',
+};
+
 /** 一個鍵一行：幾千筆的檔案 diff 時才看得出改了哪一個字。 */
 function lines(obj) {
   const keys = Object.keys(obj).sort((a, b) => a.localeCompare(b, 'fr'));
@@ -53,7 +64,7 @@ async function main() {
     if (MANUAL_GENDERS[word]) { genders[word] = MANUAL_GENDERS[word]; continue; }
     const e = (parsed[word] ?? parsed[word.replaceAll("'", '’')])?.NOM;
     if (!e?.g) { miss.push(r); continue; }
-    genders[word] = { g: e.g, elide: e.elide };
+    genders[word] = { g: SENSE_GENDERS[word] ?? e.g, elide: e.elide };
   }
 
   // 與 fexgen 那份 92 筆比對：兩邊都來自 Wiktionnaire，對不上代表解析有漏洞。
