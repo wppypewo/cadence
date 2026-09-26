@@ -10,6 +10,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Store } from '../src/db.mjs';
+import { cardRow, referenceRows, uploadableCards } from '../src/cloud/bank-rows.mjs';
 
 const args = parseArgs(process.argv.slice(2));
 const dataDir = required(args, 'data');
@@ -52,7 +53,7 @@ async function prepare(dir, owner) {
     .split('\n').map((line) => line.trim()).filter(Boolean);
   const reviewRows = reviewLines.map((line) => JSON.parse(line));
 
-  const safeCards = allCards.filter((card) => card.kind !== 'conj');
+  const safeCards = uploadableCards(allCards);
   const safeIds = new Set(safeCards.map((card) => card.id));
   const bankVersion = String(meta.sourceFingerprint);
 
@@ -63,21 +64,7 @@ async function prepare(dir, owner) {
     throw new Error(`複習紀錄重建不完整：${JSON.stringify(rebuilt)}`);
   }
 
-  const cards = safeCards.map((card) => ({
-    owner_id: owner,
-    id: card.id,
-    kind: card.kind,
-    mode: card.mode,
-    level: card.level,
-    freq: card.freq ?? 0,
-    tags: card.tags ?? [],
-    answer: card.answer ?? null,
-    accept: card.accept ?? null,
-    search: searchText(card),
-    headword: searchHeadword(card),
-    payload: card,
-    bank_version: bankVersion,
-  }));
+  const cards = safeCards.map((card) => cardRow(card, owner, bankVersion));
 
   const states = store.db.prepare(
     `SELECT s.card_id, s.stability, s.difficulty, s.due, s.last_review, s.reps, s.lapses
@@ -103,28 +90,9 @@ async function prepare(dir, owner) {
     payload: entry,
   }));
 
-  const references = connectors.map((entry) => ({
-    owner_id: owner,
-    entry_type: 'connector',
-    entry_key: entry.connector,
-    payload: entry,
-    bank_version: bankVersion,
-  }));
-  references.push({
-    owner_id: owner,
-    entry_type: 'meta',
-    entry_key: 'bank',
-    payload: {
-      builtAt: meta.builtAt,
-      sourceFingerprint: bankVersion,
-      counts: { cards: safeCards.length, connectors: connectors.length },
-      excluded: {
-        conjugationCards: allCards.length - safeCards.length,
-        verbTables: meta.counts?.verbTables ?? null,
-        reason: 'Verbiste 衍生資料依 GPL-2.0 隔離，未上傳。',
-      },
-    },
-    bank_version: bankVersion,
+  const references = referenceRows({
+    connectors, meta, owner, bankVersion,
+    cardCount: safeCards.length, allCardCount: allCards.length,
   });
 
   const settingRows = [{
@@ -199,17 +167,6 @@ function copySnapshot(from, to) {
   for (const name of ['checkins.jsonl', 'attempts.jsonl']) {
     if (existsSync(path.join(from, name))) copyFileSync(path.join(from, name), path.join(to, name));
   }
-}
-
-function searchText(card) {
-  const front = card.front ?? {};
-  return [front.gloss, front.zh, front.prompt, front.verb, front.base, front.connector, front.word]
-    .filter((value) => typeof value === 'string' && value.trim()).join(' ');
-}
-
-function searchHeadword(card) {
-  const front = card.front ?? {};
-  return front.word ?? front.verb ?? front.connector ?? front.base ?? card.answer ?? '';
 }
 
 function deterministicUuid(input) {

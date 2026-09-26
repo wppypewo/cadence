@@ -109,6 +109,19 @@ vercel deploy --prod
 `reviews.jsonl` 的 569 筆歷史全部保留。Verbiste 衍生的變位卡與變位表不進雲端，
 相關事件仍以原始 payload 留在歷史中，避免把 GPL-2.0 衍生資料混入未隔離的正式題庫。
 
+這支腳本依賴的 RPC `cadence_import_batch` 搬完後已從正式資料庫移除（2026-09-26 實測查無），現在跑不動。
+之後本機重建題庫、要讓雲端跟上時改用 `scripts/cloud-sync-bank.mjs`：
+
+```bash
+# .env.cloud 放 SUPABASE_URL、SUPABASE_PUBLISHABLE_KEY、CADENCE_OWNER_EMAIL；密碼執行時輸入或設 CADENCE_PASSWORD
+node scripts/cloud-sync-bank.mjs --env .env.cloud           # 預演：只讀，印出新增／刪除幾張
+node scripts/cloud-sync-bank.mjs --env .env.cloud --apply   # 寫入
+```
+
+它用擁有者帳密登入、受 RLS 限制，只動 `cards` 與 `reference_entries`；記憶狀態、作答與設定一律不碰，
+因為雲端作答不會回到本機，用本機算出的狀態覆寫會把雲端的進度退回去。
+新題庫沒有的舊卡只在沒有作答紀錄也沒有記憶狀態時才刪。
+
 ## 本機資料的存法
 
 ```
