@@ -8,6 +8,7 @@
 import { readFile, access, readdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const HOME = homedir();
@@ -25,7 +26,16 @@ export const SOURCES = {
   /** 個人筆記：考卷與講義整理出來的現成題目 */
   packs: process.env.CADENCE_PACKS
     ?? path.join(HOME, 'ClaudeCode/KnowledgeBase/Ricky-KnowledgeBase/wiki/outputs/study-packs'),
+  /**
+   * FLELex 詞頻表（CC BY-NC-SA 4.0）。A1–B1 的詞表 fexgen 已經從它抽好了，
+   * B2 沒有，所以直接讀原表。只讀，不複製進本 repo。
+   */
+  flelex: process.env.CADENCE_FLELEX
+    ?? path.join(HOME, 'ClaudeCode/KnowledgeBase/Ricky-KnowledgeBase/raw/sources/french/flelex'),
 };
+
+/** 本 repo 自己的補充詞彙資料（進版控），見 lexicon/README.md。 */
+export const LEXICON = fileURLToPath(new URL('../../lexicon', import.meta.url));
 
 /**
  * 名詞化那兩份清單（EXCLUDE／FROM_EXAM）與構詞規則的原生位置。
@@ -99,6 +109,7 @@ const REQUIRED = {
     'french-connector-pick-bank.md',
     'french-rewrite-drill-bank.md',
   ],
+  flelex: ['FleLex_TT_Beacco.tsv'],
 };
 
 /**
@@ -114,7 +125,28 @@ export async function sourceInputs() {
     .filter((name) => /^gloss_.*\.json$/.test(name))
     .sort();
   for (const relative of glosses) inputs.push({ source: 'fexgen', relative, file: path.join(SOURCES.fexgen, relative) });
+  // lexicon/ 是本 repo 自己的檔，改了一樣要重建；不在 REQUIRED 裡，因為缺了也建得出（退回 A1–B1 的舊題庫）。
+  for (const relative of LEXICON_FILES) {
+    const file = path.join(LEXICON, relative);
+    if (await exists(file)) inputs.push({ source: 'lexicon', relative, file });
+  }
   return inputs;
+}
+
+const LEXICON_FILES = ['spelling.json', 'genders.json', 'glosses.json', 'examples.json'];
+
+/**
+ * 讀 lexicon/ 的四份補充資料。缺哪份就給空表：建置照跑，只是少了那一層覆寫。
+ * 鍵的寫法見 lexicon/README.md——spelling 以 FLELex 原拼法為鍵，其餘三份以更正後的拼法為鍵，
+ * 只有 examples 例外（沿用 FLELex 原拼法，因為例句是拿原拼法去 Tatoeba 比對的）。
+ */
+export async function loadLexicon(dir = LEXICON) {
+  const out = {};
+  for (const name of LEXICON_FILES) {
+    const file = path.join(dir, name);
+    out[name.replace(/\.json$/, '')] = (await exists(file)) ? await readJson(file) : {};
+  }
+  return out;
 }
 
 /** 可注入檔案清單的底層版本，測試不用碰使用者的三個 repo。 */
@@ -152,6 +184,28 @@ export async function checkSources() {
     out[name] = missing.length
       ? { ok: false, dir, detail: `缺 ${missing.join('、')}` }
       : { ok: true, dir, detail: dir.replace(HOME, '~') };
+  }
+  return out;
+}
+
+const CONTENT_POS = new Set(['NOM', 'VER', 'ADJ', 'ADV']);
+
+/**
+ * 讀 FLELex，只留指定等級的實詞。欄位與 fexgen 的 vocab_*.json 對齊（freq 用 freq_total），
+ * 這樣 B2 的條目跟 A1–B1 的走同一條出卡路線。
+ * 檔案是 CRLF 行尾，level 欄尾端會帶 \r——fexgen 的 vocab_import.py 踩過同一個坑。
+ */
+export async function loadFlelex(dir, levels) {
+  const want = new Set(levels);
+  const text = await readFile(path.join(dir, 'FleLex_TT_Beacco.tsv'), 'utf8');
+  const out = [];
+  for (const line of text.split(/\r?\n/).slice(1)) {
+    const cols = line.split('\t');
+    if (cols.length < 10) continue;
+    const [word, pos] = [cols[0].trim(), cols[1].trim()];
+    const level = cols[9].trim();
+    if (!want.has(level) || !CONTENT_POS.has(pos)) continue;
+    out.push({ word, pos, level, freq: Number(cols[8]) || 0 });
   }
   return out;
 }

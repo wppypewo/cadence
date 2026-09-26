@@ -1199,3 +1199,17 @@ table.grid tr[data-hit="1"] td { background: var(--accent-weak); color: var(--ac
   .week-sessions li { grid-template-columns: 58px minmax(0, 1fr); padding: var(--s3) 0; }
   .week-sessions li > .btn { grid-column: 1 / -1; width: 100%; }
 }
+
+/* 卡背例句（Tatoeba）。整塊靠左：句子長，置中排會變成參差的兩邊，讀起來比單字難對焦。 */
+.examples {
+  list-style: none; margin: var(--s3) 0 0; padding: 0;
+  width: 100%; max-width: 56ch; text-align: left;
+  display: flex; flex-direction: column; gap: var(--s3);
+  border-top: 1px solid var(--line); padding-top: var(--s3);
+}
+.example-fr { font-family: var(--font-fr); font-size: var(--t-lg); line-height: 1.45; }
+.example-hit { font-weight: 600; color: var(--accent); }
+.example-zh { font-size: var(--t-sm); color: var(--text-muted); margin-top: 2px; }
+.example-credit { font-size: var(--t-xs); color: var(--text-faint); margin-top: 2px; }
+.example-credit a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.example-credit a:hover { color: var(--text); }

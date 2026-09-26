@@ -25,3 +25,6 @@ dist/
 .vercel
 .env*
 !.env.example
+
+# lexicon/ 的抓取快取：Wiktionnaire 原文（CC BY-SA）與 Tatoeba 原始匯出，可重抓，不進版控
+lexicon/.cache/

@@ -188,8 +188,10 @@ const USER_SETTINGS = ['desiredRetention', 'dailyNewLimit', 'examDate'];
  * 但這條只管「新單字」：變位題不看動詞等級——être、avoir 被 FLELex 標成 A1，
  * 照等級切的話最常用的動詞一個都練不到；已經學過的 A1 卡也照常到期，
  * 否則實測有 66 張到期卡從 09-12 起就一直藏著沒出現。
+ * B2 於 2026-09-26 加入（lexicon/ 補齊 FLELex 5,068 個 B2 實詞）。新卡照 freq 排，
+ * 不照等級：terme、réseau、désormais 這類高頻 B2 字比很多 B1 字常用，實測前 300 張新卡裡 B2 佔 16 張。
  */
-export const ACTIVE_LEVELS = ['A2', 'B1'];
+export const ACTIVE_LEVELS = ['A2', 'B1', 'B2'];
 
 /** scope.active 時接在 WHERE 後面的條件。c 是 cards。 */
 const ACTIVE_CLAUSE = `(c.kind = 'conj' OR c.level IN (${ACTIVE_LEVELS.map(() => '?').join(',')})

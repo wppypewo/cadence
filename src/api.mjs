@@ -120,6 +120,7 @@ export class Api {
       gloss: f.gloss ?? card.answer ?? null,
       en: f.en ?? null,
       glossSource: f.glossSource ?? null,
+      examples: f.examples ?? [],
       // 四個評分各會排到幾天後，印在評分鍵上。只算不寫，不碰 reviews.jsonl。
       intervals: this.store.previewIntervals(cardId),
     };
@@ -233,6 +234,7 @@ export class Api {
       answer: card.kind === 'vocab-recall' ? card.front?.gloss ?? null : card.answer ?? null,
       en: card.kind === 'vocab-recall' ? card.front?.en ?? null : null,
       glossSource: card.kind === 'vocab-recall' ? card.front?.glossSource ?? null : null,
+      examples: card.kind === 'vocab-recall' || card.kind === 'vocab-produce' ? card.front?.examples ?? [] : [],
       accept: card.accept ?? null,
       note: card.note ?? null,
       fn: card.kind === 'connector' ? card.front?.fn ?? null : null,
@@ -747,6 +749,8 @@ function stripAnswer(card, keepAnswer = false) {
     delete front.en;
     delete front.glossSource;
   }
+  // 例句裡就是答案本身（寫），或帶著中文翻譯（認），兩種單字卡都等作答後才給。
+  if (card.kind === 'vocab-recall' || card.kind === 'vocab-produce') delete front.examples;
   if (card.kind === 'vocab-produce') delete front.word;
   if (card.kind === 'connector') {
     // moodRaw 是答案本身，fn 則常能直接推出答案；兩者都在作答後由 review 回應提供。

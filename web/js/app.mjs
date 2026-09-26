@@ -60,7 +60,7 @@ const NAV = [
 ].filter((item) => !item.cloudOnly || isCloudRuntime());
 
 const KINDS = Object.entries(KIND_ZH).map(([id, label]) => ({ id, label }));
-const LEVELS = ['A2', 'B1'];
+const LEVELS = ['A2', 'B1', 'B2'];
 
 const STORE_KEY = 'cadence.scope';
 const THEME_KEY = 'cadence.theme';

@@ -46,7 +46,40 @@ const RW_RATING_ZH = [null, '差很多', '有出入', '一致'];
 const GLOSS_SOURCE_ZH = {
   'Wiktionnaire-fr': '中文釋義取自法文維基詞典（Wiktionnaire）',
   manual: '中文釋義為人工整理',
+  cadence: '中文釋義為 cadence 逐筆整理',
 };
+
+// 題庫存 m／f／mf（src/build/bank.mjs），前端印中文。
+// mf 多半是 artiste、adulte 這類同形兩性的字，也有 après-midi、automne 這類兩種性別都有人用的字，
+// 所以寫「皆可」不寫「同形」。
+const GENDER_ZH = { m: '陽性', f: '陰性', mf: '陽性陰性皆可' };
+
+/**
+ * 卡背的例句（lexicon/examples.json，取自 Tatoeba，CC BY 2.0 FR）。
+ * 授權要求署名，所以每句都帶作者與原句連結。
+ * hit 是句中實際出現的詞形；2026-09-26 實測 16,485 句裡有 455 句只差大小寫（句首），
+ * 找不到時退回不分大小寫，再找不到就整句不標。
+ */
+function examplesBlock(examples) {
+  if (!examples?.length) return null;
+  const list = h('ul.examples', { 'aria-label': '例句' });
+  for (const ex of examples) {
+    let at = ex.fr.indexOf(ex.hit);
+    if (at < 0) at = ex.fr.toLowerCase().indexOf(ex.hit.toLowerCase());
+    const fr = h('p.example-fr.fr', { lang: 'fr' });
+    if (at < 0 || !ex.hit) fr.append(ex.fr);
+    else fr.append(ex.fr.slice(0, at), h('b.example-hit', { text: ex.fr.slice(at, at + ex.hit.length) }), ex.fr.slice(at + ex.hit.length));
+    const credit = h('p.example-credit', {},
+      h('a', {
+        href: `https://tatoeba.org/sentences/show/${ex.id}`, target: '_blank', rel: 'noopener noreferrer',
+        text: `Tatoeba #${ex.id}`,
+      }),
+      `・${ex.by}`,
+    );
+    list.append(h('li.example', {}, fr, ex.zh ? h('p.example-zh', { text: ex.zh }) : null, credit));
+  }
+  return list;
+}
 
 const fmt = new Intl.NumberFormat('zh-Hant');
 
@@ -532,11 +565,11 @@ function prompt(card, f) {
     p.append(h('p.cue', { text: '法文怎麼寫？' }));
     p.append(h('p.prompt-zh.prompt-lead', { text: f.gloss || f.en || '（沒有釋義）' }));
     if (f.en && f.gloss) p.append(h('p.prompt-en', { lang: 'en', text: f.en }));
-    p.append(h('p.prompt-note', { text: [f.posZh, f.gender].filter(Boolean).join('・') }));
+    p.append(h('p.prompt-note', { text: [f.posZh, GENDER_ZH[f.gender]].filter(Boolean).join('・') }));
   } else {
     p.append(h('p.cue', { text: '什麼意思？' }));
     p.append(h('p.prompt-word.fr', { lang: 'fr', text: f.word }));
-    p.append(h('p.prompt-note', { text: [f.posZh, f.gender, f.level].filter(Boolean).join('・') }));
+    p.append(h('p.prompt-note', { text: [f.posZh, GENDER_ZH[f.gender], f.level].filter(Boolean).join('・') }));
   }
   return p;
 }
@@ -749,6 +782,8 @@ function selfAnswer(card, submit) {
           lang: 'en', text: Array.isArray(answer.en) ? answer.en.join('；') : answer.en,
         }));
         if (GLOSS_SOURCE_ZH[answer.glossSource]) back.append(h('p.prompt-note', { text: GLOSS_SOURCE_ZH[answer.glossSource] }));
+        const ex = examplesBlock(answer.examples);
+        if (ex) back.append(ex);
         // 每顆評分鍵寫上它會把這張卡排到哪一天。「想起來了」與「太簡單」差三天還是三十天，
         // 看不到就很難誠實地分。舊伺服器沒有這個欄位時留白。
         rate.querySelectorAll('.iv').forEach((node, i) => {
@@ -912,6 +947,9 @@ function verdictPanel(card, res, next, correct, animate) {
   }
 
   if (res.note) box.append(h('p.verdict-note', { text: res.note }));
+  // 例句放在排程資訊之前：翻面後先看字怎麼用，再看下次什麼時候見。
+  const ex = examplesBlock(res.examples);
+  if (ex) box.append(ex);
 
   box.append(h('dl.verdict-sched', {},
     h('div', {}, h('dt', { text: '下次' }), h('dd', { text: relDays(res.state.intervalDays) })),

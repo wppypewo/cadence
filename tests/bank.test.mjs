@@ -5,7 +5,7 @@
  * 不會壞掉，只會讓人每天多背幾張不該背的、或是把答對的判成答錯。
  * 所以測試盯的是四個決定：
  *   1. 中文釋義撞號的字要互相認（「除非」同時是 sauf si 和 à moins que）
- *   2. 帶 ⚠ 的可疑釋義不拿來當中翻法的題面
+ *   2. 帶 ⚠ 的可疑釋義不出卡（作答過的那張照留，免得排程狀態被一起刪掉）
  *   3. 規則動詞（aim:er／fin:ir）進查詢用的變位表，但不出變位題
  *   4. 多解的連接詞不出單選題——把「兩種都對」教成「只有一種對」比不教還糟
  *
@@ -14,7 +14,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { makeVocabCards, makeConjCards, makeConnectorCards, TENSES, POS_ZH } from '../src/build/bank.mjs';
+import { makeVocabCards, makeConjCards, makeConnectorCards, mergeEntries, TENSES, POS_ZH } from '../src/build/bank.mjs';
 import { parseConnectors, parseMoodTable, mergeConnectors, MOOD_LABELS, MOOD_ZH } from '../src/build/connectors.mjs';
 import { CONNECTOR_GLOSS } from '../src/build/connector-gloss.mjs';
 import { parseVerbs, parseTemplates, AUX_DUAL_NOTE } from '../src/build/verbiste.mjs';
@@ -71,10 +71,57 @@ test('詞彙卡：中文撞號的同詞性字互相認', () => {
   assert.deepEqual(produce.map((c) => c.answer), ['sauf si', 'à moins que']);
 });
 
-test('詞彙卡：帶 ⚠ 的釋義只出「認」不出「寫」', () => {
+test('詞彙卡：帶 ⚠ 的釋義一張都不出', () => {
   const cards = makeVocabCards([entry('clair', { pos: 'ADJ' })], GLOSS_TABLES, {}, {});
-  assert.deepEqual(cards.map((c) => c.kind), ['vocab-recall']);
+  assert.deepEqual(cards, []);
+});
+
+test('詞彙卡：雜訊詞條作答過的那張照留，沒作答過的不出', () => {
+  // est-à-dire 的「認」卡 2026-09-26 前就有作答紀錄；卡片消失，Store.loadBank() 會把排程狀態刪掉。
+  const cards = makeVocabCards([entry('clair', { pos: 'ADJ' })], GLOSS_TABLES, {}, {},
+    { reviewed: new Set(['v:clair|ADJ|r']) });
+  assert.deepEqual(cards.map((c) => c.id), ['v:clair|ADJ|r']);
   assert.equal(cards[0].front.noisy, true);
+});
+
+test('詞彙卡：釋義中間的「(⚠ 亦為…)」是同形字註記，不算雜訊', () => {
+  const cards = makeVocabCards([entry('livre')], GLOSS_TABLES, {}, {},
+    { glosses: { 'livre|NOM': '書 (⚠ 亦為陰性名詞「磅」)' } });
+  assert.deepEqual(cards.map((c) => c.kind), ['vocab-recall', 'vocab-produce']);
+  assert.equal(cards[0].front.noisy, false);
+});
+
+test('詞彙卡：lexicon 的釋義優先於 fexgen，來源標 cadence', () => {
+  const cards = makeVocabCards([entry('livre', { zh: ['書本', '磅'] })], GLOSS_TABLES, {}, {},
+    { glosses: { 'livre|NOM': '書' } });
+  assert.equal(cards[0].front.gloss, '書');
+  assert.equal(cards[0].front.glossSource, 'cadence');
+});
+
+test('詞彙卡：例句放進題面資料，沒有例句就不帶這個欄位', () => {
+  const ex = [{ id: 1, fr: 'Je lis un livre.', hit: 'livre', by: 'x' }];
+  const [withEx] = makeVocabCards([entry('livre')], GLOSS_TABLES, {}, {}, { examples: { 'livre|NOM': ex } });
+  assert.deepEqual(withEx.front.examples, ex);
+  const [without] = makeVocabCards([entry('livre')], GLOSS_TABLES, {}, {});
+  assert.equal('examples' in without.front, false);
+});
+
+test('合併詞表：拼法更正後去重，留等級低的那筆，src 記原拼法', () => {
+  const fex = [{ word: 'coeur', pos: 'NOM', level: 'A1', freq: 900 }];
+  const b2 = [
+    { word: 'œuvre', pos: 'NOM', level: 'B2', freq: 50 },
+    { word: 'oeuvre', pos: 'NOM', level: 'B2', freq: 40 },
+    { word: 'coeur', pos: 'NOM', level: 'B2', freq: 10 },
+  ];
+  const out = mergeEntries(fex, b2, { coeur: 'cœur', oeuvre: 'œuvre' });
+  assert.deepEqual(out.map((e) => [e.word, e.level, e.src]), [['cœur', 'A1', 'coeur'], ['œuvre', 'B2', 'œuvre']]);
+  // 新 id 用更正後的拼法；查 fexgen 的英文定義與例句用原拼法。
+  const cards = makeVocabCards(out.slice(0, 1), { ...GLOSS_TABLES, plain: new Map([['coeur', '心']]) },
+    { coeur: { NOM: ['heart'] } }, {}, { examples: { 'coeur|NOM': [{ id: 2, fr: 'Mon cœur', hit: 'cœur', by: 'y' }] } });
+  assert.equal(cards[0].id, 'v:cœur|NOM|r');
+  assert.equal(cards[0].front.gloss, '心');
+  assert.deepEqual(cards[0].front.en, ['heart']);
+  assert.equal(cards[0].front.examples.length, 1);
 });
 
 test('詞彙卡：查不到釋義的字一張都不出', () => {

@@ -82,6 +82,7 @@ export async function reveal(config, auth, query, fetchImpl = fetch) {
     gloss: front.gloss ?? card.answer ?? null,
     en: front.en ?? null,
     glossSource: front.glossSource ?? null,
+    examples: front.examples ?? [],
     intervals: [1, 2, 3, 4].map((rating) => scheduler.review(base, rating, elapsed).intervalDays),
   };
 }
@@ -203,6 +204,7 @@ export async function review(config, auth, body, fetchImpl = fetch) {
     answer: card.kind === 'vocab-recall' ? card.front?.gloss ?? null : card.answer ?? null,
     en: card.kind === 'vocab-recall' ? card.front?.en ?? null : null,
     glossSource: card.kind === 'vocab-recall' ? card.front?.glossSource ?? null : null,
+    examples: card.kind === 'vocab-recall' || card.kind === 'vocab-produce' ? card.front?.examples ?? [] : [],
     accept: card.accept ?? null,
     note: card.note ?? null,
     fn: card.kind === 'connector' ? card.front?.fn ?? null : null,
@@ -355,6 +357,7 @@ function stripAnswer(card) {
     delete front.en;
     delete front.glossSource;
   }
+  if (card.kind === 'vocab-recall' || card.kind === 'vocab-produce') delete front.examples;
   if (card.kind === 'vocab-produce') delete front.word;
   if (card.kind === 'connector') {
     delete front.moodRaw;

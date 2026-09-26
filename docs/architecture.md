@@ -34,6 +34,8 @@ api/router.mjs       Vercel Function 入口
 scripts/
   build-web.mjs      只複製可公開的 web/、study/ 與共用批改器
   cloud-import.mjs   一次性搬移本機題庫、設定與 append-only 事實
+  lexicon-*.mjs      重新產生 lexicon/ 的四支腳本（抓 Wiktionnaire、性別、釋義、Tatoeba 例句），順序見 lexicon/README.md
+lexicon/             進版控的補充詞彙：性別、自寫釋義、例句、拼法更正
 supabase/migrations/ 可從空資料庫重建表、RLS、RPC 與 B2 資源索引
 study/               給人讀的三份文件，由 /api/doc 原文送出，前端才渲染
 web/
@@ -61,8 +63,10 @@ web/
 建置期（npm run build，讀外部目錄）
   french-exam-generator/data ─┐
   Verbiste XML ───────────────┤
+  FLELex（B2 詞表）───────────┤
   vault 的法文筆記 ───────────┼─→ src/build/bank.mjs → data/bank/*.json
-  vault 的 study-packs ───────┘
+  vault 的 study-packs ───────┤
+  lexicon/（本 repo）─────────┘
 
 執行期
   data/bank/*.json ──→ SQLite cards 表（首次啟動時載入）
@@ -88,7 +92,7 @@ web/
 ## 為什麼是 JSONL 加 SQLite，不是只用其中一個
 
 只用 SQLite：檔案格式不透明，schema 一改就要寫遷移，壞掉沒得救。
-只用 JSONL：查「哪些卡今天到期」要掃全檔，16,000 張卡撐不住。
+只用 JSONL：查「哪些卡今天到期」要掃全檔，三萬多張卡撐不住。
 
 所以事實用 JSONL，查詢用 SQLite，後者隨時可以整個刪掉重建。`data/cadence.db` 在 `.gitignore` 裡就是這個意思。
 

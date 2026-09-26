@@ -18,12 +18,15 @@ const BANK = [
   {
     id: 'v:ecole', kind: 'vocab-produce', mode: 'typed', level: 'A2', freq: 9,
     tags: ['vocab'], answer: 'école', accept: ['école'], note: '陰性名詞',
-    front: { word: 'école', gloss: '學校' },
+    front: { word: 'école', gloss: '學校', examples: [{ id: 2, fr: "L'école est fermée.", hit: 'école', by: 'y' }] },
   },
   {
     id: 'v:chien', kind: 'vocab-recall', mode: 'self', level: 'A2', freq: 8,
     tags: ['vocab'], answer: '狗', accept: null,
-    front: { word: 'chien', gloss: '狗', en: ['dog'], glossSource: 'manual' },
+    front: {
+      word: 'chien', gloss: '狗', en: ['dog'], glossSource: 'manual',
+      examples: [{ id: 1, fr: 'Le chien dort.', hit: 'chien', by: 'x', zh: '狗在睡覺。' }],
+    },
   },
   {
     id: 'k:bien-que', kind: 'connector', mode: 'choice', level: 'B1', freq: 0,
@@ -122,8 +125,11 @@ test('出題不帶答案，統計裡的弱點卡才帶', async () => {
     assert.equal(recall.front.gloss, undefined);
     assert.equal(recall.front.en, undefined);
     assert.equal(recall.front.glossSource, undefined);
+    // 例句同樣要等作答後才給：「認」的例句帶中文翻譯，「寫」的例句裡就是答案本身。
+    assert.equal(recall.front.examples, undefined);
     const produce = q.cards.find((c) => c.kind === 'vocab-produce');
     assert.equal(produce.front.word, undefined);
+    assert.equal(produce.front.examples, undefined);
     const connector = q.cards.find((c) => c.kind === 'connector');
     assert.equal(connector.front.moodRaw, undefined);
     assert.equal(connector.front.fn, undefined);
@@ -132,7 +138,8 @@ test('出題不帶答案，統計裡的弱點卡才帶', async () => {
     assert.equal(q.remaining.due + q.remaining.new, BANK.length);
     assert.equal(q.newLimit, 15);
 
-    api.review({ cardId: 'v:ecole', answer: 'ecole' });
+    const res = api.review({ cardId: 'v:ecole', answer: 'ecole' });
+    assert.equal(res.examples[0].fr, "L'école est fermée.");
     const weak = api.stats().weakest;
     assert.equal(weak.length, 1);
     // 弱點清單的用途就是看到自己寫錯的字，這裡答案要在，但不必給候選清單。
@@ -150,7 +157,10 @@ test('看字回想的釋義要翻面才取回，其他題型不能走 reveal', a
     const recall = api.queue({ kinds: 'vocab-recall', limit: 1 }).cards[0];
     assert.notEqual(recall.id, 'v:chien');
     const { intervals, ...shown } = api.reveal({ id: recall.id });
-    assert.deepEqual(shown, { gloss: '狗', en: ['dog'], glossSource: 'manual' });
+    assert.deepEqual(shown, {
+      gloss: '狗', en: ['dog'], glossSource: 'manual',
+      examples: [{ id: 1, fr: 'Le chien dort.', hit: 'chien', by: 'x', zh: '狗在睡覺。' }],
+    });
     // 評分鍵上的預覽：四個、整數天、至少 1 天、分數越高排得越遠（不會倒過來）。
     assert.equal(intervals.length, 4);
     for (const d of intervals) assert.ok(Number.isInteger(d) && d >= 1, `${d}`);
