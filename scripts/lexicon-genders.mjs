@@ -37,6 +37,17 @@ const SENSE_GENDERS = {
   plastique: 'm', solde: 'm', tour: 'm', vague: 'f', vase: 'm',
 };
 
+/**
+ * Wiktionnaire 標 {{mf}}、但一般用法只有一性的字。解析沒錯（原文就是 mf），
+ * 只是卡面寫 mf 會讓人以為兩性都能用：數字當名詞時是 le cinq（la cinq 只指頻道或巴士路線），
+ * automne 的陰性 Wiktionnaire 自己注明罕用且屬文學用法，un espèce de 是口語的誤用。
+ * 2026-09-27 B2 抽查時從 mf 的 183 字裡挑出；其餘多是 un／une 同形的人稱名詞，mf 正確。
+ */
+const USAGE_GENDERS = {
+  amour: 'm', automne: 'm', chronique: 'f', cinq: 'm', cinquante: 'm', dix: 'm', espèce: 'f',
+  génie: 'm', mammifère: 'm', pseudonyme: 'm', quatre: 'm', sept: 'm', trois: 'm',
+};
+
 /** 一個鍵一行：幾千筆的檔案 diff 時才看得出改了哪一個字。 */
 function lines(obj) {
   const keys = Object.keys(obj).sort((a, b) => a.localeCompare(b, 'fr'));
@@ -64,7 +75,7 @@ async function main() {
     if (MANUAL_GENDERS[word]) { genders[word] = MANUAL_GENDERS[word]; continue; }
     const e = (parsed[word] ?? parsed[word.replaceAll("'", '’')])?.NOM;
     if (!e?.g) { miss.push(r); continue; }
-    genders[word] = { g: SENSE_GENDERS[word] ?? e.g, elide: e.elide };
+    genders[word] = { g: SENSE_GENDERS[word] ?? USAGE_GENDERS[word] ?? e.g, elide: e.elide };
   }
 
   // 與 fexgen 那份 92 筆比對：兩邊都來自 Wiktionnaire，對不上代表解析有漏洞。
