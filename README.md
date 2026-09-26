@@ -5,6 +5,9 @@
 同一份原生 ESM 前端有兩種執行模式：`npm start` 之後在 `http://127.0.0.1:4173` 打開，用本機 SQLite／JSONL，沒有帳號、全部跑在這台機器上；
 正式站用 Vercel Functions、Supabase Auth 與 Postgres。兩邊都沒有 npm 套件（前端另外放了一份 GSAP 做動畫，見〈資料與授權〉）。
 
+**2026-09-26 起只用雲端版作答。**本機模式的程式留著，用來開發、跑測試與重建題庫；
+`data/reviews.jsonl` 停在 569 行不再增加，之後的作答只在 Supabase，定期用 `scripts/cloud-backup.mjs` 拉回本機存檔（見〈雲端正式版〉）。
+
 ```bash
 npm run build     # 手動從五個外部來源與 lexicon/ 重建題庫（平常啟動時會自動檢查）
 npm start         # 啟動伺服器並打開瀏覽器
@@ -122,7 +125,20 @@ node scripts/cloud-sync-bank.mjs --env .env.cloud --apply   # 寫入
 因為雲端作答不會回到本機，用本機算出的狀態覆寫會把雲端的進度退回去。
 新題庫沒有的舊卡只在沒有作答紀錄也沒有記憶狀態時才刪。
 
+雲端是作答的唯一來源，備份用 `scripts/cloud-backup.mjs`，對雲端只讀：
+
+```bash
+node scripts/cloud-backup.mjs --env .env.cloud   # 寫進 data/cloud-backup/，跑完把新增的行 commit
+```
+
+`review_events`、`checkin_events`、`practice_events` 各存成 `data/cloud-backup/<表名>.jsonl`，
+以 `event_id` 比對、只追加雲端多出來的列，既有行不改（jsonb 會重排鍵順序，不能拿整行內容比對）；
+本機有、雲端已查無的列只警告不刪——那正是備份要留住的東西。`settings.json` 是設定快照，每次覆寫。
+沒備份的有兩樣：`card_states` 可由作答事件重播算回；`practice_assets` 的 Storage 檔案不在資料表裡。
+
 ## 本機資料的存法
+
+本機版 2026-09-26 起停用，以下是本機模式跑起來時的存法。`reviews.jsonl` 停在 569 行；另外兩個 JSONL 從沒產生過。
 
 ```
 data/reviews.jsonl   每次作答一行 JSON，只增不改。事實來源，進版控。
@@ -131,6 +147,7 @@ data/attempts.jsonl  四科實作練習與模考，一次一行；只存文字�
 data/settings.json   考試日期、每日新卡量（可不設上限）與目標記憶率，本機保存，不進版控。
 data/cadence.db      SQLite 索引。題庫、記憶狀態、統計都在這，可整個重算，不進版控。
 data/bank/           建置產物，由 npm run build 現算，不進版控。
+data/cloud-backup/   雲端事件表的備份（scripts/cloud-backup.mjs），只增不改，進版控。
 ```
 
 這樣切的理由：SQLite 檔壞掉、schema 改版、或這個專案被丟掉，練了幾百天的紀錄都還在，而且是 `cat` 就讀得懂的格式。索引壞了跑 `npm run reindex` 從三個 JSONL 重建。
@@ -193,7 +210,7 @@ cadence doctor    [--json]                    檢查資料來源、題庫、索�
 ## 開發
 
 ```bash
-npm test      # 293 題，含 732 組 FSRS 黃金向量
+npm test      # 305 題，含 732 組 FSRS 黃金向量
 npm run lint  # node --check 全檔語法檢查
 npm run build:web  # 產生 Vercel 的 dist/
 ```

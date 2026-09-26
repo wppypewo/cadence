@@ -1,6 +1,6 @@
 # AGENTS.md — 給 Codex 的入口
 
-本專案是 **cadence**：本地法文複習工作台，目標是 2027-05 的 DELF B1。
+本專案是 **cadence**：法文複習工作台，目標是 2027-05 的 DELF B1。2026-09-26 起只用雲端版作答，本機模式留給開發與重建題庫。
 先讀 [README.md](README.md)（它是什麼、怎麼跑）與 [docs/architecture.md](docs/architecture.md)（四層怎麼疊）。
 
 ## 規則的單一來源是 CLAUDE.md
@@ -14,7 +14,7 @@
 四條不可協商的，摘要在此，細節看 CLAUDE.md：
 
 1. **零第三方依賴**——`dependencies` 與 `devDependencies` 維持空的。要引套件先問使用者。例外只有 `web/vendor/gsap.mjs`（經同意放入，非開源授權，檔首聲明不得刪），細節看 CLAUDE.md。
-2. **`data/reviews.jsonl`、`data/checkins.jsonl` 與 `data/attempts.jsonl` 只增不改**——三個不可重建的資料檔；撤銷與評分更正也只追加事件。
+2. **`data/reviews.jsonl`、`data/checkins.jsonl` 與 `data/attempts.jsonl` 只增不改**——三個不可重建的資料檔；撤銷與評分更正也只追加事件。停用本機版後作答只在雲端事件表，`data/cloud-backup/*.jsonl` 是其備份，同樣只增不改。
 3. **GPL-2.0 隔離**——Verbiste 衍生物只能落在 gitignore 的 `data/bank/`。
 4. **法文重音完整保留**——不得轉 ASCII。
 
@@ -22,7 +22,7 @@
 
 ```bash
 npm run lint   # node --check 全檔
-npm test       # 276 題，含 732 組 FSRS 黃金向量
+npm test       # 305 題，含 732 組 FSRS 黃金向量
 npm run doctor # 四個外部來源、題庫、索引三邊對帳
 ```
 
@@ -38,7 +38,7 @@ npm run doctor # 四個外部來源、題庫、索引三邊對帳
 - **不要重排、不要「順手整理」沒在做的檔案。** 格式化整檔會讓對方的 diff 無法閱讀。
 - **同一個檔案不要兩邊同時改。** 要動別人正在動的檔，先在對話裡講。
 - **`CLAUDE.md` 與 `AGENTS.md` 各自維護。** 改規則改 CLAUDE.md，這裡只跟著更新指標。
-- **三個 `data/*.jsonl` 事實檔誰都不要碰。** 它們只由跑起來的 App 追加。
+- **三個 `data/*.jsonl` 事實檔與 `data/cloud-backup/` 誰都不要手改。** 前者只由跑起來的本機 App 追加（已停用），後者只由 `scripts/cloud-backup.mjs` 追加。
 
 待辦清單在 [docs/backlog.md](docs/backlog.md)，是兩邊共用的。認領一項就在那裡註記。
 
