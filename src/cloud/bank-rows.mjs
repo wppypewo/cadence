@@ -1,6 +1,6 @@
 /**
- * 本機題庫 → Supabase 列的轉換。cloud-import 與 cloud-sync-bank 共用，
- * 雲端辭典查的是 search／headword 兩欄，兩支腳本各寫一份就會各自漂移。
+ * 本機題庫 → Supabase 列的轉換，cloud-sync-bank 用。原本也給已刪的 cloud-import 共用：
+ * 雲端辭典查的是 search／headword 兩欄，兩支腳本各寫一份就會各自漂移。獨立成檔也方便測試。
  */
 
 /** 變位卡衍生自 Verbiste（GPL-2.0），依隔離規則不上雲端。 */

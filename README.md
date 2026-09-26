@@ -108,12 +108,13 @@ npm run build:web
 vercel deploy --prod
 ```
 
-一次性搬移用 `scripts/cloud-import.mjs`。它從本機資料建立快照後分批上傳；
+最初的一次性搬移用的是 `scripts/cloud-import.mjs`：從本機資料建立快照後分批上傳，
 `reviews.jsonl` 的 569 筆歷史全部保留。Verbiste 衍生的變位卡與變位表不進雲端，
 相關事件仍以原始 payload 留在歷史中，避免把 GPL-2.0 衍生資料混入未隔離的正式題庫。
 
-這支腳本依賴的 RPC `cadence_import_batch` 搬完後已從正式資料庫移除（2026-09-26 實測查無），現在跑不動。
-之後本機重建題庫、要讓雲端跟上時改用 `scripts/cloud-sync-bank.mjs`：
+那支腳本依賴的 RPC `cadence_import_batch` 搬完後已從正式資料庫移除（2026-09-26 實測查無），
+跑不動了，2026-09-27 刪除；原始碼可從 `dfdda6b` 取回。
+本機重建題庫、要讓雲端跟上時用 `scripts/cloud-sync-bank.mjs`：
 
 ```bash
 # .env.cloud 放 SUPABASE_URL、SUPABASE_PUBLISHABLE_KEY、CADENCE_OWNER_EMAIL；密碼執行時輸入或設 CADENCE_PASSWORD

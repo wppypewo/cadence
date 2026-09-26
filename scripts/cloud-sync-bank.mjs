@@ -2,7 +2,7 @@
  * 把本機重建後的題庫同步到 Supabase：只動 cards 與 reference_entries，
  * 不碰 review_events、card_states、user_settings。
  *
- * 為什麼不用 cloud-import.mjs：它依賴的 RPC cadence_import_batch 在 2026-09-26 已不存在
+ * 為什麼不用 cloud-import.mjs（2026-09-27 已刪，原始碼見 dfdda6b）：它依賴的 RPC cadence_import_batch 在 2026-09-26 已不存在
  * （public schema 查無任何 import 函式），而且它會連記憶狀態一起送。雲端作答直接寫雲端的表，
  * 不會回到本機 reviews.jsonl（當天實測雲端 573 筆、本機 569 筆），用本機算出的狀態覆寫
  * 會把只在雲端作答過的卡退回舊進度。
