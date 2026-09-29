@@ -96,6 +96,11 @@ Vercel 只部署 `web/`、白名單內的 `study/` 文件與同網域 `/api/*`�
 Supabase token；登入狀態放在 HttpOnly、SameSite Cookie，伺服器端再以使用者 JWT 走 RLS。
 正式站只允許第一位 Supabase Auth 使用者，應先建立擁有者再開放登入。
 
+`vercel.json` 把函式固定在 `hnd1`（東京），因為 Supabase 專案在 AWS ap-northeast-1（2026-09-29 以資料庫主機的
+IPv6 對照 AWS 公開 IP 範圍查得）。沒設的話 Vercel 新專案預設跑在 `iad1`（華盛頓特區），每支 API 要先在
+美東與東京之間來回：送出一次作答是驗證登入、讀卡片／狀態／設定、寫事件、寫狀態四趟串行請求，
+從台北量到 Supabase 單趟約 90–100ms，美東到東京還更遠。換 Supabase 區域時這裡要一起改。
+
 ```bash
 # 依檔名順序套用 supabase/migrations/*.sql，建立表、RLS、查詢函式與 B2 資源索引。
 # 接著在 Vercel 設定：
