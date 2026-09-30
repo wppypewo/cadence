@@ -5,7 +5,7 @@ import { grade, gradeNom, gradePick, gradeRewrite } from '../engine/grade.mjs';
 import { createScheduler } from '../engine/fsrs.mjs';
 import { buildToday } from '../engine/today.mjs';
 import { restRequest, CloudError } from './supabase.mjs';
-import { readSettings } from './data.mjs';
+import { readSettings, recordReview } from './data.mjs';
 
 const DAY_MS = 86_400_000;
 const KINDS = ['vocab-recall', 'vocab-produce', 'conj', 'connector', 'pick', 'rw', 'nom'];
@@ -163,40 +163,31 @@ export async function review(config, auth, body, fetchImpl = fetch) {
     selfRated: suppliedRating && (card.mode === 'self' || card.kind === 'rw'),
   };
 
-  await restRequest(config, 'review_events', {
-    method: 'POST', token: auth.token, body: {
-      owner_id: auth.user.id,
-      event_id: eventId,
-      event_type: 'review',
-      target_event_id: null,
-      card_id: cardId,
-      at: entry.at,
-      study_day: studyDay,
-      rating,
-      elapsed_days: entry.elapsed,
-      answered: entry.answered,
-      correct: entry.correct,
-      reason: entry.reason,
-      response_ms: entry.ms,
-      self_rated: entry.selfRated,
-      payload: entry,
-    },
-    prefer: 'return=minimal', fetchImpl,
-  });
-
   const due = new Date(now.getTime() + next.intervalDays * DAY_MS).toISOString();
   const lapses = (previous?.lapses ?? 0) + (rating === 1 ? 1 : 0);
   const reps = (previous?.reps ?? 0) + 1;
-  await restRequest(config, 'card_states?on_conflict=owner_id,card_id', {
-    method: 'POST', token: auth.token, prefer: 'resolution=merge-duplicates,return=minimal', fetchImpl,
-    body: {
-      owner_id: auth.user.id, card_id: cardId,
-      stability: next.stability, difficulty: next.difficulty,
-      due, last_review: entry.at, reps, lapses,
-      version: (previous?.version ?? 0) + 1,
-      updated_at: entry.at,
-    },
-  });
+  await recordReview(config, auth, {
+    event_id: eventId,
+    event_type: 'review',
+    target_event_id: null,
+    card_id: cardId,
+    at: entry.at,
+    study_day: studyDay,
+    rating,
+    elapsed_days: entry.elapsed,
+    answered: entry.answered,
+    correct: entry.correct,
+    reason: entry.reason,
+    response_ms: entry.ms,
+    self_rated: entry.selfRated,
+    payload: entry,
+  }, {
+    card_id: cardId,
+    stability: next.stability, difficulty: next.difficulty,
+    due, last_review: entry.at, reps, lapses,
+    version: (previous?.version ?? 0) + 1,
+    updated_at: entry.at,
+  }, fetchImpl);
 
   return {
     phase: 'done', reviewId: eventId, selfRated: entry.selfRated,

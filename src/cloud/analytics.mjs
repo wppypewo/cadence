@@ -5,7 +5,7 @@ import { simulate, solveDailyNew, ratingDistribution } from '../engine/forecast.
 import { createScheduler } from '../engine/fsrs.mjs';
 import { readCheck } from '../engine/lexicon.mjs';
 import { restRequest, CloudError } from './supabase.mjs';
-import { readSettings } from './data.mjs';
+import { readSettings, recordReview } from './data.mjs';
 import { summarizePractice } from './practice.mjs';
 
 const DAY_MS = 86_400_000;
@@ -224,7 +224,10 @@ export async function correctCloudReview(config, auth, body, fetchImpl = fetch) 
   if (!Number.isInteger(rating) || rating < 1 || rating > 4) {
     throw new CloudError(400, 'rating 必須是 1..4 的整數');
   }
-  const rows = await readReviews(config, auth, fetchImpl);
+  const [rows, settings] = await Promise.all([
+    readReviews(config, auth, fetchImpl),
+    readSettings(config, auth, fetchImpl),
+  ]);
   const originals = rows.filter((row) => row.event_type === 'review')
     .sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
   const latest = originals.at(-1);
@@ -234,20 +237,10 @@ export async function correctCloudReview(config, auth, body, fetchImpl = fetch) 
   const now = new Date();
   const eventId = randomUUID();
   const payload = { v: 2, type: 'rating-correction', id: eventId, target, rating, at: now.toISOString() };
-  await restRequest(config, 'review_events', {
-    method: 'POST', token: auth.token, prefer: 'return=minimal', fetchImpl,
-    body: {
-      owner_id: auth.user.id, event_id: eventId, event_type: 'rating-correction',
-      target_event_id: target, card_id: latest.card_id, at: payload.at,
-      study_day: taipeiDay(now), rating, correct: rating > 1, payload,
-    },
-  });
-
   const corrections = new Map(rows.filter((row) => row.event_type === 'rating-correction')
     .map((row) => [row.target_event_id, row.rating]));
   corrections.set(target, rating);
   const history = originals.filter((row) => row.card_id === latest.card_id);
-  const settings = await readSettings(config, auth, fetchImpl);
   const scheduler = createScheduler({ desiredRetention: settings.desiredRetention });
   let state = null;
   let lastReview = null;
@@ -261,15 +254,16 @@ export async function correctCloudReview(config, auth, body, fetchImpl = fetch) 
     if (effectiveRating === 1) lapses += 1;
   }
   const due = new Date(Date.parse(lastReview) + state.intervalDays * DAY_MS).toISOString();
-  await restRequest(config, 'card_states?on_conflict=owner_id,card_id', {
-    method: 'POST', token: auth.token, prefer: 'resolution=merge-duplicates,return=minimal', fetchImpl,
-    body: {
-      owner_id: auth.user.id, card_id: latest.card_id,
-      stability: state.stability, difficulty: state.difficulty, due,
-      last_review: lastReview, reps, lapses,
-      version: reps + corrections.size, updated_at: payload.at,
-    },
-  });
+  await recordReview(config, auth, {
+    event_id: eventId, event_type: 'rating-correction',
+    target_event_id: target, card_id: latest.card_id, at: payload.at,
+    study_day: taipeiDay(now), rating, correct: rating > 1, payload,
+  }, {
+    card_id: latest.card_id,
+    stability: state.stability, difficulty: state.difficulty, due,
+    last_review: lastReview, reps, lapses,
+    version: reps + corrections.size, updated_at: payload.at,
+  }, fetchImpl);
   return {
     id: eventId, target, rating,
     state: {

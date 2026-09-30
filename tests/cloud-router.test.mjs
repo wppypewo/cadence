@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createCipheriv, generateKeyPairSync, randomBytes, sign } from 'node:crypto';
 import { createCloudHandler } from '../src/cloud/router.mjs';
 import { practiceEntry, mockEntry, summarizePractice } from '../src/cloud/practice.mjs';
 import { cloudCalendarDate } from '../src/cloud/analytics.mjs';
@@ -221,6 +222,124 @@ test('B2 資源只回啟用中的查證索引，不把內容複製進站內', as
   assert.equal(res.json.resources.length, 1);
   assert.equal(res.json.resources[0].title, 'B2 avancé 練習庫');
 });
+
+test('有效的 ES256 access token 在函式內驗完，不打 /auth/v1/user，JWKS 只抓一次', async () => {
+  // 每個測試用不同網址，JWKS 快取是模組層級的，共用網址會互相污染。
+  const env = { ...ENV, SUPABASE_URL: 'https://jwt-valid.supabase.co' };
+  const signer = keySigner('kid-valid');
+  const token = signer.token(ownerClaims(env));
+  const hits = { jwks: 0, user: 0 };
+  const fetchImpl = async (url) => {
+    if (url.endsWith('/auth/v1/.well-known/jwks.json')) { hits.jwks += 1; return json({ keys: [signer.jwk] }); }
+    if (url.endsWith('/auth/v1/user')) { hits.user += 1; return json({ id: 'user-1', email: 'ricky@example.com' }); }
+    if (url.includes('/rest/v1/content_resources')) return json([]);
+    throw new Error(`未處理的 URL：${url}`);
+  };
+  const handler = createCloudHandler({ env, fetchImpl });
+  for (let i = 0; i < 2; i += 1) {
+    const res = await run(handler, { method: 'GET', path: 'resources', headers: { cookie: `cadence_access=${token}` } });
+    assert.equal(res.statusCode, 200);
+  }
+  assert.deepEqual(hits, { jwks: 1, user: 0 });
+});
+
+test('簽章被竄改或已過期時退回 /auth/v1/user 判斷', async () => {
+  const env = { ...ENV, SUPABASE_URL: 'https://jwt-fallback.supabase.co' };
+  const signer = keySigner('kid-fallback');
+  const good = signer.token(ownerClaims(env));
+  const [head, body] = good.split('.');
+  const forged = `${head}.${Buffer.from(JSON.stringify({ ...ownerClaims(env), sub: 'user-9' })).toString('base64url')}.${good.split('.')[2]}`;
+  const expired = signer.token({ ...ownerClaims(env), exp: Math.floor(Date.now() / 1000) - 5 });
+  assert.notEqual(body, forged.split('.')[1]);
+  let userCalls = 0;
+  const fetchImpl = async (url) => {
+    if (url.endsWith('/auth/v1/.well-known/jwks.json')) return json({ keys: [signer.jwk] });
+    if (url.endsWith('/auth/v1/user')) { userCalls += 1; return json({ msg: 'invalid JWT' }, { status: 401 }); }
+    throw new Error(`未處理的 URL：${url}`);
+  };
+  const handler = createCloudHandler({ env, fetchImpl });
+  for (const token of [forged, expired]) {
+    const res = await run(handler, { method: 'GET', path: 'resources', headers: { cookie: `cadence_access=${token}` } });
+    assert.equal(res.statusCode, 401);
+  }
+  assert.equal(userCalls, 2);
+});
+
+test('簽章有效但信箱不是擁有者，仍回 403', async () => {
+  const env = { ...ENV, SUPABASE_URL: 'https://jwt-owner.supabase.co' };
+  const signer = keySigner('kid-owner');
+  const token = signer.token({ ...ownerClaims(env), email: 'other@example.com' });
+  const fetchImpl = async (url) => {
+    if (url.endsWith('/auth/v1/.well-known/jwks.json')) return json({ keys: [signer.jwk] });
+    throw new Error(`未處理的 URL：${url}`);
+  };
+  const res = await run(createCloudHandler({ env, fetchImpl }), {
+    method: 'GET', path: 'resources', headers: { cookie: `cadence_access=${token}` },
+  });
+  assert.equal(res.statusCode, 403);
+});
+
+test('作答的事件與排程合成一次 RPC 寫入，不再分兩支請求', async () => {
+  const calls = [];
+  const fetchImpl = async (url, options = {}) => {
+    calls.push({ url, method: options.method ?? 'GET', body: options.body });
+    if (url.endsWith('/auth/v1/user')) return json({ id: 'user-1', email: 'ricky@example.com' });
+    if (url.includes('/rest/v1/cards?')) return json([{ payload: { id: 'card-1', kind: 'vocab-recall', mode: 'self' } }]);
+    if (url.includes('/rest/v1/card_states?')) return json([]);
+    if (url.includes('/rest/v1/user_settings')) return json([]);
+    if (url.endsWith('/rest/v1/rpc/cadence_record_review')) return new Response(null, { status: 204 });
+    throw new Error(`未處理的 URL：${url}`);
+  };
+  const res = await run(createCloudHandler({ env: ENV, fetchImpl }), {
+    method: 'POST', path: 'review',
+    headers: {
+      cookie: 'cadence_access=valid-token',
+      host: 'cadence.vercel.app', origin: 'https://cadence.vercel.app', 'x-forwarded-proto': 'https',
+    },
+    body: { cardId: sealForTest(ENV.CADENCE_TOKEN_SECRET, 'card-1'), rating: 3 },
+  });
+  assert.equal(res.statusCode, 200);
+  const writes = calls.filter((call) => call.method === 'POST');
+  assert.equal(writes.length, 1);
+  assert.match(writes[0].url, /\/rest\/v1\/rpc\/cadence_record_review$/);
+  const sent = JSON.parse(writes[0].body);
+  assert.equal(sent.p_event.card_id, 'card-1');
+  assert.equal(sent.p_event.event_type, 'review');
+  assert.equal(sent.p_state.card_id, 'card-1');
+  assert.equal(sent.p_state.reps, 1);
+  // owner_id 由資料庫取 auth.uid()，請求內容不該帶。
+  assert.equal('owner_id' in sent.p_event, false);
+  assert.equal('owner_id' in sent.p_state, false);
+});
+
+function keySigner(kid) {
+  const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
+  const jwk = { ...publicKey.export({ format: 'jwk' }), kid, alg: 'ES256', use: 'sig', key_ops: ['verify'], ext: true };
+  return {
+    jwk,
+    token(claims) {
+      const head = Buffer.from(JSON.stringify({ alg: 'ES256', kid, typ: 'JWT' })).toString('base64url');
+      const body = Buffer.from(JSON.stringify(claims)).toString('base64url');
+      const signature = sign('sha256', Buffer.from(`${head}.${body}`), { key: privateKey, dsaEncoding: 'ieee-p1363' });
+      return `${head}.${body}.${signature.toString('base64url')}`;
+    },
+  };
+}
+
+function ownerClaims(env) {
+  return {
+    iss: `${env.SUPABASE_URL}/auth/v1`, aud: 'authenticated', role: 'authenticated',
+    sub: 'user-1', email: 'ricky@example.com', exp: Math.floor(Date.now() / 1000) + 3600,
+  };
+}
+
+// 與 learning.mjs 的 sealCardId 同一格式；那支沒有匯出，測試自己封一個。
+function sealForTest(secret, id) {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', Buffer.from(secret, 'hex'), iv);
+  const encrypted = Buffer.concat([cipher.update(id, 'utf8'), cipher.final()]);
+  return Buffer.concat([iv, cipher.getAuthTag(), encrypted]).toString('base64url');
+}
 
 function json(value, { status = 200, headers = {} } = {}) {
   return new Response(JSON.stringify(value), {

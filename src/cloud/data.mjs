@@ -75,6 +75,19 @@ export async function backup(config, auth, fetchImpl = fetch) {
   };
 }
 
+/**
+ * 追加一筆作答事件並更新該卡排程，一次請求、同一個交易（RPC 見
+ * supabase/migrations/20260930000000_add_cadence_record_review.sql）。
+ * 分成兩支 PostgREST 請求時要串行等兩趟，而且第二趟失敗會留下有事件、沒排程的作答。
+ * owner_id 由資料庫取 auth.uid()，這裡不傳。
+ */
+export async function recordReview(config, auth, event, state, fetchImpl = fetch) {
+  await restRequest(config, 'rpc/cadence_record_review', {
+    method: 'POST', token: auth.token, fetchImpl,
+    body: { p_event: event, p_state: state },
+  });
+}
+
 async function readMeta(config, auth, fetchImpl) {
   const { data } = await restRequest(
     config,

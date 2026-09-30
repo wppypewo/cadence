@@ -101,6 +101,12 @@ IPv6 對照 AWS 公開 IP 範圍查得）。沒設的話 Vercel 新專案預設�
 美東與東京之間來回：送出一次作答是驗證登入、讀卡片／狀態／設定、寫事件、寫狀態四趟串行請求，
 從台北量到 Supabase 單趟約 90–100ms，美東到東京還更遠。換 Supabase 區域時這裡要一起改。
 
+2026-09-30 起作答從四趟減成兩趟。登入改在函式內用 Supabase 公開的 JWKS（`/auth/v1/.well-known/jwks.json`，
+快取十分鐘）驗 access token 的 ES256 簽章與 `iss`／`aud`／`exp`，不再每個請求先打 `/auth/v1/user`；
+驗不過的一律退回原本的 `/auth/v1/user`，所以最壞情況等於改動前。寫事件與寫狀態併成一支 RPC
+`cadence_record_review`，同一個交易，順便補掉「事件寫進去、狀態沒更新」的缺口。
+取捨：登出或撤銷後的 token 在到期（最多一小時）前仍會通過函式這關，但那個 token 本來就能直接打 PostgREST。
+
 ```bash
 # 依檔名順序套用 supabase/migrations/*.sql，建立表、RLS、查詢函式與 B2 資源索引。
 # 接著在 Vercel 設定：
@@ -216,7 +222,7 @@ cadence doctor    [--json]                    檢查資料來源、題庫、索�
 ## 開發
 
 ```bash
-npm test      # 305 題，含 732 組 FSRS 黃金向量
+npm test      # 309 題，含 732 組 FSRS 黃金向量
 npm run lint  # node --check 全檔語法檢查
 npm run build:web  # 產生 Vercel 的 dist/
 ```

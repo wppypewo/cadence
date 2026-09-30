@@ -83,6 +83,8 @@ web/
 正式站
   瀏覽器 ──同網域 HttpOnly Cookie──→ Vercel /api/router.mjs
   Vercel Function ──使用者 JWT──→ Supabase Auth／PostgREST／RLS
+    （JWT 先在函式內以 JWKS 驗簽，驗不過才打 /auth/v1/user）
+  作答、評分更正 ──rpc/cadence_record_review──→ 事件與 card_states 同一個交易
   cards + card_states ──RPC──→ 今日、佇列、查詢、統計與推演
   review/checkin/practice events ──只追加──→ Postgres
   content_resources ──→ B2 免費來源與每週行動入口
