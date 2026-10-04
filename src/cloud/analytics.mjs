@@ -12,6 +12,7 @@ const DAY_MS = 86_400_000;
 const KINDS = ['vocab-recall', 'vocab-produce', 'conj', 'connector', 'pick', 'rw', 'nom'];
 const LEVELS = ['A2', 'B1', 'B2'];
 const DEFAULT_SECONDS = 8;
+const OUTLOOK_WINDOW = 7;
 
 export async function cloudStats(config, auth, query, fetchImpl = fetch) {
   const days = clampInt(query?.days, 7, 365, 120);
@@ -125,28 +126,9 @@ export async function cloudForecast(config, auth, query, fetchImpl = fetch) {
   const today = taipeiDay();
   if (examDay < today) throw new CloudError(400, '考試日期已經過了');
   const scope = parseScope(query);
-  const [cards, states, reviewRows, settings] = await Promise.all([
-    readAll(config, auth, 'cards?select=id,kind,level', fetchImpl),
-    readAll(config, auth, 'card_states?select=card_id,stability,difficulty,due,last_review,reps,lapses', fetchImpl),
-    readReviews(config, auth, fetchImpl),
-    readSettings(config, auth, fetchImpl),
-  ]);
-  const stateById = new Map(states.map((state) => [state.card_id, state]));
-  const scoped = applyScope(cards, stateById, scope);
-  const cardIds = new Set(cards.map((card) => card.id));
-  const simulationCards = scoped.map((card) => {
-    const state = stateById.get(card.id);
-    if (state) return { id: card.id, kind: card.kind, level: card.level, ...state };
-    const prerequisite = card.kind === 'vocab-produce' && card.id.endsWith('|p')
-      && cardIds.has(`${card.id.slice(0, -1)}r`) && !stateById.has(`${card.id.slice(0, -1)}r`)
-      ? `${card.id.slice(0, -1)}r` : null;
-    return prerequisite ? { ...card, prerequisite } : card;
-  });
-  const reviews = effectiveReviews(reviewRows);
-  const ratings = ratingDistribution(reviews.filter((row) => row.correct === true));
-  const secondsPerCard = medianSeconds(reviews);
+  const { cards, reviews, ratings, secondsPerCard, settings } = await simulationInputs(config, auth, scope, fetchImpl);
   const base = {
-    cards: simulationCards,
+    cards,
     // Vercel 執行環境是 UTC；用 UTC 中午承載「日曆日期」，避免台北午夜
     // 換算成前一天 16:00Z 後再被模擬器截成前一天。
     from: cloudCalendarDate(today),
@@ -178,6 +160,49 @@ export async function cloudForecast(config, auth, query, fetchImpl = fetch) {
       secondsSource: secondsPerCard === DEFAULT_SECONDS ? 'default' : 'observed',
       scope: { ...scope, active: true },
     },
+  };
+}
+
+/**
+ * 今天頁開場那一句：照最近 7 天的節奏做到考試，那天大約記得幾張；完全停下來又剩幾張。
+ *
+ * 語意與本機的 Api#outlook 相同（src/api.mjs），模擬輸入與推演頁的 cloudForecast 同一份，
+ * 兩頁的數字才對得起來。舊版拿「今天的作答數」當 7 天量、stoppedRecall 直接填已熟記張數，
+ * 今天沒練時開場就說「照這樣」的數字是 0 題的推演，而停練的那一半根本沒算。
+ */
+export async function cloudOutlook(config, auth, fetchImpl = fetch) {
+  const today = taipeiDay();
+  const settings = await readSettings(config, auth, fetchImpl);
+  const examDay = settings.examDate;
+  if (!examDay || !validDay(examDay) || examDay < today) return { examDate: null };
+
+  const { cards, reviews, ratings, secondsPerCard } = await simulationInputs(config, auth, parseScope({}), fetchImpl, settings);
+  const fromDay = taipeiDay(new Date(Date.parse(`${today}T12:00:00+08:00`) - (OUTLOOK_WINDOW - 1) * DAY_MS));
+  // 撤銷與評分更正是另外追加的事件，effectiveReviews 只留 review 本身，次數不會重複算。
+  const windowReviews = reviews.filter((row) => (row.study_day ?? taipeiDay(new Date(row.at))) >= fromDay).length;
+  const pace = Math.round(windowReviews / OUTLOOK_WINDOW);
+  const base = {
+    cards,
+    from: cloudCalendarDate(today),
+    examDate: cloudCalendarDate(examDay),
+    desiredRetention: settings.desiredRetention,
+    ratings,
+    secondsPerCard,
+  };
+  // 新卡設成不設上限時，新卡就吃掉整個節奏裡複習沒用完的額度，與本機一致。
+  const dailyNew = Math.min(settings.dailyNewLimit ?? pace, pace);
+  const going = simulate({ ...base, dailyLimit: pace, dailyNew });
+  const stopped = simulate({ ...base, dailyLimit: 0, dailyNew: 0 });
+  return {
+    examDate: examDay,
+    daysUntilExam: going.daysUntilExam,
+    window: OUTLOOK_WINDOW,
+    windowReviews,
+    pace,
+    cardsInScope: going.cardsInScope,
+    expectedRecall: Math.round(going.expectedRecall),
+    studiedByExam: going.studiedByExam,
+    stoppedRecall: Math.round(stopped.expectedRecall),
   };
 }
 
@@ -271,6 +296,35 @@ export async function correctCloudReview(config, auth, body, fetchImpl = fetch) 
       intervalDays: state.intervalDays,
     },
     rebuilt: history.length,
+  };
+}
+
+/** 推演頁與今天頁共用的模擬輸入。卡、狀態、作答紀錄都整份讀，與 cloudForecast 原本的讀法相同。 */
+async function simulationInputs(config, auth, scope, fetchImpl, knownSettings = null) {
+  const [cards, states, reviewRows, settings] = await Promise.all([
+    readAll(config, auth, 'cards?select=id,kind,level', fetchImpl),
+    readAll(config, auth, 'card_states?select=card_id,stability,difficulty,due,last_review,reps,lapses', fetchImpl),
+    readReviews(config, auth, fetchImpl),
+    knownSettings ?? readSettings(config, auth, fetchImpl),
+  ]);
+  const stateById = new Map(states.map((state) => [state.card_id, state]));
+  const scoped = applyScope(cards, stateById, scope);
+  const cardIds = new Set(cards.map((card) => card.id));
+  const simulationCards = scoped.map((card) => {
+    const state = stateById.get(card.id);
+    if (state) return { id: card.id, kind: card.kind, level: card.level, ...state };
+    const prerequisite = card.kind === 'vocab-produce' && card.id.endsWith('|p')
+      && cardIds.has(`${card.id.slice(0, -1)}r`) && !stateById.has(`${card.id.slice(0, -1)}r`)
+      ? `${card.id.slice(0, -1)}r` : null;
+    return prerequisite ? { ...card, prerequisite } : card;
+  });
+  const reviews = effectiveReviews(reviewRows);
+  return {
+    cards: simulationCards,
+    reviews,
+    ratings: ratingDistribution(reviews.filter((row) => row.correct === true)),
+    secondsPerCard: medianSeconds(reviews),
+    settings,
   };
 }
 

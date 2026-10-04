@@ -312,6 +312,66 @@ test('作答的事件與排程合成一次 RPC 寫入，不再分兩支請求', 
   assert.equal('owner_id' in sent.p_state, false);
 });
 
+test('今天頁推演用最近 7 天的作答量，停練的那一半也真的跑模擬', async () => {
+  const day = (offset) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei' })
+    .format(new Date(Date.now() - offset * 86_400_000));
+  const reviews = [];
+  // 今天 1 題、前 6 天每天 2 題、一個月前 30 題。舊版只看今天，pace 會算成 0。
+  const push = (offset, n) => {
+    for (let i = 0; i < n; i += 1) {
+      reviews.push({
+        event_id: `e${reviews.length}`, event_type: 'review', card_id: 'c1', at: new Date(Date.now() - offset * 86_400_000).toISOString(),
+        study_day: day(offset), rating: 3, correct: true, response_ms: 4000,
+      });
+    }
+  };
+  push(0, 1);
+  for (let offset = 1; offset <= 6; offset += 1) push(offset, 2);
+  push(30, 30);
+  const due = new Date(Date.now() + 3 * 86_400_000).toISOString();
+  const fetchImpl = async (url) => {
+    if (url.endsWith('/auth/v1/user')) return json({ id: 'user-1', email: 'ricky@example.com' });
+    if (url.includes('/rest/v1/user_settings')) {
+      return json([{ desired_retention: 0.9, daily_new_limit: 5, exam_date: day(-40), start_level: 'A2' }]);
+    }
+    if (url.includes('/rest/v1/cards?')) {
+      return json(Array.from({ length: 40 }, (_, i) => ({ id: `c${i}`, kind: 'vocab-recall', level: 'B1' })));
+    }
+    if (url.includes('/rest/v1/card_states?')) {
+      return json([{ card_id: 'c1', stability: 4, difficulty: 5, due, last_review: new Date().toISOString(), reps: 3, lapses: 0 }]);
+    }
+    if (url.includes('/rest/v1/review_events?')) return json(reviews);
+    throw new Error(`未處理的 URL：${url}`);
+  };
+  const res = await run(createCloudHandler({ env: ENV, fetchImpl }), {
+    method: 'GET', path: 'outlook', headers: { cookie: 'cadence_access=valid-token' },
+  });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.json.window, 7);
+  assert.equal(res.json.windowReviews, 13);
+  assert.equal(res.json.pace, 2);
+  assert.equal(res.json.cardsInScope, 40);
+  // 照節奏做 40 天會學到新卡，停下來只剩 c1 的殘餘記憶。
+  assert.ok(res.json.expectedRecall > res.json.stoppedRecall);
+  assert.ok(res.json.stoppedRecall <= 1);
+});
+
+test('沒設考試日期時，推演不讀整份題庫', async () => {
+  const seen = [];
+  const fetchImpl = async (url) => {
+    seen.push(url);
+    if (url.endsWith('/auth/v1/user')) return json({ id: 'user-1', email: 'ricky@example.com' });
+    if (url.includes('/rest/v1/user_settings')) return json([]);
+    throw new Error(`未處理的 URL：${url}`);
+  };
+  const res = await run(createCloudHandler({ env: ENV, fetchImpl }), {
+    method: 'GET', path: 'outlook', headers: { cookie: 'cadence_access=valid-token' },
+  });
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.json, { examDate: null });
+  assert.equal(seen.some((url) => url.includes('/rest/v1/cards')), false);
+});
+
 function keySigner(kid) {
   const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
   const jwk = { ...publicKey.export({ format: 'jwk' }), kid, alg: 'ES256', use: 'sig', key_ops: ['verify'], ext: true };

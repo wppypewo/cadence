@@ -243,23 +243,6 @@ export async function weekly(config, auth, fetchImpl = fetch) {
   };
 }
 
-export async function outlook(config, auth, fetchImpl = fetch) {
-  const dash = await dashboard(config, auth, fetchImpl);
-  const examDate = dash.settings.examDate;
-  if (!examDate) return { examDate: null };
-  const daysUntilExam = Math.round((Date.parse(`${examDate}T00:00:00+08:00`) - Date.parse(`${dash.day}T00:00:00+08:00`)) / DAY_MS);
-  const expectedRecall = dash.summary.matureCards;
-  return {
-    examDate, daysUntilExam, window: 7,
-    windowReviews: dash.summary.todayReviews,
-    pace: Math.round(dash.summary.todayReviews / 7),
-    cardsInScope: dash.summary.totalCards,
-    expectedRecall,
-    studiedByExam: dash.summary.seenCards,
-    stoppedRecall: expectedRecall,
-  };
-}
-
 export function sentence() {
   return { total: 0, sentence: null };
 }

@@ -5,10 +5,10 @@ import { login, register, authenticate, logout, appendCookies } from './session.
 import { readSettings, saveSettings, backup } from './data.mjs';
 import {
   cloudSummary, today, queue, reveal, preview, review, checkin, search,
-  weekly, outlook,
+  weekly,
 } from './learning.mjs';
 import {
-  cloudStats, cloudForecast, cloudSentence, correctCloudReview,
+  cloudStats, cloudForecast, cloudOutlook, cloudSentence, correctCloudReview,
 } from './analytics.mjs';
 import { savePractice, saveMock } from './practice.mjs';
 import { listResources } from './resources.mjs';
@@ -45,7 +45,7 @@ export function createCloudHandler({ env = process.env, fetchImpl = fetch } = {}
       if (method === 'GET' && path === 'session') return send(res, 200, { user: auth.user });
       if (method === 'GET' && path === 'summary') return send(res, 200, await cloudSummary(config, auth, fetchImpl));
       if (method === 'GET' && path === 'today') return send(res, 200, await today(config, auth, fetchImpl));
-      if (method === 'GET' && path === 'outlook') return send(res, 200, await outlook(config, auth, fetchImpl));
+      if (method === 'GET' && path === 'outlook') return send(res, 200, await cloudOutlook(config, auth, fetchImpl));
       if (method === 'GET' && path === 'sentence') return send(res, 200, await cloudSentence(config, auth, req.query, fetchImpl));
       if (method === 'GET' && path === 'weekly') return send(res, 200, await weekly(config, auth, fetchImpl));
       if (method === 'GET' && path === 'resources') return send(res, 200, await listResources(config, auth, fetchImpl));
