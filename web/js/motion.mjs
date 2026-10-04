@@ -13,7 +13,12 @@
 // practice.mjs 的 countWords 有單元測試，會把這支一起載進 Node，那邊沒有 matchMedia。
 import { gsap } from '../vendor/gsap.mjs';
 
-export const REDUCE = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? true;
+// 用 let 加 change 監聽，不在載入時讀一次就定死：系統設定裡切換「減少動態效果」之後，
+// 這個 App 常常整天開著不重新整理，只讀一次的話要等下次重開才生效。
+// ESM 的 export let 是活的綁定，其他模組 import 到的會跟著變。已經在播的補間不追回，最長 1.4 秒。
+const reduceQuery = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)');
+export let REDUCE = reduceQuery?.matches ?? true;
+reduceQuery?.addEventListener?.('change', (ev) => { REDUCE = ev.matches; });
 
 const fmt = new Intl.NumberFormat('zh-Hant');
 

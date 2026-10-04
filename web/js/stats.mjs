@@ -176,9 +176,16 @@ function activityBlock(d) {
     out.push(emptyLine('還沒有作答紀錄。'));
   } else {
     out.push(heatmap(d.daily, { weeks: 26, cap: '近 26 週，顏色深淺是相對量' }));
-    const recent = d.daily.slice(-30).map((x) => ({
-      x: x.day.slice(5), label: x.day, a: x.correct, b: x.count - x.correct,
-    }));
+    // daily 只有練過的日子。直接取最後 30 筆會把沒練的日子抽掉，十天空窗畫出來是連續的長條，
+    // 而這張圖要回答的正是「有沒有在練」。所以先補成連續 30 天，沒練的填 0。
+    const byDay = new Map(d.daily.map((x) => [x.day, x]));
+    const recent = Array.from({ length: 30 }, (_, i) => {
+      const t = new Date();
+      t.setDate(t.getDate() - 29 + i);
+      const day = t.toLocaleDateString('sv');
+      const x = byDay.get(day) ?? { count: 0, correct: 0 };
+      return { x: day.slice(5), label: day, a: x.correct, b: x.count - x.correct };
+    });
     out.push(bars(recent, {
       height: 140, aName: '答對', bName: '答錯',
       title: '最近 30 天每日作答量', cap: '最近 30 天每日作答量',

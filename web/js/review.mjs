@@ -115,7 +115,14 @@ export function reviewView(root, ctx) {
     // 換卡動畫進行中。這段時間畫面上是舊卡正在滑走，按鍵一律不收。
     sliding: false,
     focusOn: false,
+    // 自評卡評分後不停在批改畫面，直接換下一張；這兩欄留給 toast 上的「改評分」。
+    // last 是最近一次自評的 { card, verdict }，只有它能被叫回來改——
+    // 之後又答了別張，那則提示就收掉，免得改到一張已經不在眼前的卡。
+    // amend 是叫回來正在改的那張卡，畫面暫時蓋過佇列目前那張。
+    last: null,
+    amend: null,
   };
+  let dismissAmend = null;
 
   // ---- 外框 ----
   const bar = h('i');
@@ -126,6 +133,13 @@ export function reviewView(root, ctx) {
   const remainEl = h('span.remain');
   // 範圍選單只在一般複習給。弱點批次是一組固定的卡，換範圍會整頁重抓，preset 就丟了。
   const scopeBtn = state.preset ? null : ctx.scopeMenu();
+  // toast 上的「改評分」十秒就收，報讀器使用者也不一定找得到它。這顆常駐在上方，
+  // 有效期跟 state.last 一樣：直到答下一張為止，不看時間。
+  // 放在「離開」旁邊不放右邊工具列：375px 手機上右邊那列已經是剩餘數＋範圍鈕，再塞一顆實測溢出 48px。
+  const amendBtn = h('button.btn.btn-quiet.btn-sm.focus-amend', {
+    type: 'button', hidden: true, 'aria-keyshortcuts': 'Z',
+    onclick: () => { if (state.last) amend(state.last); },
+  }, '改上一張', h('kbd', { text: 'Z', 'aria-hidden': 'true' }));
   const tools = h('div.focus-tools', {}, remainEl, scopeBtn);
   const leave = h('button.btn.btn-quiet.btn-sm.focus-leave', {
     type: 'button', 'aria-keyshortcuts': 'Escape', onclick: () => ctx.go('today'),
@@ -133,7 +147,7 @@ export function reviewView(root, ctx) {
   const stage = h('div.stage');
   const frame = h('div.focus', { dataset: { mode: 'card' } },
     progressEl,
-    h('div.focus-top', {}, leave, countEl, tools),
+    h('div.focus-top', {}, h('div.focus-start', {}, leave, amendBtn), countEl, tools),
     stage,
   );
   root.append(frame);
@@ -168,7 +182,8 @@ export function reviewView(root, ctx) {
       state.cards = data.cards;
       state.remaining = data;
       state.idx = 0;
-      state.verdict = null;
+      // 抓下一批時使用者可能正在改上一張的評分，那份批改結果不能被清掉。
+      if (!state.amend) state.verdict = null;
       state.selfPhase = null;
       state.startedAt = performance.now();
       // 新卡不設上限之後一批接一批沒有盡頭，到期卡清完是唯一自然的收工點。
@@ -225,7 +240,7 @@ export function reviewView(root, ctx) {
   }
 
   function current() {
-    return state.cards[state.idx] ?? null;
+    return state.amend ?? state.cards[state.idx] ?? null;
   }
 
   /** 換卡動畫。計時從新卡真的出現才開始，滑動那半秒不算作答時間。 */
@@ -242,6 +257,13 @@ export function reviewView(root, ctx) {
     if (state.sliding) return;
     state.verdict = null;
     state.selfPhase = null;
+    if (state.amend) {
+      // 改完評分回到原本排著的那張，idx 在自動前進時已經加過了。
+      state.amend = null;
+      if (state.loading || !current()) render();
+      else slide();
+      return;
+    }
     state.idx += 1;
     state.startedAt = performance.now();
     if (state.idx >= state.cards.length) {
@@ -249,6 +271,37 @@ export function reviewView(root, ctx) {
       else load();
     }
     else slide();
+  }
+
+  /**
+   * 自評後的提示。按鈕叫「改評分」不叫「撤銷」：紀錄只增不改，按下去不會讓這次作答消失，
+   * 只是追加一筆更正事件，跟批改畫面裡「評分按錯了？」走同一條路。
+   */
+  function offerAmend(card, verdict) {
+    const entry = { card, verdict };
+    state.last = entry;
+    syncAmend();
+    const labels = card.kind === 'rw' ? RW_RATING_ZH : RATING_ZH;
+    dismissAmend = ctx.toast(`記為「${labels[verdict.rating]}」，下次 ${relDays(verdict.state.intervalDays)}`, 'info', {
+      label: '改評分',
+      run: () => amend(entry),
+    });
+  }
+
+  function amend(entry) {
+    // 從上方那顆或 Z 叫回來時 toast 還掛著，一起收掉，不然它的按鈕會指向一個已經在改的評分。
+    dismissAmend?.();
+    dismissAmend = null;
+    // 離開頁面、或之後又答了別張，這則提示就不再對應眼前任何一張卡。
+    if (state.last !== entry || !stage.isConnected || state.pending) return;
+    state.last = null;
+    state.amend = entry.card;
+    state.verdict = entry.verdict;
+    state.fresh = false;
+    syncAmend();
+    // 換卡動畫還在跑時不能重畫：killWithin 會把動畫連同收尾的 render 一起砍掉，sliding 就再也不會歸零。
+    // 動畫跑完自己會 render，那時 amend 已經設好。
+    if (!state.sliding) render();
   }
 
   async function correct(rating) {
@@ -292,8 +345,11 @@ export function reviewView(root, ctx) {
       }
       // 自評送出後就離開第一趟：兩塊面板同時留在畫面上會變成兩份解答。
       state.selfPhase = null;
-      state.verdict = { ...res, answered: answer };
-      state.fresh = true;
+      const verdict = { ...res, answered: answer };
+      // 新的作答一進來，上一張的「改評分」就過期了。
+      dismissAmend?.();
+      dismissAmend = null;
+      state.last = null;
       state.done += 1;
       state.byRating[res.rating] += 1;
       if (res.rating === 1) state.again += 1;
@@ -306,7 +362,16 @@ export function reviewView(root, ctx) {
       // 上限跟進度頁取中位數時的 120 秒一致。
       state.ms += Math.min(ms, SESSION_MS_CAP);
       announce(verdictText(card, res, answer));
-      render();
+      if (res.selfRated) {
+        // 自評卡翻面時已經看過釋義、例句和每顆鍵會排到哪天，分數也是自己給的，
+        // 再停一頁批改結果只是多按一次 Enter。按錯的出口留在 toast 上。
+        offerAmend(card, verdict);
+        next();
+      } else {
+        state.verdict = verdict;
+        state.fresh = true;
+        render();
+      }
       // 右上角那行「待複習 n・新卡 x/y」是作答後才會變的，隨佇列一起抓的那份已經過期。
       // 導覽的數字問的是同一支端點，借它回來的結果就地補上，不另外再打一次請求。
       // 只改文字不重畫，避免在使用者正要按「下一張」時把焦點搶走。
@@ -322,9 +387,29 @@ export function reviewView(root, ctx) {
     }
   }
 
+  /** 「改上一張」只在出卡畫面露出；停頓頁、完成頁的上方列是藏起來的，按鍵也不該在那裡生效。 */
+  function syncAmend() {
+    amendBtn.hidden = !state.last || Boolean(state.amend) || frame.dataset.mode !== 'card';
+  }
+
   function render() {
+    draw();
+    syncAmend();
+  }
+
+  function draw() {
     motion.killWithin(stage);
     clear(stage);
+    if (state.amend) {
+      frame.dataset.mode = 'card';
+      focusMode(true);
+      // 進度數字這時指的是排在後面的那張；跨批叫回來時甚至是下一批的第 1 張，照印會對不上眼前這張。
+      countEl.textContent = '改上一張的評分';
+      const box = face(state.amend, state, submit);
+      box.append(verdictPanel(state.amend, state.verdict, next, correct, false, true));
+      stage.append(box);
+      return;
+    }
     if (state.loading) {
       frame.dataset.mode = 'card';
       focusMode(true);
@@ -386,6 +471,13 @@ export function reviewView(root, ctx) {
     if (ev.repeat) return;
     if (ev.key === 'Escape') return void leaveKey(ev);
     if (state.sliding) return;
+    if (state.amend) {
+      const t = ev.target;
+      // 焦點在更正評分的按鈕或摘要上時，Enter／Space 是按那顆，不是離開。
+      if (t?.closest?.('.correction button, .correction summary')) return;
+      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); next(); }
+      return;
+    }
     // 停頓頁底下的下一批已經抓好，current() 會回傳一張畫面上看不到的卡，
     // 不擋的話按 Space、3 會替那張沒看過的卡評分。
     if (state.checkpoint) return;
@@ -393,6 +485,8 @@ export function reviewView(root, ctx) {
     // 在設定裡打「3」不該順手替這張卡評分。作答框自己的 Enter 由它自己的 keydown 處理。
     const t = ev.target;
     if (t?.closest?.('dialog[open]') || t?.matches?.('input, textarea, select, [contenteditable="true"]')) return;
+    // 打字題的焦點在輸入框裡，上一行已經擋掉，Z 在那裡就是打字；要改評分得 Shift+Tab 到上方那顆。
+    if (ev.key.toLowerCase() === 'z' && !amendBtn.hidden) { ev.preventDefault(); amend(state.last); return; }
     const card = current();
     if (!card) return;
     if (needsPreview(card, state)) {
@@ -444,6 +538,7 @@ export function reviewView(root, ctx) {
   load();
   return () => {
     document.removeEventListener('keydown', onKey);
+    dismissAmend?.();
     motion.killWithin(frame);
   };
 }
@@ -735,6 +830,8 @@ function choiceAnswer(card, state, submit) {
   const box = h('div.choices.answer-target.landing', { role: 'group', 'aria-label': '選一個答案', tabindex: -1 });
   const picked = state.verdict?.answered ?? null;
   const opts = card.front?.options ?? [];
+  // 選項數寫在 data-n，給 CSS 排欄數用（六個排成 3+3，不讓 auto-fit 排成 4+2）。
+  box.dataset.n = String(opts.length);
   // 連接詞卡帶 optionZh（語氣的中文），挑連接詞卡的選項本身就是法文詞、沒有這一欄。
   const zh = card.front?.optionZh ?? {};
   opts.forEach((opt, i) => {
@@ -857,7 +954,7 @@ function headText(card, res) {
  * 標題永遠有文字說明，不靠顏色傳達資訊。
  * animate 只在剛作答完為真；更正評分後的重畫不再播一次。
  */
-function verdictPanel(card, res, next, correct, animate) {
+function verdictPanel(card, res, next, correct, animate, amending = false) {
   const t = tone(res);
   const box = h('div.verdict', { dataset: { tone: t }, tabindex: -1 });
   let letters = [];
@@ -953,12 +1050,14 @@ function verdictPanel(card, res, next, correct, animate) {
 
   box.append(h('dl.verdict-sched', {},
     h('div', {}, h('dt', { text: '下次' }), h('dd', { text: relDays(res.state.intervalDays) })),
-    h('div', {}, h('dt', { text: '穩定度' }), h('dd.num', { text: `${res.state.stability.toFixed(1)} 天` })),
+    // FSRS 的 stability 是「記得的機率掉到九成要幾天」。直接寫「穩定度 34.0 天」是內部術語，
+    // 小數點後那一位也沒有人用得上，所以換成白話、取整數。
+    h('div', {}, h('dt', { text: '九成記憶可撐' }), h('dd.num', { text: res.state.stability < 1 ? '不到 1 天' : `約 ${Math.round(res.state.stability)} 天` })),
     h('div', {}, h('dt', { text: '累計答錯' }), h('dd.num', { text: String(res.state.lapses) })),
   ));
 
   if (res.reviewId && res.selfRated) {
-    const ratings = h('div.ratings.correction-ratings', { role: 'group', 'aria-label': '更正剛才的評分' });
+    const ratings = h('div.ratings.correction-ratings', { role: 'group', 'aria-label': '更正剛才的評分', tabindex: amending ? -1 : null });
     const labels = card.kind === 'rw' ? RW_RATING_ZH : RATING_ZH;
     const maxRating = card.kind === 'rw' ? 3 : 4;
     if (maxRating === 3) ratings.dataset.n = '3';
@@ -968,11 +1067,13 @@ function verdictPanel(card, res, next, correct, animate) {
       // 更正用滑鼠點，不綁數字鍵：批改畫面上按 1–4 沒有作用，寫著數字會讓人以為按了就改。
       btn.querySelector('kbd').remove();
       btn.removeAttribute('aria-keyshortcuts');
-      btn.disabled = rating === res.rating;
+      // 目前那顆不用 disabled：部分報讀器在 Tab 時會跳過停用的按鈕，就聽不到現在記的是哪一個。
+      // 改用 aria-current 標出來；按下去 correct() 自己會擋（評分沒變就不送）。
+      if (rating === res.rating) btn.setAttribute('aria-current', 'true');
       ratings.append(btn);
     }
-    box.append(h('details.correction', {},
-      h('summary', { text: res.corrected ? '評分已更正' : '評分按錯了？' }),
+    box.append(h('details.correction', { open: amending },
+      h('summary', { text: res.corrected ? '評分已更正' : amending ? '改成哪一個？' : '評分按錯了？' }),
       ratings,
     ));
   }
@@ -989,7 +1090,14 @@ function verdictPanel(card, res, next, correct, animate) {
       else motion.rise(rest, { y: 6, stagger: 0.04, duration: 0.3 });
     });
   }
-  queueMicrotask(() => box.querySelector('.verdict-next')?.focus());
+  // 從 toast 叫回來改評分時，焦點放在評分群組上，不放在第一顆「忘了」：
+  // 順手按一下 Enter 就是一筆更正事件，追加之後收不回來。其餘情況放在「下一張」。
+  queueMicrotask(() => {
+    const target = amending && !res.corrected
+      ? box.querySelector('.correction-ratings')
+      : box.querySelector('.verdict-next');
+    target?.focus();
+  });
   return box;
 }
 

@@ -31,7 +31,6 @@ function renderLogin(initialError) {
   const loginSubmit = h('button.btn.btn-primary', { type: 'submit', text: '登入' });
   const showRegister = h('button.auth-switch', { type: 'button', text: '第一次使用？建立唯一帳號' });
   const loginForm = h('form.auth-card.card', {},
-    h('p.eyebrow', { text: 'PRIVATE STUDY SPACE' }),
     h('h1', { text: '回到你的法文進度' }),
     h('p.auth-lead', { text: '題庫、複習紀錄與四科練習只對你的帳號開放。' }),
     h('label', { for: 'login-email', text: '電子郵件' }), loginEmail,
@@ -73,7 +72,6 @@ function renderLogin(initialError) {
   const registerSubmit = h('button.btn.btn-primary', { type: 'submit', text: '建立帳號' });
   const showLogin = h('button.auth-switch', { type: 'button', text: '已有帳號，回到登入' });
   const registerForm = h('form.auth-card.card', { hidden: true },
-    h('p.eyebrow', { text: 'OWNER SETUP' }),
     h('h1', { text: '建立唯一帳號' }),
     h('p.auth-lead', { text: '只有已核定的信箱能建立帳號。密碼直接送往 Supabase，不會寫進 cadence。' }),
     h('label', { for: 'register-email', text: '核定信箱' }), registerEmail,

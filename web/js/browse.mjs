@@ -5,7 +5,7 @@
  * 兩個刻意的決定：
  *  1. 查詢**會**直接顯示答案。這裡不是考試，遮起來只會逼人繞去別的網站。
  *     （出題用的 /api/queue 仍然把答案剝掉，兩條路徑不共用。）
- *  2. 查到動詞就把整張變位表攤開。784 個動詞的六個時態都已經在題庫裡，
+ *  2. 查到動詞就把整張變位表攤開。變位表的六個時態都已經在題庫裡（只在本機版），
  *     只回一行「這個字有出題」是浪費。
  */
 
@@ -13,6 +13,13 @@ import { h, clear, icon, relDays } from './dom.mjs';
 import { api } from './net.mjs';
 import * as motion from './motion.mjs';
 import { KIND_ZH } from './kinds.mjs';
+import { isCloudRuntime } from './runtime.mjs';
+
+// 範圍說明不寫死動詞數：舊文案的「784 個不規則動詞」在題庫收進 B2 後就錯了，
+// 而雲端版刻意不帶 Verbiste 衍生的變位表（GPL-2.0 隔離），兩邊範圍本來就不同。
+const SCOPE = isCloudRuntime()
+  ? 'A1–B2 詞彙與 50 個連接詞（變位表只在本機版）'
+  : 'A1–B2 詞彙、動詞變位表與 50 個連接詞';
 
 const PRONOUNS = ['je', 'tu', 'il', 'nous', 'vous', 'ils'];
 const IMPERATIVE_PRONOUNS = ['tu', 'nous', 'vous'];
@@ -90,7 +97,7 @@ export function browseView(root) {
       if (!hits.length) {
         out.append(h('div.dict-empty', {},
           h('p.dict-empty-lead', {}, '題庫裡沒有 ', h('span.fr', { lang: 'fr', text: q }), '。'),
-          h('p.dict-empty-note', { text: '題庫只收 A1–B1 高頻詞與 784 個不規則動詞，不是完整字典。' })));
+          h('p.dict-empty-note', { text: `題庫只收 ${SCOPE}，不是完整字典。` })));
         return;
       }
       const rows = group(hits);
@@ -114,7 +121,11 @@ export function browseView(root) {
       }
     } catch (err) {
       if (mine !== seq) return;
-      clear(out).append(h('div.sec-err', {}, h('p', { text: `查不到：${err.message}` })));
+      // 這裡是連線失敗，不是題庫沒有這個字（那是上面的 dict-empty），所以給重試。
+      clear(out).append(h('div.sec-err', {},
+        h('p', { text: `查詢沒有完成：${err.message}` }),
+        h('button.btn.btn-sm', { type: 'button', text: '再試一次', onclick: () => run(q, reopen) }),
+      ));
     } finally {
       if (mine === seq) out.setAttribute('aria-busy', 'false');
     }
@@ -357,8 +368,9 @@ async function showVerb(name, out, back) {
     data = await api.verb(name);
   } catch (err) {
     const retreat = h('button.btn.btn-sm', { text: '← 回結果', onclick: back });
-    clear(panel).append(h('div.sec-err', {}, h('p', { text: `讀不到變位表：${err.message}` }), retreat));
-    retreat.focus();
+    const again = h('button.btn.btn-sm', { type: 'button', text: '再試一次', onclick: () => showVerb(name, out, back) });
+    clear(panel).append(h('div.sec-err', {}, h('p', { text: `讀不到變位表：${err.message}` }), again, retreat));
+    again.focus();
     return;
   }
 
@@ -386,8 +398,9 @@ async function showVerb(name, out, back) {
     ...Object.keys(all).filter((t) => !TENSE_ORDER.includes(t)),
   ];
   for (const tense of names) grid.append(tenseTable(tense, all[tense], data.impersonal));
+  // 圖例放在表格上方：放在十二張表底下的話，看到圓點的當下要捲過整頁才找得到說明。
+  panel.append(h('p.verb-legend', {}, h('span.dot', { 'aria-hidden': 'true' }), '會出題的時態。其餘只供查閱。'));
   panel.append(grid);
-  panel.append(h('p.verb-foot', {}, h('span.dot', { 'aria-hidden': 'true' }), '會出題的時態。其餘只供查閱。'));
   // 十二張表由左上往右下依序落下，眼睛跟著順序掃一遍，就知道這一頁有多少東西。
   motion.rise(grid.children, { y: 8, stagger: 0.025, duration: 0.4 });
 }
@@ -407,7 +420,7 @@ function tenseTable(tense, forms, impersonal) {
   const box = h('div.tense');
   box.append(h('h3', {},
     h('span', { text: TENSE_ZH[tense] ?? tense }),
-    DRILLED.has(tense) ? h('span.dot', { title: '這個時態會出題', 'aria-label': '會出題' }) : null,
+    DRILLED.has(tense) ? h('span.dot', { role: 'img', title: '這個時態會出題', 'aria-label': '會出題' }) : null,
     h('span.fr.raw', { lang: 'fr', text: tense }),
   ));
   const tb = h('tbody');
@@ -431,7 +444,7 @@ function tenseTable(tense, forms, impersonal) {
  */
 function hint(example) {
   return h('div.dict-empty', {},
-    h('p.dict-empty-note', { text: '查字不動排程，也不算作答。範圍就是題庫：A1–B1 詞彙、784 個不規則動詞、50 個連接詞。' }),
+    h('p.dict-empty-note', { text: `查字不動排程，也不算作答。範圍就是題庫：${SCOPE}。` }),
     h('p.dict-try', {}, h('span', { text: '例如' }),
       ...['accueillir', 'pourtant', '去'].map((q) => h('button.dict-eg', {
         type: 'button', lang: /[㐀-鿿]/.test(q) ? 'zh-Hant' : 'fr', text: q, onclick: () => example(q),

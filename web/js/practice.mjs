@@ -38,7 +38,9 @@ export function practiceView(root, ctx) {
   const maxScore = h('input.input', { type: 'number', min: 0.5, max: 100, step: 0.5, inputmode: 'decimal', value: '25' });
   const assessment = assessmentTool(skill, score, maxScore);
   const notes = h('textarea.input.practice-notes', { maxlength: 4000, placeholder: '哪裡卡住、下次要改什麼（選填）' });
-  const save = h('button.btn.btn-primary', { type: 'button', text: '儲存這次練習', onclick: saveAttempt });
+  // 一頁只有一顆主按鈕，而且跟著進度換手：還沒計時之前下一步是「開始計時」，
+  // 計過時之後下一步是「儲存」。兩顆同時是主色的話，眼睛不知道先按哪一顆。
+  const save = h('button.btn', { type: 'button', text: '儲存這次練習', onclick: saveAttempt });
   const status = h('p.field-error', { role: 'alert', hidden: true });
   const specific = specificTool(skill);
 
@@ -79,6 +81,13 @@ export function practiceView(root, ctx) {
     timerButton.textContent = '暫停';
     tick = window.setInterval(renderClock, 250);
     renderClock();
+    syncPrimary();
+  }
+
+  function syncPrimary() {
+    const begun = Boolean(startedAt) || elapsed > 0;
+    timerButton.classList.toggle('btn-primary', !begun);
+    save.classList.toggle('btn-primary', begun);
   }
 
   function pauseTimer() {
@@ -96,6 +105,7 @@ export function practiceView(root, ctx) {
     elapsed = 0;
     timerButton.textContent = '開始計時';
     renderClock();
+    syncPrimary();
   }
 
   function renderClock() {

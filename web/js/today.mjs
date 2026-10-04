@@ -50,7 +50,11 @@ export function todayView(root, ctx) {
       data = await api.today();
     } catch (err) {
       if (dead) return;
-      clear(box).append(h('div.errorbox', {}, h('p', { text: err.message })));
+      clear(box).append(h('div.errorbox', {},
+        icon('alert'),
+        h('p', { text: `讀不到今天的資料：${err.message}` }),
+        h('button.btn', { type: 'button', text: '再試一次', onclick: () => { clear(box).append(skeleton()); load(); } }),
+      ));
       return;
     }
     if (dead) return;
@@ -135,7 +139,10 @@ function heroBlock(data, ctx) {
       : left >= 0 ? `天後考試，${zhDate(data.examDate)}` : '天前考完了。記得到設定裡改成下一場的日期。',
   });
   // 先佔住一行，模擬算完再換字；不佔的話那一行晚到會把主按鈕往下推。
-  const cast = left !== null && left >= 0 ? h('p.hero-cast', { text: '正在推演考試那天記得幾張…' }) : null;
+  const cast = left !== null && left >= 0
+    ? h('div.hero-cast', { 'aria-busy': 'true' },
+      h('p.cast-note', { text: '正在推演考試那天記得幾張…' }))
+    : null;
   const act = h('div.hero-act');
   paint(data);
   return {
@@ -222,7 +229,17 @@ async function fillOutlook(el, alive) {
   try {
     o = await api.outlook();
   } catch (err) {
-    if (alive()) el.textContent = `推演失敗：${err.message}`;
+    if (alive()) {
+      el.removeAttribute('aria-busy');
+      el.replaceChildren(h('p.cast-note.err-line', {},
+        `推演失敗：${err.message}`,
+        h('button.btn.btn-quiet.btn-sm', { type: 'button', text: '再試一次', onclick: () => {
+          el.setAttribute('aria-busy', 'true');
+          el.replaceChildren(h('p.cast-note', { text: '正在推演考試那天記得幾張…' }));
+          fillOutlook(el, alive);
+        } }),
+      ));
+    }
     return;
   }
   if (!alive()) return;
@@ -230,20 +247,39 @@ async function fillOutlook(el, alive) {
     el.remove();
     return;
   }
+  el.removeAttribute('aria-busy');
+  el.title = `A2–B2 共 ${num(o.cardsInScope)} 張卡的模擬，細節在進度頁。`;
+  // pace 是 windowReviews ÷ 7 四捨五入，7 天內答 3 題也是 0。那時說「沒有作答」等於否認剛做完的事。
+  // pace 為 0 時「照節奏」與「停下來」是同一場模擬，畫兩條一樣長的條沒有資訊，只留一句話。
   if (o.pace === 0) {
-    el.replaceChildren(
-      `最近 ${o.window} 天沒有作答。照這樣到考試那天，大約只記得 `,
-      h('strong.num', { text: num(o.stoppedRecall) }),
-      ' 張。',
-    );
+    const head = o.windowReviews > 0
+      ? `最近 ${o.window} 天做了 ${num(o.windowReviews)} 題，平均每天不到 1 題。照這樣到考試那天，約記得 `
+      : `最近 ${o.window} 天沒有作答。照這樣到考試那天，只記得 `;
+    el.replaceChildren(h('p.cast-note', {}, head, h('strong.num', { text: num(o.stoppedRecall) }), ' 張。'));
     return;
   }
-  el.replaceChildren(
-    `照最近 ${o.window} 天的節奏（每天 ${num(o.pace)} 題），考試那天約記得 `,
-    h('strong.num', { text: num(o.expectedRecall) }),
-    ` 張；停下來只剩 ${num(o.stoppedRecall)} 張。`,
-  );
-  el.title = `A2＋B1 共 ${num(o.cardsInScope)} 張卡的模擬，細節在進度頁。`;
+  // 條的長度以「照節奏」那條為滿，不以題庫總數為滿：A2–B2 兩萬多張，
+  // 記得一千張畫出來不到 5%，兩條都貼在左邊，看不出差距——而這一塊要給人看的就是差距。
+  const top = Math.max(o.expectedRecall, o.stoppedRecall, 1);
+  const row = (key, label, value) => {
+    const fill = h('i');
+    fill.style.width = `${(value / top) * 100}%`;
+    return {
+      fill,
+      el: h(`div.cast-row.cast-${key}`, {},
+        h('span.cast-k', { text: label }),
+        h('span.cast-bar', { 'aria-hidden': 'true' }, fill),
+        h('span.cast-v', {}, h('b.num', { text: num(value) }), ' 張')),
+    };
+  };
+  const go = row('go', `每天 ${num(o.pace)} 題`, o.expectedRecall);
+  const stop = row('stop', '今天起停下', o.stoppedRecall);
+  const gain = o.expectedRecall - o.stoppedRecall;
+  const note = gain > 0
+    ? `考試那天記得的張數，照最近 ${o.window} 天的節奏推演。差的 ${num(gain)} 張，是每天這 ${num(o.pace)} 題換來的。`
+    : `考試那天記得的張數，照最近 ${o.window} 天的節奏推演。`;
+  el.replaceChildren(go.el, stop.el, h('p.cast-note', { text: note }));
+  motion.grow([go.fill, stop.fill], { delay: 0.1, stagger: 0.12 });
 }
 
 const WORD_TIER = {
@@ -269,7 +305,10 @@ function readingBlock(alive) {
     try {
       data = await api.sentence(i);
     } catch (err) {
-      if (alive()) sec.replaceChildren(h('h2.side-h', { text: '今日一句' }), h('p.side-err', { text: `句子載入失敗：${err.message}` }));
+      if (alive()) sec.replaceChildren(h('h2.side-h', { text: '今日一句' }), h('p.side-err.err-line', {},
+        `句子載入失敗：${err.message}`,
+        h('button.btn.btn-quiet.btn-sm', { type: 'button', text: '再試一次', onclick: () => load(i) }),
+      ));
       return;
     }
     if (!alive()) return;
@@ -321,7 +360,11 @@ function weeklyBlock(alive) {
     try {
       data = await api.weekly();
     } catch (err) {
-      if (alive()) sec.append(h('p.side-err', { text: `載入失敗：${err.message}` }));
+      // 重試前先拿掉上一次的錯誤句，不然連按兩次會疊兩行。
+      if (alive()) sec.append(h('p.side-err.err-line', {},
+        `載入失敗：${err.message}`,
+        h('button.btn.btn-quiet.btn-sm', { type: 'button', text: '再試一次', onclick: (ev) => { ev.currentTarget.parentElement.remove(); load(); } }),
+      ));
       return;
     }
     if (!alive()) return;
@@ -340,8 +383,9 @@ function weeklyBlock(alive) {
         data.items.length > 5 ? h('details.side-more', {},
           h('summary', { text: `再看 ${num(data.items.length - 5)} 張` }), list(data.items.slice(5))) : null,
       ];
-    sec.replaceChildren(head, ...body,
-      h('p.side-foot', { text: `穩定度跨過 21 天算穩。目前共 ${num(data.matureTotal)} 張。` }));
+    // 原生 replaceChildren 會把 null 印成字串「null」；h() 會濾掉，這裡要自己濾。
+    sec.replaceChildren(head, ...body.filter(Boolean),
+      h('p.side-foot', { text: `九成記憶能撐 21 天以上就算穩。目前共 ${num(data.matureTotal)} 張。` }));
   }
 }
 
@@ -554,7 +598,14 @@ async function toggleDoc(task, panel, btn) {
   try {
     doc = await api.doc(task.id.toLowerCase());
   } catch (err) {
-    clear(panel).append(h('p.doc-error', { text: err.message }));
+    // 重試走同一條路：先收起來再打開，讀取中的提示與 aria-expanded 都照原本的流程更新。
+    clear(panel).append(h('p.doc-error.err-line', {},
+      `讀不到說明文件：${err.message}`,
+      h('button.btn.btn-quiet.btn-sm', { type: 'button', text: '再試一次', onclick: () => {
+        panel.hidden = true;
+        toggleDoc(task, panel, btn);
+      } }),
+    ));
     return;
   }
   panel.dataset.loaded = '1';

@@ -28,144 +28,140 @@ export function resourcesView(root, ctx) {
       render(box, data, ctx);
     } catch (err) {
       if (dead) return;
-      clear(box).append(h('div.card.errorbox', {}, icon('alert'), h('p', { text: err.message })));
+      clear(box).append(h('div.card.errorbox', {},
+        icon('alert'),
+        h('p', { text: `讀不到資源清單：${err.message}` }),
+        h('button.btn', { type: 'button', text: '再試一次', onclick: () => { clear(box).append(skeleton()); load(); } }),
+      ));
     }
   }
 }
 
 function skeleton() {
-  return h('div.resource-loading', { 'aria-label': '正在載入 B2 資源' },
-    h('div.skeleton', { style: 'height: 16px; width: 88px' }),
-    h('div.skeleton', { style: 'height: 64px; width: min(560px, 90%)' }),
-    h('div.skeleton', { style: 'height: 220px; width: 100%' }),
-  );
+  // 形狀照最後的版面：頁首一條、三節各一個標題加幾列。
+  const box = h('div.resource-loading', { 'aria-busy': 'true', 'aria-label': '正在載入 B2 資源' });
+  for (const [w, hh] of [['40%', 36], ['100%', 1], ['70%', 18], ['100%', 160], ['100%', 260]]) {
+    const bar = h('div.skeleton');
+    bar.style.width = w;
+    bar.style.height = `${hh}px`;
+    box.append(bar);
+  }
+  return box;
 }
 
+/*
+ * 版面跟其他頁同一套：頁首一條實線、各節靠頂線分開、列與列之間一條細線。
+ * 舊版是一張漸層大卡加浮水印「B2」、反白的週計畫、圓角卡片牆，自成一個視覺世界，
+ * 從今天頁點過來像換了一個網站。這一頁的內容是清單與時程，用帳本的排法就讀得清楚。
+ */
 function render(box, data, ctx) {
   const rows = Array.isArray(data.resources) ? data.resources : [];
-  clear(box);
-  box.append(
-    h('header.resource-hero', {},
-      h('div.resource-kicker', {},
-        h('span.level-stamp', { text: 'B2' }),
-        h('span', { text: 'OBJECTIF INDÉPENDANT' })),
-      h('h2', {}, '把法文用到', h('em', { lang: 'fr', text: '真正能溝通' }), '的程度。'),
-      h('p', { text: '這裡不堆連結。每一個來源都標明最適合練什麼、怎麼排進一週，以及最後查證日期。' }),
-      h('div.resource-meta', {},
-        h('span', { text: `${rows.length} 個免費來源` }),
-        h('span', { text: '四科都有入口' }),
-        h('span', { text: data.checkedAt ? `查證 ${data.checkedAt}` : '等待查證日期' }),
-      ),
-    ),
+  const meta = [`${rows.length} 個免費來源`, '四科都有入口', data.checkedAt ? `${data.checkedAt} 查證` : '尚未記錄查證日期'];
+  clear(box).append(
+    h('header.page-head', {},
+      h('div', {},
+        h('h1', { text: 'B2 資源' }),
+        h('p', { text: meta.join('・') }))),
+    h('p.res-lead', { text: '這裡不堆連結。每一個來源都標明最適合練什麼、怎麼排進一週，以及最後查證日期。連結都留在原站，不鏡像、不嵌入。' }),
     journey(),
     weeklyPlan(ctx),
   );
 
   if (!rows.length) {
-    box.append(h('div.card.empty', {}, icon('library'), h('p', { text: '目前沒有啟用中的 B2 資源。' })));
+    box.append(h('div.empty', {}, icon('library'), h('p', { text: '目前沒有啟用中的 B2 資源。' })));
     return;
   }
 
-  const filters = h('div.resource-filters', { role: 'group', 'aria-label': '依能力篩選資源' });
-  const list = h('div.resource-list');
+  const filters = h('div.seg.res-filter', { role: 'group', 'aria-label': '依能力篩選資源' });
+  const list = h('div.res-list');
   let active = 'ALL';
   const buttons = new Map();
   const paint = () => {
-    list.replaceChildren(...rows
-      .filter((row) => active === 'ALL' || skillsFor(row).includes(active))
-      .map((row, index) => resourceCard(row, index)));
+    const shown = rows.filter((row) => active === 'ALL' || skillsFor(row).includes(active));
+    list.replaceChildren(...shown.map(resourceRow));
     for (const [id, button] of buttons) button.setAttribute('aria-pressed', String(id === active));
   };
   for (const [id, label] of [['ALL', '全部'], ...Object.entries(SKILLS)]) {
-    const button = h('button.filter-pill', {
+    const button = h('button', {
       type: 'button', text: label, 'aria-pressed': String(id === active),
       onclick: () => { active = id; paint(); },
     });
     buttons.set(id, button);
     filters.append(button);
   }
-  box.append(h('section.resource-library', {},
-    h('div.resource-section-head', {},
-      h('div', {}, h('p.eyebrow', { text: 'CURATED LIBRARY' }), h('h2', { text: '已查證的免費資源' })),
-      filters),
-    list,
-  ));
+  box.append(block('已查證的免費資源', '每個來源寫明拿來練什麼、多久用一次。', list, filters));
   paint();
+}
+
+/** 一節：頂線、標題、一句說明、右邊可放一個控制項。跟進度頁的 section() 同一個樣子。 */
+function block(title, why, body, action = null) {
+  return h('section.sec.res-sec', {},
+    h('header.sec-head', {},
+      h('h2', { text: title }),
+      why ? h('p.sec-why', { text: why }) : null,
+      action ? h('div.sec-act', {}, action) : null),
+    body);
 }
 
 function weeklyPlan(ctx) {
   const sessions = [
-    ['週一', 'CE', '讀一篇，寫三句摘要', '30 分鐘', () => ctx.openPractice('CE')],
-    ['週二', 'CO', '盲聽、對稿、口頭摘要', '25 分鐘', () => ctx.openPractice('CO')],
-    ['週四', 'PE', '限時完成一篇立場文', '45 分鐘', () => ctx.openPractice('PE')],
-    ['週六', 'PO', '錄一段立論與追問', '20 分鐘', () => ctx.openPractice('PO')],
+    ['週一', 'CE', '讀一篇，寫三句摘要', '30 分鐘'],
+    ['週二', 'CO', '盲聽、對稿、口頭摘要', '25 分鐘'],
+    ['週四', 'PE', '限時完成一篇立場文', '45 分鐘'],
+    ['週六', 'PO', '錄一段立論與追問', '20 分鐘'],
   ];
-  return h('section.week-plan', { 'aria-labelledby': 'week-plan-title' },
-    h('div.week-plan-head', {},
-      h('div', {},
-        h('p.eyebrow', { text: 'THIS WEEK' }),
-        h('h2#week-plan-title', { text: '一週四次，把輸入變成輸出。' }),
-        h('p', { text: '每次只做一件完整任務；工作台會保留時間、來源、字數與自評分數。' }),
-      ),
-      h('button.btn', { type: 'button', text: '每四週記一次模考', onclick: () => ctx.go('mock') }),
-    ),
-    h('ol.week-sessions', {}, sessions.map(([day, skill, title, time, start]) => h('li', {},
-      h('div.session-day', {}, h('span', { text: day }), h('strong', { text: skill })),
-      h('div.session-copy', {}, h('h3', { text: title }), h('p.num', { text: time })),
-      h('button.btn.btn-primary.btn-sm', { type: 'button', text: '開始', onclick: start, 'aria-label': `開始 ${skill}：${title}` }),
-    ))),
-  );
+  // 這一頁不放實心鍵：全站唯一的實心鍵在今天頁，這裡四顆「開始」並排，實心只會互相搶。
+  const list = h('ol.res-week', {}, sessions.map(([day, skill, title, time]) => h('li', {},
+    h('span.res-day', { text: day }),
+    h('span.lrow-code', { text: skill }),
+    h('span.res-task', { text: title }),
+    h('span.res-time.num', { text: time }),
+    h('button.btn.btn-sm', {
+      type: 'button', text: '開始', onclick: () => ctx.openPractice(skill),
+      'aria-label': `開始 ${skill}：${title}`,
+    }),
+  )));
+  const mock = h('button.btn.btn-sm', { type: 'button', text: '每四週記一次模考', onclick: () => ctx.go('mock') });
+  return block('一週四次', '每次只做一件完整任務；工作台會保留時間、來源、字數與自評分數。', list, mock);
 }
 
 function journey() {
   const steps = [
-    ['01', '輸入', '每週兩次聽讀', 'TV5MONDE、RFI，把真實語速拆成可重做的練習。'],
-    ['02', '輸出', '每週一篇一講', '寫作與口說依 DELF 格式計時，留下可比較的紀錄。'],
-    ['03', '校準', '每四週一次模考', '用官方題型與 CEFR 自評表找下一輪最弱的一科。'],
+    ['輸入', '每週兩次聽讀', 'TV5MONDE、RFI，把真實語速拆成可重做的練習。'],
+    ['輸出', '每週一篇一講', '寫作與口說依 DELF 格式計時，留下可比較的紀錄。'],
+    ['校準', '每四週一次模考', '用官方題型與 CEFR 自評表找下一輪最弱的一科。'],
   ];
-  return h('section.b2-journey', { 'aria-labelledby': 'journey-title' },
-    h('div.journey-intro', {},
-      h('p.eyebrow', { text: 'B1 → B2' }),
-      h('h2#journey-title', { text: '不是看完，是反覆做出來。' }),
-      h('p', { text: 'B2 要求你理解較複雜的內容，也能清楚表達立場。資源依「輸入、輸出、校準」三段安排。' }),
-    ),
-    h('ol.journey-steps', {}, steps.map(([n, title, rhythm, copy]) => h('li', {},
-      h('span.step-no.num', { text: n }),
-      h('div', {}, h('h3', { text: title }), h('p.step-rhythm', { text: rhythm }), h('p', { text: copy })),
-    ))),
-  );
+  const list = h('ol.res-steps', {}, steps.map(([title, rhythm, copy]) => h('li', {},
+    h('h3', { text: title }),
+    h('p.res-rhythm', { text: rhythm }),
+    h('p.res-copy', { text: copy }),
+  )));
+  return block('輸入、輸出、校準', 'B2 要求理解較複雜的內容，也能清楚表達立場。', list);
 }
 
-function resourceCard(row, index) {
+function resourceRow(row) {
   const p = row.payload ?? {};
   const skills = skillsFor(row);
   const url = safeExternalUrl(row.url);
-  const link = h('a.resource-link', {
-    href: url, target: '_blank', rel: 'noopener noreferrer',
-    'aria-label': `前往 ${row.title}（另開新分頁）`,
-  }, h('span', { text: '前往原站' }), icon('arrow'));
-  return h('article.resource-card', { dataset: { featured: String(Boolean(p.featured)), order: String(index + 1) } },
-    h('div.resource-card-top', {},
-      h('div.resource-source', {},
-        h('span.resource-index.num', { text: String(index + 1).padStart(2, '0') }),
-        h('span', { text: row.source_name })),
-      h('div.resource-skills', {}, skills.map((skill) => h('span.chip', { text: SKILLS[skill] ?? skill }))),
-    ),
-    h('div.resource-card-body', {},
-      h('div', {},
-        h('h3', { text: row.title }),
-        h('p.resource-description', { text: p.description ?? '' }),
-      ),
-      h('dl.resource-notes', {},
-        detail('最適合', p.bestFor),
-        detail('建議節奏', p.cadence),
-        detail('形式', p.format),
-      ),
-    ),
-    h('footer.resource-card-foot', {},
-      h('p', { text: `${row.level}・${row.license_note}・查證 ${row.checked_at}` }),
-      url ? link : null,
-    ),
+  const link = url
+    ? h('a.resource-link', {
+      href: url, target: '_blank', rel: 'noopener noreferrer',
+      'aria-label': `前往 ${row.title}（另開新分頁）`,
+    }, h('span', { text: '前往原站' }), icon('arrow'))
+    : null;
+  return h('article.res-row', {},
+    h('div.res-main', {},
+      h('p.res-source', {},
+        h('span', { text: row.source_name }),
+        h('span.res-skills', { text: skills.map((skill) => SKILLS[skill] ?? skill).join('・') })),
+      h('h3', { text: row.title }),
+      p.description ? h('p.res-desc', { text: p.description }) : null,
+      h('p.res-meta', { text: `${row.level}・${row.license_note}・${row.checked_at} 查證` })),
+    h('dl.resource-notes', {},
+      detail('最適合', p.bestFor),
+      detail('建議節奏', p.cadence),
+      detail('形式', p.format)),
+    h('div.res-go', {}, link),
   );
 }
 

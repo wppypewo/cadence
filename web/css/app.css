@@ -63,6 +63,13 @@ kbd {
   font: 500 var(--t-2xs)/1.4 var(--font-ui); text-align: center;
   color: var(--text-muted);
 }
+/* 只有觸控、沒有滑鼠的裝置（手機、沒接鍵盤的平板）不顯示鍵名：按鈕上的 Enter、Esc
+   在那裡按不到，只是雜訊，評分鍵角落的 1–4 還會跟按鈕文字搶位置。
+   用 hover 與 pointer 兩個條件一起判斷：接了觸控板的 iPad 回報 hover: hover，鍵名照樣留著。
+   kbd 都掛著 aria-hidden，快捷鍵本身也還在（aria-keyshortcuts），藏起來不影響報讀。 */
+@media (hover: none) and (pointer: coarse) {
+  kbd { display: none; }
+}
 
 /* ---- 版面骨架 --------------------------------------------------------- */
 
@@ -324,6 +331,9 @@ body[data-focus] .main { padding: 0; }
    兩條同時出現（改考試日期的「復原」加一則錯誤）會疊成一條，下面那條按不到。 */
 .toasts {
   position: fixed; left: 50%; bottom: var(--s5); transform: translateX(-50%);
+  /* left: 50% 之後，依內容收縮的寬度最多只剩半個視窗：375px 手機上實測 toast 只有 187.5px，
+     「記為…，下次…　改評分」被擠成三行。寬度改由內容決定，再用視窗扣邊距封頂。 */
+  width: max-content; max-width: calc(100vw - 2 * var(--s4));
   z-index: var(--z-toast);
   display: flex; flex-direction: column; align-items: center; gap: var(--s2);
   pointer-events: none;
@@ -404,14 +414,10 @@ body[data-focus] .main { padding: 0; }
 .auth-switch:hover { text-decoration: underline; text-underline-offset: 3px; }
 .field-note { margin-top: calc(-1 * var(--s2)); color: var(--text-faint); font-size: var(--t-xs); }
 .field-success { color: var(--ok); font-size: var(--t-sm); }
-.eyebrow {
-  color: var(--accent); font: 600 var(--t-xs)/1.2 var(--font-num);
-  letter-spacing: .09em;
-}
 
 .cloud-wait { max-width: 680px; margin: clamp(var(--s6), 10vh, 120px) auto 0; }
-.cloud-wait h1 { margin: var(--s3) 0; font-size: clamp(var(--t-2xl), 5vw, var(--t-3xl)); text-wrap: balance; }
-.cloud-wait > p:not(.eyebrow) { max-width: 58ch; color: var(--text-muted); }
+.cloud-wait h1 { margin: 0 0 var(--s3); font-size: clamp(var(--t-2xl), 5vw, var(--t-3xl)); text-wrap: balance; }
+.cloud-wait > p { max-width: 58ch; color: var(--text-muted); }
 .cloud-checks {
   display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--s2); margin-top: var(--s6);

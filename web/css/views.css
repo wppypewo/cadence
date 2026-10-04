@@ -144,12 +144,29 @@
 .hero-cap { margin-top: var(--s3); font-size: var(--t-lg); color: var(--text-muted); }
 
 /*
- * 推演那一行。字級比倒數小得多：倒數是「還有多久」，這行是「照現在這樣會怎樣」，
- * 後者要讀完整句才有意義，放大反而像口號。只把會隨節奏掉下去的那個數字加粗。
- * min-height 讓「正在推演…」與算完的句子佔同一行高，主按鈕不會被往下推。
+ * 推演：兩列對照「照最近的節奏」與「今天起停下」，考試那天各記得幾張。
+ * 只給一個數字的話，讀的人不知道現在做的事值多少；兩條並排，差距就是今天這一輪的價值。
+ * 字級比倒數小得多：倒數是「還有多久」，這塊是「照現在這樣會怎樣」，放大反而像口號。
+ * min-height 讓「正在推演…」與算完的兩列佔同樣高度，主按鈕不會在資料回來時被往下推。
  */
-.hero-cast { min-height: 3.2em; max-width: 52ch; margin-top: var(--s2); font-size: var(--t-sm); color: var(--text-muted); }
-.hero-cast strong { color: var(--text); font-weight: 600; }
+.hero-cast { min-height: 92px; max-width: 46ch; margin-top: var(--s5); display: grid; gap: var(--s2); align-content: start; }
+.cast-row {
+  display: grid; grid-template-columns: 6.5em minmax(0, 1fr) 6.5em;
+  align-items: center; gap: var(--s3);
+  font-size: var(--t-sm); color: var(--text-muted);
+}
+.cast-bar { display: block; height: 4px; background: var(--line); }
+/* 兩條的顏色都過 3:1（WCAG 1.4.11）：accent 亮 7.97、暗 8.81；line-strong 亮 3.19、暗 3.47。 */
+.cast-bar i { display: block; height: 100%; min-width: 2px; }
+.cast-go .cast-bar i { background: var(--accent); }
+.cast-stop .cast-bar i { background: var(--line-strong); }
+.cast-v { text-align: right; white-space: nowrap; }
+.cast-v b { font: 400 var(--t-lg)/1 var(--font-num); font-variant-numeric: lining-nums tabular-nums; color: var(--text-muted); }
+.cast-go .cast-v b { color: var(--text); }
+.cast-go .cast-k { color: var(--text); }
+.cast-note { margin-top: var(--s1); font-size: var(--t-xs); color: var(--text-faint); }
+.cast-note:only-child { margin-top: 0; font-size: var(--t-sm); color: var(--text-muted); }
+.cast-note strong { color: var(--text); font-weight: 600; }
 
 .hero-act { display: flex; align-items: center; gap: var(--s4) var(--s5); flex-wrap: wrap; margin-top: var(--s6); }
 /* 全頁唯一一顆實心鍵，比預設大一號；按鈕字不換行，數字在窄欄也不會被拆到下一行。 */
@@ -278,6 +295,9 @@ button.stamp:hover:not(:disabled) { background: var(--accent-weak); }
 .doc-path { font-family: var(--font-mono); font-size: var(--t-xs); color: var(--text-faint); }
 .doc-loading { font-size: var(--t-sm); color: var(--text-muted); }
 .doc-error { font-size: var(--t-sm); color: var(--bad); }
+/* 錯誤句後面接一顆「再試一次」。只掛在錯誤那一行：.cast-note 平常裡面有 <strong>，
+   整類改成 flex 的話文字與粗體會被拆成兩個 flex 項目、中間多出 gap。 */
+.err-line { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; }
 
 /* 渲染後的說明文件。
    舊版是 max-height: 46vh 的內捲區塊，理由是「免得七千字把四列任務推出畫面」。
@@ -382,8 +402,8 @@ button.stamp:hover:not(:disabled) { background: var(--accent-weak); }
   padding: var(--s3) var(--s5);
 }
 .focus-top > :last-child { justify-self: end; }
-.focus-leave { justify-self: start; }
-.focus-leave kbd, .focus-actions kbd, .reveal-btn kbd { margin-left: var(--s1); }
+.focus-start { justify-self: start; display: flex; align-items: center; gap: var(--s2); }
+.focus-leave kbd, .focus-amend kbd, .focus-actions kbd, .reveal-btn kbd { margin-left: var(--s1); }
 .focus-count { font-family: var(--font-num); font-size: var(--t-md); color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .focus-tools { display: flex; align-items: center; gap: var(--s3); font-size: var(--t-xs); color: var(--text-muted); }
 .focus-tools .remain { white-space: nowrap; }
@@ -524,6 +544,11 @@ button.stamp:hover:not(:disabled) { background: var(--accent-weak); }
   width: 100%;
 }
 .choices:focus { outline: none; }
+/* 連接詞題的語氣有六個。auto-fit 在卡片寬度下會排成 4+2，最後一列兩格空著，
+   看起來像少了選項；固定三欄排成 3+3。手機上 auto-fit 本來就是兩欄（2+2+2），不用另寫。 */
+@media (min-width: 641px) {
+  .choices[data-n="6"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 .choices button {
   position: relative;
   display: flex; flex-direction: column; justify-content: center; gap: 2px;
@@ -577,12 +602,12 @@ button.stamp:hover:not(:disabled) { background: var(--accent-weak); }
 /* 按下去之後這張卡會排到哪一天。比數字鍵重要，所以用 muted 不用 faint。 */
 .rate small { font-family: var(--font-num); font-size: var(--t-sm); color: var(--text-muted); }
 .rate small:empty { display: none; }
-.rate:hover:not(:disabled) { background: var(--sunken); }
-.rate[data-r="1"]:hover:not(:disabled) { border-bottom-color: var(--bad); }
-.rate[data-r="2"]:hover:not(:disabled) { border-bottom-color: var(--warn); }
-.rate[data-r="3"]:hover:not(:disabled) { border-bottom-color: var(--ok); }
-.rate[data-r="4"]:hover:not(:disabled) { border-bottom-color: var(--accent); }
-.rate:disabled { cursor: default; color: var(--text-muted); }
+.rate:hover:not(:disabled, [aria-current="true"]) { background: var(--sunken); }
+.rate[data-r="1"]:hover:not(:disabled, [aria-current="true"]) { border-bottom-color: var(--bad); }
+.rate[data-r="2"]:hover:not(:disabled, [aria-current="true"]) { border-bottom-color: var(--warn); }
+.rate[data-r="3"]:hover:not(:disabled, [aria-current="true"]) { border-bottom-color: var(--ok); }
+.rate[data-r="4"]:hover:not(:disabled, [aria-current="true"]) { border-bottom-color: var(--accent); }
+.rate:disabled, .rate[aria-current="true"] { cursor: default; color: var(--text-muted); }
 
 .correction { width: 100%; }
 .correction summary {
@@ -903,6 +928,9 @@ button.stamp:hover:not(:disabled) { background: var(--accent-weak); }
 .fc-big .of { font-size: var(--t-lg); color: var(--text-muted); }
 .fc-rate { display: flex; align-items: baseline; gap: var(--s3); flex-wrap: wrap; font-size: var(--t-md); }
 .fc-rate b { font-family: var(--font-num); font-weight: 600; }
+/* 學過的卡記得幾成。跟大數字講的是同一件事，所以字級比 .fc-rate 大一級、用墨色。 */
+.fc-learned { font-size: var(--t-lg); color: var(--text); }
+.fc-learned b { font-family: var(--font-num); font-weight: 600; }
 .fc-verdict[data-tone="ok"] .tone { color: var(--ok); }
 .fc-verdict[data-tone="bad"] .tone { color: var(--warn); }
 .fc-verdict .sub { font-size: var(--t-sm); color: var(--text-muted); }
@@ -1029,7 +1057,7 @@ table.grid tr[data-hit="1"] td { background: var(--accent-weak); color: var(--ac
   padding-left: var(--s3); border-left: 2px solid var(--line-strong);
   font-size: var(--t-sm); color: var(--text-muted);
 }
-.verb-foot { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s3); font-size: var(--t-xs); color: var(--text-muted); }
+.verb-legend { display: flex; align-items: center; gap: var(--s2); font-size: var(--t-xs); color: var(--text-muted); }
 
 .tenses {
   display: grid; gap: var(--s6) var(--s6); margin-top: var(--s3);
@@ -1084,120 +1112,74 @@ table.grid tr[data-hit="1"] td { background: var(--accent-weak); color: var(--ac
 
 /* ---- B2 資源 ---------------------------------------------------------- */
 
+/* 跟今天頁同寬。內容是清單與時程，用帳本的排法：頂線分節、列間細線，不裝框、不墊底色。 */
 .resources-page { max-width: 1120px; margin: 0 auto; }
-.resource-loading { display: grid; gap: var(--s5); padding-top: var(--s5); }
+.resource-loading { display: grid; gap: var(--s4); padding-top: var(--s2); }
+.res-lead { max-width: 60ch; margin: 0 0 var(--s7); font-size: var(--t-md); color: var(--text-muted); text-wrap: pretty; }
+.res-sec { margin-bottom: var(--s8); }
 
-.resource-hero {
-  position: relative; overflow: hidden;
-  padding: clamp(var(--s6), 7vw, 84px) clamp(var(--s5), 6vw, 72px);
-  border: 1px solid var(--line); border-radius: calc(var(--r) + 8px);
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--accent-weak) 72%, transparent), transparent 62%),
-    var(--surface);
-  box-shadow: var(--shadow);
+/* 三段：欄寬固定，三列的「節奏」要能上下對齊著讀。 */
+.res-steps, .res-week { margin: 0; padding: 0; list-style: none; }
+.res-steps li {
+  display: grid; grid-template-columns: 7rem 11rem minmax(0, 1fr); align-items: baseline; column-gap: var(--s5);
+  padding: var(--s4) 0; border-bottom: 1px solid var(--line);
 }
-.resource-hero::after {
-  content: "B2"; position: absolute; right: -0.04em; bottom: -0.24em;
-  color: color-mix(in srgb, var(--accent) 9%, transparent);
-  font: 700 clamp(9rem, 22vw, 18rem)/.8 var(--font-num); letter-spacing: -.12em;
-  pointer-events: none; user-select: none;
-}
-.resource-kicker { display: flex; align-items: center; gap: var(--s3); color: var(--accent); font: 600 var(--t-xs)/1 var(--font-num); letter-spacing: .09em; }
-.level-stamp { display: grid; place-items: center; width: 40px; aspect-ratio: 1; border: 1px solid var(--accent); border-radius: 50%; letter-spacing: 0; }
-.resource-hero h2 {
-  position: relative; z-index: 1; max-width: 16ch; margin: var(--s5) 0 var(--s4);
-  font-family: var(--font-fr); font-size: clamp(2.75rem, 7vw, 5.6rem); font-weight: 500;
-  line-height: .98; letter-spacing: -.055em; text-wrap: balance;
-}
-.resource-hero h2 em { color: var(--accent); font-weight: 400; }
-.resource-hero > p { position: relative; z-index: 1; max-width: 55ch; color: var(--text-muted); font-size: var(--t-lg); text-wrap: pretty; }
-.resource-meta { position: relative; z-index: 1; display: flex; flex-wrap: wrap; gap: var(--s2) var(--s5); margin-top: var(--s6); color: var(--text-faint); font-size: var(--t-xs); }
-.resource-meta span::before { content: "•"; margin-right: var(--s2); color: var(--accent); }
+.res-steps h3 { font: 500 var(--t-xl)/1.2 var(--font-fr); }
+.res-rhythm { font-size: var(--t-sm); font-weight: 600; color: var(--text); }
+.res-copy { max-width: 56ch; font-size: var(--t-sm); color: var(--text-muted); }
 
-.b2-journey { display: grid; grid-template-columns: minmax(240px, .8fr) minmax(0, 1.5fr); gap: clamp(var(--s5), 6vw, 72px); padding: var(--s8) 0; }
-.journey-intro { align-self: start; position: sticky; top: var(--s6); }
-.journey-intro h2 { margin: var(--s2) 0 var(--s3); font-family: var(--font-fr); font-size: var(--t-2xl); font-weight: 500; }
-.journey-intro > p:last-child { color: var(--text-muted); max-width: 38ch; }
-.journey-steps { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
-.journey-steps li { display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: var(--s4); padding: var(--s5) 0; border-bottom: 1px solid var(--line); }
-.step-no { color: var(--accent); font-size: var(--t-sm); }
-.journey-steps h3 { font-family: var(--font-fr); font-size: var(--t-xl); font-weight: 500; }
-.journey-steps p { color: var(--text-muted); font-size: var(--t-sm); }
-.journey-steps .step-rhythm { margin: var(--s1) 0 var(--s2); color: var(--text); font-weight: 600; }
+/* 週計畫：星期、科目代號、任務、時間、開始。代號沿用今天頁帳本的樣子，兩頁講的是同四科。 */
+.res-week li {
+  display: grid; grid-template-columns: 4rem 3.5rem minmax(0, 1fr) 6rem auto; align-items: center; column-gap: var(--s4);
+  padding: var(--s3) 0; border-bottom: 1px solid var(--line);
+}
+.res-week .lrow-code { align-self: center; padding-top: 0; }
+.res-day { font-size: var(--t-sm); color: var(--text-muted); }
+.res-task { font: 400 var(--t-lg)/1.3 var(--font-fr); }
+.res-time { font-size: var(--t-sm); color: var(--text-faint); text-align: right; }
 
-.week-plan {
-  margin-bottom: var(--s8); padding: clamp(var(--s5), 5vw, var(--s7));
-  border: 1px solid var(--line); border-radius: calc(var(--r) + 8px);
-  background: var(--text); color: var(--surface);
-}
-.week-plan .eyebrow { color: var(--surface); }
-.week-plan-head { display: flex; align-items: end; justify-content: space-between; gap: var(--s5); margin-bottom: var(--s6); }
-.week-plan-head h2 { margin: var(--s2) 0; font-family: var(--font-fr); font-size: clamp(var(--t-2xl), 4vw, var(--t-3xl)); font-weight: 500; letter-spacing: -.035em; }
-.week-plan-head p:not(.eyebrow) { max-width: 54ch; color: color-mix(in srgb, var(--surface) 72%, transparent); }
-.week-plan .week-plan-head > .btn { border-color: color-mix(in srgb, var(--surface) 48%, transparent); background: transparent; color: var(--surface); }
-.week-plan .week-plan-head > .btn:hover { background: color-mix(in srgb, var(--surface) 12%, transparent); }
-.week-sessions { margin: 0; padding: 0; list-style: none; border-top: 1px solid color-mix(in srgb, var(--surface) 24%, transparent); }
-.week-sessions li {
-  display: grid; grid-template-columns: 86px minmax(0, 1fr) auto; align-items: center; gap: var(--s4);
-  min-height: 88px; border-bottom: 1px solid color-mix(in srgb, var(--surface) 24%, transparent);
-}
-.session-day { display: flex; flex-direction: column; color: color-mix(in srgb, var(--surface) 68%, transparent); font-size: var(--t-xs); }
-.session-day strong { color: var(--surface); font: 600 var(--t-lg)/1.2 var(--font-num); }
-.session-copy h3 { font-family: var(--font-fr); font-size: var(--t-lg); font-weight: 500; }
-.session-copy p { margin-top: var(--s1); color: color-mix(in srgb, var(--surface) 64%, transparent); font-size: var(--t-xs); }
-.week-sessions .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-on); }
-.week-sessions .btn-primary:hover { background: var(--accent); border-color: var(--accent); }
+/* 篩選：沿用佈景切換的 .seg，但它在這裡是頁面上的主控制項，字級與點擊高度放大一號。 */
+.res-filter button { min-height: 36px; padding-inline: var(--s3); font-size: var(--t-sm); }
 
-.resource-library { padding-bottom: var(--s7); }
-.resource-section-head { display: flex; align-items: end; justify-content: space-between; gap: var(--s5); margin-bottom: var(--s5); }
-.resource-section-head h2 { margin-top: var(--s1); font-family: var(--font-fr); font-size: var(--t-2xl); font-weight: 500; }
-.resource-filters { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--s1); }
-.filter-pill {
-  min-height: 38px; padding: 0 var(--s3); border: 1px solid var(--line-strong); border-radius: 999px;
-  background: transparent; color: var(--text-muted); cursor: pointer; font-size: var(--t-sm);
+.res-row {
+  display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) auto; column-gap: var(--s6); align-items: start;
+  padding: var(--s5) 0; border-bottom: 1px solid var(--line);
 }
-.filter-pill:hover { background: var(--sunken); color: var(--text); }
-.filter-pill[aria-pressed="true"] { border-color: var(--accent); background: var(--accent); color: var(--accent-on); }
-
-.resource-list { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: var(--s4); }
-.resource-card {
-  grid-column: span 6; display: flex; flex-direction: column; min-height: 330px; padding: var(--s5);
-  border: 1px solid var(--line); border-radius: calc(var(--r) + 4px); background: var(--surface);
-}
-.resource-card[data-featured="true"] { grid-column: span 12; min-height: 0; background: color-mix(in srgb, var(--accent-weak) 46%, var(--surface)); }
-.resource-card-top, .resource-card-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); }
-.resource-source, .resource-skills { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); }
-.resource-source { color: var(--text-muted); font-size: var(--t-xs); font-weight: 600; }
-.resource-index { color: var(--accent); }
-.resource-card-body { display: grid; gap: var(--s5); margin: var(--s5) 0; }
-.resource-card[data-featured="true"] .resource-card-body { grid-template-columns: minmax(0, 1.3fr) minmax(260px, .7fr); }
-.resource-card h3 { max-width: 24ch; font-family: var(--font-fr); font-size: var(--t-xl); font-weight: 500; }
-.resource-description { max-width: 58ch; margin-top: var(--s2); color: var(--text-muted); font-size: var(--t-sm); }
-.resource-notes { display: grid; grid-template-columns: auto minmax(0, 1fr); align-content: start; gap: var(--s2) var(--s3); margin: 0; font-size: var(--t-sm); }
-.resource-notes dt { color: var(--text-faint); }
+.res-row:first-child { padding-top: var(--s2); }
+.res-source { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--s1) var(--s3); font-size: var(--t-xs); color: var(--text-muted); }
+.res-source > span:first-child { font-weight: 600; }
+.res-skills { color: var(--text-faint); }
+.res-row h3 { margin-top: var(--s2); font: 500 var(--t-xl)/1.25 var(--font-fr); }
+.res-desc { max-width: 58ch; margin-top: var(--s2); font-size: var(--t-sm); color: var(--text-muted); text-wrap: pretty; }
+.res-meta { margin-top: var(--s3); font-size: var(--t-xs); color: var(--text-faint); }
+.resource-notes { display: grid; grid-template-columns: auto minmax(0, 1fr); align-content: start; gap: var(--s2) var(--s3); margin: var(--s1) 0 0; font-size: var(--t-sm); }
+.resource-notes dt { color: var(--text-faint); white-space: nowrap; }
 .resource-notes dd { margin: 0; color: var(--text); }
-.resource-card-foot { margin-top: auto; padding-top: var(--s4); border-top: 1px solid var(--line); }
-.resource-card-foot p { color: var(--text-faint); font-size: var(--t-xs); }
-.resource-link { display: inline-flex; align-items: center; gap: var(--s2); flex: none; color: var(--accent); font-weight: 600; font-size: var(--t-sm); text-decoration: none; }
-.resource-link:hover { color: var(--accent-hover); }
-.resource-link svg { width: 18px; height: 18px; transition: transform var(--dur-out) var(--ease-out); }
+.res-go { padding-top: var(--s1); }
+.resource-link { display: inline-flex; align-items: center; gap: var(--s2); min-height: 32px; color: var(--accent); font-weight: 600; font-size: var(--t-sm); text-decoration: none; white-space: nowrap; }
+.resource-link:hover { color: var(--accent-hover); text-decoration: underline; text-underline-offset: 3px; }
+.resource-link svg { width: 16px; height: 16px; transition: transform var(--dur-out) var(--ease-out); }
 .resource-link:hover svg { transform: translateX(3px); }
+@media (prefers-reduced-motion: reduce) { .resource-link:hover svg { transform: none; } }
 
-@media (max-width: 760px) {
-  .resource-hero { padding: var(--s6) var(--s5); }
-  .resource-hero h2 { font-size: clamp(2.5rem, 13vw, 4.2rem); }
-  .b2-journey { grid-template-columns: minmax(0, 1fr); gap: var(--s5); padding: var(--s7) 0; }
-  .journey-intro { position: static; }
-  .resource-section-head { align-items: flex-start; flex-direction: column; }
-  .resource-filters { justify-content: flex-start; }
-  .resource-card, .resource-card[data-featured="true"] { grid-column: span 12; min-height: 0; }
-  .resource-card[data-featured="true"] .resource-card-body { grid-template-columns: minmax(0, 1fr); }
-  .resource-card-foot { align-items: flex-start; flex-direction: column; }
-  .week-plan { margin-bottom: var(--s7); }
-  .week-plan-head { align-items: stretch; flex-direction: column; }
-  .week-plan-head > .btn { width: 100%; }
-  .week-sessions li { grid-template-columns: 58px minmax(0, 1fr); padding: var(--s3) 0; }
-  .week-sessions li > .btn { grid-column: 1 / -1; width: 100%; }
+@media (max-width: 900px) {
+  .res-row { grid-template-columns: minmax(0, 1fr); row-gap: var(--s4); }
+  .res-go { padding-top: 0; }
+}
+
+@media (max-width: 620px) {
+  .res-lead { font-size: var(--t-sm); margin-bottom: var(--s6); }
+  .res-sec { margin-bottom: var(--s7); }
+  .res-sec .sec-act { margin-left: 0; width: 100%; }
+  .res-filter { width: 100%; }
+  .res-steps li { grid-template-columns: 4.5rem minmax(0, 1fr); row-gap: var(--s1); }
+  .res-copy { grid-column: 2; }
+  .res-week li { grid-template-columns: 3rem minmax(0, 1fr) auto; row-gap: var(--s1); }
+  .res-week .lrow-code { grid-column: 1; grid-row: 2; }
+  .res-day { grid-row: 1; }
+  .res-task { grid-column: 2; grid-row: 1 / span 2; font-size: var(--t-md); }
+  .res-time { grid-column: 3; grid-row: 2; }
+  .res-week .btn { grid-column: 3; grid-row: 1; }
 }
 
 /* 卡背例句（Tatoeba）。整塊靠左：句子長，置中排會變成參差的兩邊，讀起來比單字難對焦。 */

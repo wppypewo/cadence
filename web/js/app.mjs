@@ -107,6 +107,18 @@ function applyStoredTheme() {
   } catch {
     // 讀不到就跟隨系統，這是本來的預設值。
   }
+  syncThemeColor();
+  globalThis.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', syncThemeColor);
+}
+
+/**
+ * 瀏覽器框的顏色跟著 --bg 走。meta 不能寫 var()，又不想在 tokens.css 以外寫第二份色碼，
+ * 所以由這裡讀實際值回填；手動切佈景時 media 屬性版本的 meta 也跟不上，只能這樣做。
+ */
+function syncThemeColor() {
+  const meta = document.querySelector('meta[name="theme-color"]');
+  const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+  if (meta && bg) meta.setAttribute('content', bg);
 }
 
 async function boot() {
@@ -225,7 +237,6 @@ function renderCloudWaiting() {
   clear(els.main);
   els.main.dataset.page = 'cloud-setup';
   els.main.append(h('section.cloud-wait', {},
-    h('p.eyebrow', { text: 'CLOUD READY' }),
     h('h1', { text: '登入與雲端資料庫已接通' }),
     h('p', { text: '目前仍是空庫。下一階段會先搬入題庫與複習紀錄，核對無誤後才啟用完整學習頁面。' }),
     h('div.cloud-checks', {},
@@ -469,7 +480,7 @@ function metaLine(summary) {
     : Number.isInteger(remote)
       ? `${Number.isInteger(local) && local > 0 ? `${local} 未提交・` : ''}${remote} 未推送`
       : Number.isInteger(local) && local > 0 ? `${local} 筆未提交` : null;
-  return [`A2–B1・${total.toLocaleString('zh-Hant')} 張`, backup]
+  return [`A2–B2・${total.toLocaleString('zh-Hant')} 張`, backup]
     .filter(Boolean).join('・');
 }
 
@@ -534,7 +545,7 @@ function openSettings() {
     h('h2', { text: '設定' }),
 
     field('目標記憶率', h('div.range-row', {}, retention, retOut),
-      '排程要維持的答對率。調高，複習更密、量更大；調低，省時間但忘得多。FSRS 預設 0.90。'),
+      '每張卡排到複習那天時，預期還記得的機率。調高，複習更密、量更大；調低，省時間但忘得多。FSRS 預設 0.90。'),
 
     field('每天新卡上限', freshRow,
       '一天最多學幾張新卡。學過的卡之後幾週都會回來，不設上限時到期量會跟著變大；會多多少，「進度 › 推演」算得出來。'),
@@ -615,6 +626,7 @@ function themeSwitch() {
         if (mode === 'auto') delete document.documentElement.dataset.theme;
         else document.documentElement.dataset.theme = mode;
         try { localStorage.setItem(THEME_KEY, mode); } catch { /* 寫不進去只是下次回到跟隨系統，不影響資料 */ }
+        syncThemeColor();
         paint();
       },
     }));
@@ -628,7 +640,10 @@ function themeSwitch() {
  * aria-live 用 polite，不打斷螢幕閱讀器正在念的批改結果。
  */
 function toast(message, tone = 'info', action = null) {
-  const node = h('div.toast', { dataset: { tone }, role: 'status' },
+  // 不在 toast 本身掛 role="status"：live region 要先存在、內容後變才保證會念，
+  // 每次新插一個帶 role 的節點，部分報讀器（NVDA、VoiceOver）會直接漏掉。改走常駐的 #live。
+  announce(message);
+  const node = h('div.toast', { dataset: { tone } },
     tone === 'bad' ? icon('alert') : null,
     h('span', { text: message }),
     action
@@ -645,4 +660,6 @@ function toast(message, tone = 'info', action = null) {
     else node.remove();
   };
   setTimeout(close, action ? 10000 : 4200);
+  // 回傳關閉函式：呼叫端要能在提示過期時（例如下一題已經作答）先收掉它。
+  return () => node.remove();
 }

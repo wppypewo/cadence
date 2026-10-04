@@ -39,7 +39,9 @@ export function forecastView(root, ctx) {
     field('每天最多做', limit, '含新卡'),
     // 設定成不設上限時，這一格的預設 15 不是設定值，要講明，不然會被當成「照設定推演」。
     field('每天學新卡', fresh, ctx.settings?.dailyNewLimit === null ? '設定是不設上限，這裡填預計每天學幾張' : null),
-    field('目標答對率 %', target, '會反推需要的新卡量'),
+    // 跟設定裡的「目標記憶率」同名，但量的東西不同：設定是每張卡到期時的機率，
+    // 這裡是考試那天整個範圍記得的比例。同名是因為兩者都是「記得的機率」，差別寫在小字。
+    field('目標記憶率 %', target, '考試那天範圍內記得的比例，會反推需要的新卡量'),
     h('button.btn.btn-primary', { type: 'submit', text: '推演' }),
   );
   box.append(form);
@@ -65,7 +67,10 @@ export function forecastView(root, ctx) {
       render(data);
       if (examTouched && exam.value !== (ctx.settings?.examDate ?? null)) rememberExam(exam.value);
     } catch (err) {
-      if (!dead) clear(out).append(h('div.sec-err', {}, h('p', { text: err.message })));
+      if (!dead) clear(out).append(h('div.sec-err', {},
+        h('p', { text: `推演沒有跑完：${err.message}` }),
+        h('button.btn', { type: 'button', text: '再試一次', onclick: run }),
+      ));
     }
   }
 
@@ -179,9 +184,23 @@ function verdict(p, inputs, targetRate) {
     h('span.num', { text: num(Math.round(p.expectedRecall)) }),
     h('span.of', { text: ` / ${num(p.cardsInScope)} 張` }),
   ));
+  // 範圍是整個題庫時，大部分卡到考試前根本輪不到，全範圍的比例只會是個位數。
+  // 只報那個比例，最大的訊息就變成「不及格」，看不出學過的卡其實記得很牢。
+  // 所以先講學過的卡記得幾成，全範圍的比例與目標放在同一行，並寫出差距從哪裡來。
+  const learned = p.cardsInScope - (p.buckets?.untouched ?? 0);
+  if (learned > 0 && learned < p.cardsInScope) {
+    card.append(h('p.fc-learned', {},
+      '學過的 ', h('b', { text: num(learned) }), ' 張裡，約 ',
+      h('b', { text: pct(Math.min(1, p.expectedRecall / learned)) }), ' 記得。',
+    ));
+  }
+  const gap = !hit && p.buckets?.untouched
+    ? `，有 ${num(p.buckets.untouched)} 張到考試前輪不到`
+    : '';
   card.append(h('p.fc-rate', {},
+    h('span', { text: '整個範圍' }),
     h('b', { text: pct(p.expectedRecallRate, 1) }),
-    h('span.tone', { text: hit ? `達到 ${pct(targetRate)} 目標。這是期望值。` : `低於 ${pct(targetRate)} 目標。` }),
+    h('span.tone', { text: hit ? `達到 ${pct(targetRate)} 目標。這是期望值。` : `低於 ${pct(targetRate)} 目標${gap}。` }),
   ));
   card.append(h('p.sub', {
     text: `總作答 ${num(p.totalReviews)} 次・預期答錯 ${num(p.totalLapses)} 次・涵蓋 ${pct(p.coverage)}`,
@@ -233,14 +252,15 @@ function solvedPanel(sv) {
     ));
     body.append(h('p.sec-note', { text: achievableNote(sv) }));
   } else {
+    // 先給做得到的最好結果，再說離目標多遠；「達不到」放句首會讓整段讀起來像判決。
     body.append(h('p.lead', {},
-      '這個目標達不到。最好的情況是每天 ',
+      '每天學 ',
       h('b', { text: `${sv.ceiling.dailyNew} 張新卡` }),
-      '，記憶率 ',
+      ' 時最高，考試那天記憶率約 ',
       h('b', { text: pct(sv.ceiling.rate, 1) }),
-      '。',
+      '，離目標還有一段距離。',
     ));
-    body.append(h('p.sec-note', { text: '可以縮小範圍，或提高每天上限後重算。' }));
+    body.append(h('p.sec-note', { text: '要接近目標，可以縮小範圍、提高每天上限，或把考試日期往後排再重算。' }));
   }
 
   // 掃過的每一格畫成曲線。這條線的形狀就是「新卡學太多反而更差」的證據，
