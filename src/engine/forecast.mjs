@@ -245,6 +245,9 @@ export function simulate(opts) {
     // 期望值，不是保證值。分母用範圍內全部的卡，沒學到的卡算 0 分。
     expectedRecall,
     expectedRecallRate: inScope ? expectedRecall / inScope : 0,
+    // 分母只算考試前學過的卡。目標比的是這個：全範圍比例在 1.6 萬張卡、
+    // 半年的期限下最高只到一成多，拿它當及格線，每個設定都會顯示「達不到」。
+    learnedRecallRate: studiedCount ? expectedRecall / studiedCount : 0,
     studiedByExam: studiedCount,
     coverage: inScope ? studiedCount / inScope : 0,
     buckets,
@@ -253,7 +256,12 @@ export function simulate(opts) {
 
 /**
  * 反推：在每天最多做 dailyLimit 張的前提下，
- * 每天要學幾張新卡才能讓考試當天的期望答對率達到目標。
+ * 學過的卡考試當天記得的比例（learnedRate）守在目標以上時，每天學幾張新卡
+ * 能讓記得的總張數（recall）最多。
+ *
+ * 目標原本比的是全範圍比例（rate），沒學到的卡算 0 分。那個數字在大範圍下
+ * 永遠到不了八成五，反推只會回「達不到」，等於沒有回答問題（2026-10-04 改）。
+ * 兩個比例都留在 tried 裡，rate 照舊是全範圍，前端當資訊列出來。
  *
  * **掃描，不做二分。** 新卡量與答對率不是單調關係——新卡學太多會排擠複習，
  * 答對率反而往下掉。二分搜尋的前提在這裡不成立，舊版回報的「上限」其實只是
@@ -275,6 +283,8 @@ export function solveDailyNew(opts) {
     const entry = {
       dailyNew: n,
       rate: result.expectedRecallRate,
+      learnedRate: result.learnedRecallRate,
+      recall: result.expectedRecall,
       studied: result.studiedByExam,
       reviews: result.totalReviews,
       peak: result.peakDay ? result.peakDay.reviews + result.peakDay.learned : 0,
@@ -290,26 +300,51 @@ export function solveDailyNew(opts) {
   run(maxNew);
   if (step > 1) {
     // 粗掃時最佳值可能落在兩格之間，回頭把那一段補滿。
-    const coarse = tried.reduce((a, b) => (b.rate > a.rate ? b : a));
+    const coarse = pick(tried, target).recommended;
     const lo = Math.max(0, coarse.dailyNew - step);
     const hi = Math.min(maxNew, coarse.dailyNew + step);
     for (let n = lo; n <= hi; n += 1) run(n);
   }
 
   tried.sort((a, b) => a.dailyNew - b.dailyNew);
-  const feasible = tried.filter((t) => t.rate >= target);
-  const best = tried.reduce((a, b) => (b.rate > a.rate ? b : a));
+  const { feasible, recommended, ceiling } = pick(tried, target);
+  // 記得張數離最好那格不到 NEAR_BAND 的達標格子，前端寫成「每天 a–b 張」。
+  // 每一格是固定種子的一次蒙地卡羅，相鄰兩格的差距大半是抽樣雜訊，只給單一數字是假精確。
+  const near = feasible.filter((t) => t.recall >= recommended.recall * (1 - NEAR_BAND));
   return {
     target,
     achievable: feasible.length > 0,
-    // 達標的話取能達標的最大新卡量（學得多又達標）；達不到就給最接近的
-    recommended: feasible.length ? feasible[feasible.length - 1] : best,
-    ceiling: best,
+    recommended,
+    ceiling,
+    band: near.length
+      ? { from: near[0].dailyNew, to: near[near.length - 1].dailyNew }
+      : { from: recommended.dailyNew, to: recommended.dailyNew },
     // step === 1 代表 0..maxNew 每一格都真的跑過，ceiling 是確定的最大值。
     // step > 1 時是粗掃加局部補滿，ceiling 有可能漏掉格與格之間的尖峰。
     exhaustive: step === 1,
     tried: tried.map(({ result, ...rest }) => rest),
   };
+}
+
+// 2026-10-04 實測（A2–B2 全題型、考試 2027-05-01、每天 60 張）：同一個新卡量換 12 個種子，
+// 記得張數的變異係數 0.92–1.30%；兩格相減的標準差約 1.4%，兩個標準差約 2.8%。
+// 原本設 1% 比雜訊還窄，掃描結果 35／42／47／49 張是 2,799／2,762／2,843／2,794 張來回跳，
+// 帶寬根本沒觸發，畫面上只剩一個靠運氣選出來的 47。多種子平均的曲線其實從 35 張起就是平的。
+const NEAR_BAND = 0.03;
+
+/**
+ * ceiling 是學過的卡記得比例最高的那格；recommended 在達標的格子裡取記得張數最多的，
+ * 同張數取新卡少的（工作量小）。達不到目標時 recommended 就是 ceiling，不回沒跑過的數字。
+ * 先依 dailyNew 排序，reduce 的嚴格比較才會在平手時留下新卡少的那格。
+ */
+function pick(tried, target) {
+  const ordered = [...tried].sort((a, b) => a.dailyNew - b.dailyNew);
+  const feasible = ordered.filter((t) => t.learnedRate >= target);
+  const ceiling = ordered.reduce((a, b) => (b.learnedRate > a.learnedRate ? b : a));
+  const recommended = feasible.length
+    ? feasible.reduce((a, b) => (b.recall > a.recall ? b : a))
+    : ceiling;
+  return { feasible, recommended, ceiling };
 }
 
 function successRating(ratings, rnd) {

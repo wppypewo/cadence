@@ -15,7 +15,7 @@ import { h, clear, pct, num } from './dom.mjs';
 import { api } from './net.mjs';
 import { bars, heatmap, line, reasonBars } from './charts.mjs';
 import * as motion from './motion.mjs';
-import { KIND_ZH } from './kinds.mjs';
+import { KIND_ZH, cardHead } from './kinds.mjs';
 
 const REASON_ZH = {
   wrong: '拼錯', accent: '漏重音', case: '大小寫', empty: '沒作答',
@@ -215,7 +215,7 @@ function weakBlock(d, ctx) {
   if (d.weakest.length === 0) return section('最弱的卡', '按答錯次數排序', emptyLine('目前沒有答錯的卡。'));
   const item = (w) => {
     const f = w.card.front ?? {};
-    const word = w.card.answer || f.word || f.connector || f.verb || w.card.id;
+    const word = cardHead(w.card);
     return h('li.weak-item', {},
       h('div.weak-main', {},
         h('span.w', { lang: 'fr', text: word }),

@@ -12,7 +12,7 @@
 import { h, clear, icon, relDays } from './dom.mjs';
 import { api } from './net.mjs';
 import * as motion from './motion.mjs';
-import { KIND_ZH } from './kinds.mjs';
+import { KIND_ZH, cardHead } from './kinds.mjs';
 import { isCloudRuntime } from './runtime.mjs';
 
 // 範圍說明不寫死動詞數：舊文案的「784 個不規則動詞」在題庫收進 B2 後就錯了，
@@ -258,7 +258,7 @@ function vocabRow(entry, out, back) {
 
 function hitRow({ card, state }, out, back, q = '') {
   const f = card.front ?? {};
-  const head = f.word || f.connector || f.verb || card.answer || card.id;
+  const head = cardHead(card);
   // 名詞化卡的 front.pos／posZh 講的是**基詞**的詞性（changer 是動詞），
   // 但這一列的標題是答案（le changement，名詞）。照通用格式印會變成
   // 「l'obligation　動詞・obliger・…」——那個「動詞」看起來像在說標題那個字。

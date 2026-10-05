@@ -147,9 +147,11 @@
  * 推演：兩列對照「照最近的節奏」與「今天起停下」，考試那天各記得幾張。
  * 只給一個數字的話，讀的人不知道現在做的事值多少；兩條並排，差距就是今天這一輪的價值。
  * 字級比倒數小得多：倒數是「還有多久」，這塊是「照現在這樣會怎樣」，放大反而像口號。
- * min-height 讓「正在推演…」與算完的兩列佔同樣高度，主按鈕不會在資料回來時被往下推。
+ * 推演中先撐住兩列的高度，主按鈕不會在資料回來時被往下推。只在推演中撐：
+ * 結果只有一句話（最近 7 天沒作答）時還留 92px，句子底下會空出約 80px（2026-10-04 critique）。
  */
-.hero-cast { min-height: 92px; max-width: 46ch; margin-top: var(--s5); display: grid; gap: var(--s2); align-content: start; }
+.hero-cast { max-width: 46ch; margin-top: var(--s5); display: grid; gap: var(--s2); align-content: start; }
+.hero-cast[aria-busy="true"] { min-height: 92px; }
 .cast-row {
   display: grid; grid-template-columns: 6.5em minmax(0, 1fr) 6.5em;
   align-items: center; gap: var(--s3);
@@ -372,9 +374,20 @@ button.stamp:hover:not(:disabled) { background: var(--accent-weak); }
   .lrow-act { grid-column: 3; grid-row: 1 / span 3; align-self: start; }
 }
 
+/*
+ * 疊成一欄時，帳本排在右欄前面：帳本是「今天要做什麼」，右欄是「做了有沒有用」。
+ * 照 DOM 順序疊的話，手機上要先捲過今日一句與七天紀錄才看得到四科（375px 實測約兩個螢幕高）。
+ * today-hero 拆成 display: contents，讓三塊都變成 .today 這個直向 flex 的子項，再用 order 調。
+ * today-hero 沒有語意角色，拆掉不影響報讀；Tab 順序仍照 DOM（先右欄再帳本），
+ * 但右欄裡只有「換一句」與「再看 N 張」兩個次要控制項，鍵盤使用者多按兩下而已。
+ */
 @media (max-width: 900px) {
-  .today-hero { grid-template-columns: minmax(0, 1fr); gap: var(--s6); padding-top: var(--s5); }
-  .today-side { padding-left: 0; padding-top: var(--s5); border-left: 0; border-top: 1px solid var(--line); }
+  .today-hero { display: contents; }
+  .hero-main { padding: var(--s5) 0 var(--s6); }
+  .today-side {
+    order: 1; margin-top: var(--s6);
+    padding-left: 0; padding-top: var(--s5); border-left: 0; border-top: 1px solid var(--line);
+  }
 }
 
 @media (max-width: 620px) {
@@ -926,14 +939,15 @@ button.stamp:hover:not(:disabled) { background: var(--accent-weak); }
 .fc-big { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--s2); }
 .fc-big .num { font: 400 var(--t-hero)/0.95 var(--font-num); letter-spacing: -0.02em; }
 .fc-big .of { font-size: var(--t-lg); color: var(--text-muted); }
-.fc-rate { display: flex; align-items: baseline; gap: var(--s3); flex-wrap: wrap; font-size: var(--t-md); }
-.fc-rate b { font-family: var(--font-num); font-weight: 600; }
-/* 學過的卡記得幾成。跟大數字講的是同一件事，所以字級比 .fc-rate 大一級、用墨色。 */
+/* 全範圍比例只當資訊，不比目標，所以退到跟前提同一級的灰字。 */
+.fc-rate { font-size: var(--t-sm); color: var(--text-muted); max-width: 64ch; text-wrap: pretty; }
+.fc-rate b { font-family: var(--font-num); font-weight: 600; color: var(--text); }
+/* 學過的卡記得幾成。目標比的是這個數，所以它帶達標的語意色、字級僅次於大數字。 */
 .fc-learned { font-size: var(--t-lg); color: var(--text); }
 .fc-learned b { font-family: var(--font-num); font-weight: 600; }
 .fc-verdict[data-tone="ok"] .tone { color: var(--ok); }
 .fc-verdict[data-tone="bad"] .tone { color: var(--warn); }
-.fc-verdict .sub { font-size: var(--t-sm); color: var(--text-muted); }
+.fc-verdict .sub { font-size: var(--t-sm); color: var(--text-muted); max-width: 64ch; text-wrap: pretty; }
 
 /* 模型假設。放在結論正下方而不是頁尾，因為看到數字的人有權立刻知道它怎麼來的。 */
 .assumptions {

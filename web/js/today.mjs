@@ -424,13 +424,19 @@ function ledgerRow(task, ctx, onChange) {
   const act = h('div.lrow-act');
   row.append(h('span.lrow-code', { text: task.id }), subj, meter, due, act);
 
+  // 四列的動作欄一律是「練X」、同一個樣式，上下對得齊才像帳本。
+  // 原本 CE／PE 這一格放「複習」，跟頁首主按鈕（全部科目的卡一起做）撞名，
+  // 讀起來像同一件事有兩個入口；CO／PO 同一格卻是「練聽力」，四列不一致（2026-10-04 critique）。
+  // 單科的卡退到科名下的連結列，並寫明只做這一科，跟主按鈕分開。
+  // 不在按鈕上寫張數：count 含今天能開的新卡，新卡不設上限時是一萬多張（實測 17,039），
+  // 印在按鈕上像是要一次做完；到期量已經在旁邊那一欄。
+  act.append(h('button.btn', { type: 'button', text: practiceWords(task.id), onclick: () => ctx.openPractice(task.id) }));
   if (task.mode === 'cards') {
-    act.append(task.count > 0
-      ? h('button.btn', { type: 'button', text: task.due > 0 ? '複習' : '學新卡', onclick: () => ctx.startReview({ kinds: task.kinds }) })
-      : h('button.btn.btn-quiet', { type: 'button', text: '再練', onclick: () => ctx.startReview({ kinds: task.kinds }) }));
-    links.append(h('button.btn.btn-quiet.btn-sm', { type: 'button', text: practiceWords(task.id), onclick: () => ctx.openPractice(task.id) }));
-  } else {
-    act.append(h('button.btn', { type: 'button', text: practiceWords(task.id), onclick: () => ctx.openPractice(task.id) }));
+    links.append(h('button.btn.btn-quiet.btn-sm', {
+      type: 'button',
+      text: task.count > 0 ? `只做${SKILL_ZH[task.id] ?? ''}的卡` : `加練${SKILL_ZH[task.id] ?? ''}的卡`,
+      onclick: () => ctx.startReview({ kinds: task.kinds }),
+    }));
   }
 
   if (task.doc) {

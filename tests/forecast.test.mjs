@@ -97,10 +97,10 @@ test('solveDailyNew 掃過每一格，ceiling 不會漏掉二分搜尋跳過的�
   assert.equal(r.tried.length, 31);
   assert.deepEqual(r.tried.map((t) => t.dailyNew), Array.from({ length: 31 }, (_, i) => i));
 
-  // ceiling 必須是所有跑過的格子裡最高的答對率，不是搜尋路徑終點。
-  const max = Math.max(...r.tried.map((t) => t.rate));
-  assert.equal(r.ceiling.rate, max);
-  for (const t of r.tried) assert.ok(t.rate <= r.ceiling.rate);
+  // ceiling 必須是所有跑過的格子裡學過的卡記得比例最高的，不是搜尋路徑終點。
+  const max = Math.max(...r.tried.map((t) => t.learnedRate));
+  assert.equal(r.ceiling.learnedRate, max);
+  for (const t of r.tried) assert.ok(t.learnedRate <= r.ceiling.learnedRate);
 });
 
 test('maxNew 很大時改成粗掃加局部補滿，模擬次數不隨 maxNew 線性膨脹', () => {
@@ -109,8 +109,8 @@ test('maxNew 很大時改成粗掃加局部補滿，模擬次數不隨 maxNew �
   // 61 格粗掃 + 最佳格附近補滿，遠少於 601 次。
   assert.ok(r.tried.length < 100, `跑了 ${r.tried.length} 次`);
   assert.ok(r.tried.some((t) => t.dailyNew === 600));
-  const max = Math.max(...r.tried.map((t) => t.rate));
-  assert.equal(r.ceiling.rate, max);
+  const max = Math.max(...r.tried.map((t) => t.learnedRate));
+  assert.equal(r.ceiling.learnedRate, max);
 });
 
 test('不修改呼叫端傳進來的卡片物件', () => {
@@ -136,6 +136,9 @@ test('分母是範圍內全部的卡，沒學到的算 0 分', () => {
   assert.ok(r.coverage < 1);
   assert.ok(r.expectedRecallRate <= r.coverage);
   assert.ok(r.buckets.untouched > 0);
+  // 學過的卡為分母的比例，乘回學過的張數就是同一個期望記得張數。
+  assert.ok(Math.abs(r.learnedRecallRate * r.studiedByExam - r.expectedRecall) < 1e-9);
+  assert.ok(r.learnedRecallRate >= r.expectedRecallRate);
 
   const sum = r.buckets.strong + r.buckets.shaky + r.buckets.weak;
   assert.equal(sum, r.studiedByExam);
@@ -165,11 +168,18 @@ test('ratingDistribution：樣本不足回 null，足夠時三個機率加總為
   assert.equal(ratingDistribution([{ rating: 1 }, { rating: 1 }, { rating: 3 }], 3), null);
 });
 
-test('solveDailyNew：達得到目標時回傳仍能達標的最大新卡量', () => {
+test('solveDailyNew：達得到目標時，在達標的格子裡取記得張數最多的', () => {
   const r = solveDailyNew(baseOpts({ target: 0.5, maxNew: 40 }));
   assert.equal(r.achievable, true);
-  assert.ok(r.recommended.rate >= 0.5);
+  assert.ok(r.recommended.learnedRate >= 0.5);
   assert.ok(r.recommended.dailyNew >= 1);
+  const feasible = r.tried.filter((t) => t.learnedRate >= 0.5);
+  assert.equal(r.recommended.recall, Math.max(...feasible.map((t) => t.recall)));
+  // 範圍一定包住建議值，而且範圍兩端都是達標的格子。
+  assert.ok(r.band.from <= r.recommended.dailyNew && r.recommended.dailyNew <= r.band.to);
+  for (const n of [r.band.from, r.band.to]) {
+    assert.ok(feasible.some((t) => t.dailyNew === n));
+  }
   // 回報的每一組都要帶得走，不含整份模擬結果（那是 MB 等級的物件）。
   assert.ok(r.tried.length > 0);
   assert.ok(r.tried.every((t) => !('result' in t)));
@@ -181,7 +191,7 @@ test('solveDailyNew：達得到目標時回傳仍能達標的最大新卡量', (
 test('solveDailyNew：達不到目標時誠實回報，並給出實際能到的上限', () => {
   const r = solveDailyNew(baseOpts({ target: 0.999, maxNew: 40 }));
   assert.equal(r.achievable, false);
-  assert.ok(r.ceiling.rate < 0.999);
+  assert.ok(r.ceiling.learnedRate < 0.999);
   // 達不到就把最好的那一組當建議，不回一個沒跑過的數字。
   assert.equal(r.recommended.dailyNew, r.ceiling.dailyNew);
   assert.ok(r.tried.some((t) => t.dailyNew === r.recommended.dailyNew));

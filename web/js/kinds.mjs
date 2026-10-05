@@ -18,3 +18,15 @@ export const KIND_ZH = {
   rw: '改寫整句',
   nom: '名詞化',
 };
+
+/**
+ * 一張卡在清單裡代表它的那個字。
+ *
+ * 順序是先看題面的詞、連接詞、動詞，最後才退回 answer。連接詞卡的 answer 是它要接的
+ * 語氣（subjonctif），先拿 answer 的話，進度頁「最弱的卡」整排都會印成語氣名稱，
+ * 看不出是哪個連接詞（2026-10-04 critique 抓到的）。查詢頁與進度頁共用這一份，免得兩邊又各寫一套順序。
+ */
+export function cardHead(card) {
+  const f = card.front ?? {};
+  return f.word || f.connector || f.verb || card.answer || card.id;
+}

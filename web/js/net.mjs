@@ -11,13 +11,26 @@ async function call(method, path, { query, body } = {}) {
     if (v === null || v === undefined || v === '') continue;
     url.searchParams.set(k, Array.isArray(v) ? v.join(',') : String(v));
   }
-  const res = await fetch(url, {
-    method,
-    credentials: 'same-origin',
-    headers: body ? { 'content-type': 'application/json' } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const text = await res.text();
+  let res;
+  let text;
+  try {
+    res = await fetch(url, {
+      method,
+      credentials: 'same-origin',
+      headers: body ? { 'content-type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    text = await res.text();
+  } catch {
+    // 斷網時瀏覽器丟的是英文的「Failed to fetch」／「Load failed」，原樣印到 toast 上看不懂，
+    // 更看不出剛按的那一題有沒有存到。寫入類的請求寫「沒有確認存到」而不是「沒存」：
+    // 請求可能已經送到、只是回應在路上斷了，前端分不出這兩種情況。
+    const err = new Error(method === 'GET'
+      ? '連不上伺服器。網路恢復後再試一次。'
+      : '連不上伺服器，這一筆沒有確認存到。網路恢復後再按一次。');
+    err.offline = true;
+    throw err;
+  }
   let data = null;
   try {
     data = text ? JSON.parse(text) : null;
