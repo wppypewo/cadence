@@ -31,7 +31,7 @@ export function mockView(root, ctx) {
 
   box.append(
     workbenchHead({
-      back: '← 進度', onBack: () => ctx.go('stats'), code: '模考', title: 'B1 基準模考',
+      back: '進度', onBack: () => ctx.go('stats'), code: '模考', title: 'B1 基準模考',
       sub: '四科各做一次，完成一科就回來填分，最後一起儲存。',
     }),
     h('div.wb-grid', {},

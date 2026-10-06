@@ -3,7 +3,7 @@
  * 科目、時間、分數與文字紀錄；本機工具不該默默複製一份聲音檔。
  */
 
-import { h, clear, announce } from './dom.mjs';
+import { h, clear, icon, announce } from './dom.mjs';
 import { api } from './net.mjs';
 import * as motion from './motion.mjs';
 
@@ -50,7 +50,7 @@ export function practiceView(root, ctx) {
   // 閱讀理解沒有工具，只剩表單，單欄就好，硬排兩欄會留下一整欄空白。
   const hasTool = skill !== 'CE';
   box.append(
-    workbenchHead({ back: `← ${from.label}`, onBack: () => ctx.go(from.id), code: skill, title: meta.zh, fr: meta.fr }),
+    workbenchHead({ back: from.label, onBack: () => ctx.go(from.id), code: skill, title: meta.zh, fr: meta.fr }),
     h('section.practice-timer', { 'aria-label': '練習計時器' },
       clock,
       h('p.cue', { text: meta.hint }),
@@ -419,11 +419,11 @@ export function field(label, control) {
 
 /**
  * 練習與模考共用的頁首。科目代碼用主色小字放在標題上方，像辭典的詞條編號；
- * 返回鈕在最上面，位置跟辭典的「← 回結果」一致。
+ * 返回鈕在最上面，位置跟辭典的「回結果」一致。
  */
 export function workbenchHead({ back, onBack, code, title, fr = null, sub = null }) {
   return h('header.wb-head', {},
-    h('button.btn.btn-quiet.btn-sm.wb-back', { type: 'button', text: back, onclick: onBack }),
+    h('button.btn.btn-quiet.btn-sm.wb-back', { type: 'button', onclick: onBack }, icon('back'), back),
     h('p.wb-code', { text: code }),
     h('h2', { text: title }),
     fr ? h('p.wb-fr.fr', { lang: 'fr', text: fr }) : null,

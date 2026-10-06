@@ -25,15 +25,10 @@ import { h, clear, icon, num } from './dom.mjs';
 import { api } from './net.mjs';
 import { render as renderMarkdown } from './markdown.mjs';
 import * as motion from './motion.mjs';
-import { KIND_ZH } from './kinds.mjs';
+import { KIND_ZH, SKILL_ZH } from './kinds.mjs';
 
 const WEEKDAY = ['週日', '週一', '週二', '週三', '週四', '週五', '週六'];
 const ROMAN_MONTH = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
-/**
- * 四科的中文名。主鍵寫「練聽力」、旁邊那句卻寫「還沒打卡：CO／PO」，同一眼讀到兩套叫法；
- * 按鍵、打卡鍵與待打卡清單都從這裡拿。帳本列的科目代號是給對照官方評分格用的，不在此列。
- */
-const SKILL_ZH = { CE: '閱讀', PE: '寫作', CO: '聽力', PO: '口說' };
 
 export function todayView(root, ctx) {
   const box = h('div.today');

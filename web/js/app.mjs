@@ -43,7 +43,7 @@ const PAGES = [
   { id: 'browse', label: '辭典', view: browseView, scoped: false },
   // 資源清單只存在雲端資料庫（supabase/migrations 的種子資料），本機伺服器沒有對應端點，
   // 本機模式列出來只會得到一頁錯誤訊息，所以只在雲端模式出現。
-  { id: 'resources', label: 'B2 資源', view: resourcesView, scoped: false, cloudOnly: true },
+  { id: 'resources', label: '資源', view: resourcesView, scoped: false, cloudOnly: true },
   // 工作台由今天／進度頁帶著科目進入，不佔導覽列的位置。
   { id: 'practice', label: '練習', view: practiceView, scoped: false },
   { id: 'mock', label: '模考紀錄', view: mockView, scoped: false },
@@ -193,7 +193,7 @@ function buildShell() {
  */
 function moreMenu() {
   const panel = h('div.menu', { id: 'more-menu', popover: 'auto' });
-  const btn = h('button.rail-more', { type: 'button', text: '更多', 'aria-haspopup': 'true' });
+  const btn = h('button.rail-more', { type: 'button', 'aria-haspopup': 'true' }, h('span', { text: '更多' }), icon('more'));
   btn.popoverTargetElement = panel;
   els.meta = h('p.menu-meta', { text: '' });
   panel.append(

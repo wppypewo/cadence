@@ -198,22 +198,21 @@ function group(hits) {
 
 /**
  * 結果列數說明。要講清楚三件事：一共命中幾張卡、畫面上顯示幾組、
- * 變位卡收掉了多少。只寫「40 筆（已達顯示上限）」等於什麼都沒說——
+ * 為什麼兩個數字不一樣。只寫「40 筆（已達顯示上限）」等於什麼都沒說——
  * 使用者不知道被截掉的是什麼，也沒有任何辦法看到剩下的。
+ * 原本把「幾張變位卡收成幾個動詞」「幾個詞的兩個方向併成一列」逐項列出，
+ * 2026-10-05 critique 評為太技術：查字的人要的是規則，不是每條規則各收掉幾張。
  */
 function countLine(res, rows) {
-  const verbs = rows.filter((r) => r.verb);
-  const cards = verbs.reduce((a, r) => a + r.count, 0);
-  // 兩個方向都命中的詞才算「收掉一列」；只命中一個方向的收合前後都是一列。
-  const merged = rows.filter((r) => r.kinds && r.count > 1);
-  const parts = [`命中 ${res.total} 張卡`];
-  if (verbs.length) parts.push(`${cards} 張變位卡收成 ${verbs.length} 個動詞`);
-  if (merged.length) parts.push(`${merged.length} 個詞的兩個方向併成一列`);
-  parts.push(`顯示 ${rows.length} 組`);
-  const line = h('p.hits-count', { text: parts.join('・') });
-  if (!res.truncated) return line;
+  // 兩個方向都命中的詞才算併過；只命中一個方向的收合前後都是一列。
+  const why = [];
+  if (rows.some((r) => r.verb)) why.push('同一個動詞的變位');
+  if (rows.some((r) => r.kinds && r.count > 1)) why.push('同一個詞的兩個方向');
+  const text = `${res.total} 張卡，整理成 ${rows.length} 組`
+    + (why.length ? `（${why.join('、')}各併成一組）` : '');
+  if (!res.truncated) return h('p.hits-count', { text });
   return h('p.hits-count', {},
-    parts.join('・'),
+    text,
     h('span.more', { text: '。還有更多，把關鍵字寫長一點可以縮小範圍。' }),
   );
 }
@@ -314,11 +313,11 @@ function hitRow({ card, state }, out, back, q = '') {
 }
 
 /**
- * 可以攤開變位表的列，右端多一個「變位表 →」。平常藏著、滑過或鍵盤停到才出現：
+ * 可以攤開變位表的列，右端多一個「變位表」加箭頭。平常藏著、滑過或鍵盤停到才出現：
  * 一整頁結果每列都掛著同一句話只是噪音。報讀器不念它，整列的 aria-label 已經講了。
  */
 function openHint() {
-  return h('span.open-hint', { 'aria-hidden': 'true', text: '變位表 →' });
+  return h('span.open-hint', { 'aria-hidden': 'true' }, '變位表', icon('arrow'));
 }
 
 /**
@@ -373,7 +372,7 @@ async function showVerb(name, out, back) {
   try {
     data = await api.verb(name);
   } catch (err) {
-    const retreat = h('button.btn.btn-sm', { text: '← 回結果', onclick: back });
+    const retreat = h('button.btn.btn-sm', { type: 'button', onclick: back }, icon('back'), '回結果');
     const again = h('button.btn.btn-sm', { type: 'button', text: '再試一次', onclick: () => showVerb(name, out, back) });
     clear(panel).append(h('div.sec-err', {}, h('p', { text: `讀不到變位表：${err.message}` }), again, retreat));
     again.focus();
@@ -383,7 +382,7 @@ async function showVerb(name, out, back) {
   clear(panel);
   // 回去要回到剛才那份結果，不是回到空白頁——查完一個動詞常常還要查下一個。
   // 返回鈕放在字頭上方而不是右邊：它是這一頁的「上一層」，位置跟麵包屑一樣。
-  const backBtn = h('button.btn.btn-quiet.btn-sm.verb-back', { text: '← 回結果', onclick: back });
+  const backBtn = h('button.btn.btn-quiet.btn-sm.verb-back', { type: 'button', onclick: back }, icon('back'), '回結果');
   const title = heading();
   panel.append(backBtn, h('div.verb-head', {},
     title,

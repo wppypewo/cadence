@@ -15,7 +15,7 @@ import { h, clear, pct, num } from './dom.mjs';
 import { api } from './net.mjs';
 import { bars, heatmap, line, reasonBars } from './charts.mjs';
 import * as motion from './motion.mjs';
-import { KIND_ZH, REASON_ZH, cardHead, reasonFor } from './kinds.mjs';
+import { KIND_ZH, REASON_ZH, SKILL_ZH, cardHead, reasonFor } from './kinds.mjs';
 
 const REASON_COLOR = {
   wrong: 'var(--bad)',
@@ -258,8 +258,8 @@ function practiceBlock(d, ctx) {
         h('span', { text: item.attempts ? `${item.days} 天・${item.minutes} 分鐘` : '還沒有紀錄' }),
         h('span.dim', { text: performance }),
       ),
-      // 四列的按鈕字一樣，讀螢幕時要靠 aria-label 分出是哪一科。
-      h('button.btn.btn-quiet.btn-sm', { type: 'button', text: '練習', 'aria-label': `練習 ${item.skill}`, onclick: () => ctx.openPractice(item.skill) }),
+      // 用語跟今天頁的「練閱讀」「練寫作」一致，同一個動作不要在兩頁叫兩種名字。
+      h('button.btn.btn-quiet.btn-sm', { type: 'button', text: `練${SKILL_ZH[item.skill] ?? item.skill}`, onclick: () => ctx.openPractice(item.skill) }),
     ));
   }
   return section('四科實作', d.practice.recent.length ? `最近 ${d.periodDays} 天` : '卡片之外的讀、寫、聽、說', rows);

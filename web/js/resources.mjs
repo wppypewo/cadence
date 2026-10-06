@@ -1,5 +1,5 @@
 /**
- * B2 外部資源入口。資料由雲端資料庫提供，畫面只負責把「拿來做什麼」說清楚。
+ * 外部資源入口。資料由雲端資料庫提供，畫面只負責把「拿來做什麼」說清楚。
  * 連結全部留在原站，不鏡像、不嵌入，也不把對方內容假裝成 cadence 自有題庫。
  */
 
@@ -39,7 +39,7 @@ export function resourcesView(root, ctx) {
 
 function skeleton() {
   // 形狀照最後的版面：頁首一條、三節各一個標題加幾列。
-  const box = h('div.resource-loading', { 'aria-busy': 'true', 'aria-label': '正在載入 B2 資源' });
+  const box = h('div.resource-loading', { 'aria-busy': 'true', 'aria-label': '正在載入資源' });
   for (const [w, hh] of [['40%', 36], ['100%', 1], ['70%', 18], ['100%', 160], ['100%', 260]]) {
     const bar = h('div.skeleton');
     bar.style.width = w;
@@ -60,7 +60,7 @@ function render(box, data, ctx) {
   clear(box).append(
     h('header.page-head', {},
       h('div', {},
-        h('h1', { text: 'B2 資源' }),
+        h('h1', { text: '資源' }),
         h('p', { text: meta.join('・') }))),
     h('p.res-lead', { text: '這裡不堆連結。每一個來源都標明最適合練什麼、怎麼排進一週，以及最後查證日期。連結都留在原站，不鏡像、不嵌入。' }),
     journey(),
@@ -68,7 +68,7 @@ function render(box, data, ctx) {
   );
 
   if (!rows.length) {
-    box.append(h('div.empty', {}, icon('library'), h('p', { text: '目前沒有啟用中的 B2 資源。' })));
+    box.append(h('div.empty', {}, icon('library'), h('p', { text: '目前沒有啟用中的資源。' })));
     return;
   }
 
@@ -136,7 +136,7 @@ function journey() {
     h('p.res-rhythm', { text: rhythm }),
     h('p.res-copy', { text: copy }),
   )));
-  return block('輸入、輸出、校準', 'B2 要求理解較複雜的內容，也能清楚表達立場。', list);
+  return block('輸入、輸出、校準', 'B1 要求聽讀懂熟悉主題的重點，也能簡短說明理由與看法。', list);
 }
 
 function resourceRow(row) {
