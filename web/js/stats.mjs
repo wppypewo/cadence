@@ -15,12 +15,8 @@ import { h, clear, pct, num } from './dom.mjs';
 import { api } from './net.mjs';
 import { bars, heatmap, line, reasonBars } from './charts.mjs';
 import * as motion from './motion.mjs';
-import { KIND_ZH, cardHead } from './kinds.mjs';
+import { KIND_ZH, REASON_ZH, cardHead, reasonFor } from './kinds.mjs';
 
-const REASON_ZH = {
-  wrong: '拼錯', accent: '漏重音', case: '大小寫', empty: '沒作答',
-  elision: '省音', family: '性數／形式', missing: '少要素', article: '冠詞錯',
-};
 const REASON_COLOR = {
   wrong: 'var(--bad)',
   accent: 'var(--warn)',
@@ -223,7 +219,7 @@ function weakBlock(d, ctx) {
       ),
       h('div.weak-side', {},
         h('span.lapses', { text: `錯 ${w.lapses} 次` }),
-        w.lastReason ? h('span.why', { text: `上次${REASON_ZH[w.lastReason] ?? w.lastReason}` }) : null,
+        w.lastReason ? h('span.why', { text: `上次${reasonFor(w.card, w.lastReason)}` }) : null,
       ),
     );
   };
@@ -240,7 +236,7 @@ function weakBlock(d, ctx) {
 }
 
 function errorsBlock(d) {
-  if (d.errorProfile.length === 0) return section('錯在哪裡', '打字題的錯誤類型', emptyLine('還沒有打字題答錯的紀錄。'));
+  if (d.errorProfile.length === 0) return section('錯在哪裡', '答錯的類型', emptyLine('還沒有答錯的紀錄。'));
   const out = [reasonBars(d.errorProfile, REASON_ZH, REASON_COLOR)];
   const accent = d.errorProfile.find((r) => r.reason === 'accent');
   if (accent) {
@@ -249,7 +245,7 @@ function errorsBlock(d) {
       text: `其中 ${pct(accent.count / total)} 是字母全對、只差重音。這一類最容易被自己放過，考卷上照樣扣分。`,
     }));
   }
-  return section('錯在哪裡', '打字題的錯誤類型', out);
+  return section('錯在哪裡', '答錯的類型', out);
 }
 
 function practiceBlock(d, ctx) {

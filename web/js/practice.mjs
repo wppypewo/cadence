@@ -18,6 +18,7 @@ const SKILLS = {
 export function practiceView(root, ctx) {
   const skill = SKILLS[ctx.practiceSkill] ? ctx.practiceSkill : 'PE';
   const meta = SKILLS[skill];
+  const from = ctx.practiceFrom;
   const box = h('div.workbench');
   root.append(box);
 
@@ -30,7 +31,8 @@ export function practiceView(root, ctx) {
   let sourceUrl = null;
   let chunks = [];
 
-  const clock = h('output.practice-clock.num', { text: '00:00', 'aria-label': '計時 0 分 0 秒' });
+  // <output> 隱含 role=status，每秒改字讀屏就跟著念一次；timer 角色預設不播報，要聽時間再自己移過去。
+  const clock = h('output.practice-clock.num', { role: 'timer', text: '00:00', 'aria-label': '計時 0 分 0 秒' });
   const timerButton = h('button.btn.btn-primary', { type: 'button', text: '開始計時', onclick: toggleTimer });
   const resetButton = h('button.btn', { type: 'button', text: '歸零', onclick: resetTimer });
   const title = h('input.input', { type: 'text', maxlength: 120, placeholder: sourcePlaceholder(skill) });
@@ -48,7 +50,7 @@ export function practiceView(root, ctx) {
   // 閱讀理解沒有工具，只剩表單，單欄就好，硬排兩欄會留下一整欄空白。
   const hasTool = skill !== 'CE';
   box.append(
-    workbenchHead({ back: '← 今天', onBack: () => ctx.go('today'), code: skill, title: meta.zh, fr: meta.fr }),
+    workbenchHead({ back: `← ${from.label}`, onBack: () => ctx.go(from.id), code: skill, title: meta.zh, fr: meta.fr }),
     h('section.practice-timer', { 'aria-label': '練習計時器' },
       clock,
       h('p.cue', { text: meta.hint }),
@@ -350,14 +352,19 @@ function assessmentTool(skill, score, maxScore) {
 }
 
 function savedPanel(result, ctx) {
+  const from = ctx.practiceFrom;
   const score = result.score === null ? null : `・${result.score}/${result.maxScore}`;
   return donePanel({
     code: result.skill,
     title: SKILLS[result.skill]?.zh ?? result.skill,
     line: `${formatDuration(result.durationSec)}${result.wordCount ? `・${result.wordCount} mots` : ''}${score ?? ''}`,
     actions: [
-      h('button.btn.btn-primary', { type: 'button', text: ctx.guided ? '回今天，做下一項' : '回今天', onclick: () => ctx.go('today') }),
-      h('button.btn', { type: 'button', text: '看進度', onclick: () => { ctx.endGuided(); ctx.go('stats'); } }),
+      ctx.guided
+        ? h('button.btn.btn-primary', { type: 'button', text: '回今天，做下一項', onclick: () => ctx.go('today') })
+        : h('button.btn.btn-primary', { type: 'button', text: `回${from.label}`, onclick: () => ctx.go(from.id) }),
+      from.id === 'stats'
+        ? h('button.btn', { type: 'button', text: '回今天', onclick: () => { ctx.endGuided(); ctx.go('today'); } })
+        : h('button.btn', { type: 'button', text: '看進度', onclick: () => { ctx.endGuided(); ctx.go('stats'); } }),
     ],
     after: todayTally(result.skill),
   });

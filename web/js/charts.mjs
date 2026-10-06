@@ -80,9 +80,10 @@ function keepTicksLegible(node, w) {
  * 圖上方的一句說明。只有在同一個面板疊兩張圖、光看面板標題分不出誰是誰時才給。
  * 單圖面板的標題已經在 h2 上，再寫一次只是重複。
  */
-function caption(text) {
-  // aria-hidden：同樣的字已經在 svg 的 aria-label 裡，讀螢幕的人不需要聽兩次。
-  return h('p.chart-cap', { text, 'aria-hidden': 'true' });
+function caption(text, label) {
+  // 跟圖的 aria-label 同一句才藏起來，免得聽兩次。原本一律 aria-hidden，
+  // 但推演頁「每一格都跑過」、模考「每個點是一份完整模考」這類補充只寫在說明裡，讀屏完全聽不到。
+  return h('p.chart-cap', text === label ? { text, 'aria-hidden': 'true' } : { text });
 }
 
 /**
@@ -111,7 +112,7 @@ export function bars(data, { height = 150, aName = '', bName = '', title = '', c
 
   node.append(s('line.axis', { x1: PAD.left, x2: w - PAD.right, y1: PAD.top + sc.ih, y2: PAD.top + sc.ih }));
   labelEnds(node, data, w, height);
-  const box = h('div', {}, cap ? caption(cap) : null, node);
+  const box = h('div', {}, cap ? caption(cap, title) : null, node);
   if (aName) box.append(legend([[aName, 'var(--accent)'], bName && [bName, 'var(--accent-mid)']].filter(Boolean)));
   return box;
 }
@@ -143,7 +144,7 @@ export function line(data, { height = 170, title = '', marks = [], cap = '' } = 
 
   node.append(s('line.axis', { x1: PAD.left, x2: w - PAD.right, y1: base, y2: base }));
   labelEnds(node, data, w, height);
-  return h('div', {}, cap ? caption(cap) : null, node);
+  return h('div', {}, cap ? caption(cap, title) : null, node);
 }
 
 /** 只在兩端標日期。中間全標會糊成一片，而且沒人在讀。 */
@@ -193,7 +194,7 @@ export function heatmap(daily, { weeks = 26, cap = '' } = {}) {
     if (t > today.getTime()) cell.style.visibility = 'hidden';
     grid.append(cell);
   }
-  return h('div', {}, cap ? caption(cap) : null, h('div.scroll-x', {}, grid));
+  return h('div', {}, cap ? caption(cap, grid.getAttribute('aria-label')) : null, h('div.scroll-x', {}, grid));
 }
 
 /** 水平比例條，用在錯誤類型分布。 */

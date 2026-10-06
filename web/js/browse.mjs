@@ -9,7 +9,7 @@
  *     只回一行「這個字有出題」是浪費。
  */
 
-import { h, clear, icon, relDays } from './dom.mjs';
+import { h, clear, icon, relDays, announce } from './dom.mjs';
 import { api } from './net.mjs';
 import * as motion from './motion.mjs';
 import { KIND_ZH, cardHead } from './kinds.mjs';
@@ -68,7 +68,9 @@ export function browseView(root) {
     onsubmit: (ev) => { ev.preventDefault(); clearTimeout(timer); run(field.value); },
   }, field, h('button.dict-go', { type: 'submit', 'aria-label': '搜尋' }, icon('find'))));
 
-  const out = h('div.browse-out', { 'aria-live': 'polite', 'aria-busy': 'false' });
+  // 結果區不設 live：整區設 live 時，每打一個字讀屏就把幾十列結果從頭念一次。
+  // 只用 announce() 報一句命中幾張，要細看再自己移進列表。
+  const out = h('div.browse-out', { 'aria-busy': 'false' });
   box.append(out);
   const example = (q) => { field.value = q; field.focus(); run(q); };
   clear(out).append(hint(example));
@@ -98,6 +100,7 @@ export function browseView(root) {
         out.append(h('div.dict-empty', {},
           h('p.dict-empty-lead', {}, '題庫裡沒有 ', h('span.fr', { lang: 'fr', text: q }), '。'),
           h('p.dict-empty-note', { text: `題庫只收 ${SCOPE}，不是完整字典。` })));
+        announce(`題庫裡沒有 ${q}`);
         return;
       }
       const rows = group(hits);
@@ -109,6 +112,8 @@ export function browseView(root) {
         else list.append(hitRow(row.hit, out, back, q));
       }
       out.append(countLine(res, rows), list);
+      // 句子裡帶著查的字：兩次查詢命中數相同時，live region 的字不變就不會再念。
+      if (!reopen) announce(`${q}：命中 ${res.total} 張卡，顯示 ${rows.length} 組`);
       // 「回搜尋結果」那顆鈕已經隨變位表一起清掉，不接住的話焦點掉回 body，
       // 下一次 Tab 要從頁首重數。回到剛才那一列，查完一個接著查下一個才順。
       // 同一個動詞可能有好幾列（例如 être 的變位與單字各一列），只比動詞會永遠回到第一列，
@@ -122,6 +127,7 @@ export function browseView(root) {
     } catch (err) {
       if (mine !== seq) return;
       // 這裡是連線失敗，不是題庫沒有這個字（那是上面的 dict-empty），所以給重試。
+      announce('查詢沒有完成');
       clear(out).append(h('div.sec-err', {},
         h('p', { text: `查詢沒有完成：${err.message}` }),
         h('button.btn.btn-sm', { type: 'button', text: '再試一次', onclick: () => run(q, reopen) }),

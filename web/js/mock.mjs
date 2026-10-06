@@ -6,6 +6,9 @@ import { workbenchHead, donePanel, field, afterSection, skillName } from './prac
 import * as motion from './motion.mjs';
 
 const SKILLS = ['CE', 'CO', 'PE', 'PO'];
+// 四科是分好幾次、跨好幾頁做完的：每做完一科就會去工作台再回來。
+// 分數只放在表單裡的話，切一次頁就全沒了，所以跟寫作草稿一樣先存在這台瀏覽器。
+const DRAFT_KEY = 'cadence.draft.mock';
 
 export function mockView(root, ctx) {
   const box = h('div.workbench');
@@ -20,7 +23,8 @@ export function mockView(root, ctx) {
   const scores = h('div.mock-scores');
   for (const skill of SKILLS) {
     const got = h('input.input', { type: 'number', min: 0, max: 25, step: 0.5, inputmode: 'decimal', required: true, 'aria-label': `${skill} 得分`, oninput: update });
-    const max = h('input.input', { type: 'number', min: 0.5, max: 100, step: 0.5, value: '25', inputmode: 'decimal', required: true, 'aria-label': `${skill} 滿分`, oninput: update });
+    // 滿分可以改，得分的上限要跟著改，不然滿分填 50 時瀏覽器會擋下 26 以上的得分。
+    const max = h('input.input', { type: 'number', min: 0.5, max: 100, step: 0.5, value: '25', inputmode: 'decimal', required: true, 'aria-label': `${skill} 滿分`, oninput: () => { got.max = max.value || '100'; update(); } });
     inputs.set(skill, { got, max });
     scores.append(h('div.mock-score', {}, h('strong', { text: skill }), got, h('span.of', { text: '/' }), max));
   }
@@ -51,7 +55,30 @@ export function mockView(root, ctx) {
       ),
     ),
   );
-  update();
+  restoreDraft();
+  for (const el of [source, date, notes]) el.addEventListener('input', storeDraft);
+  // 第一次只算總分不存：沒動過的表單存下去，隔天打開日期會停在今天以前。
+  update({ store: false });
+
+  function storeDraft() {
+    const draft = { source: source.value, day: date.value, notes: notes.value, scores: {} };
+    for (const [skill, { got, max }] of inputs) draft.scores[skill] = { got: got.value, max: max.value };
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch { /* 草稿仍留在目前頁面。 */ }
+  }
+
+  function restoreDraft() {
+    let draft = null;
+    try { draft = JSON.parse(localStorage.getItem(DRAFT_KEY) ?? 'null'); } catch { /* 無痕模式或壞掉的草稿就從空白開始。 */ }
+    if (!draft || typeof draft !== 'object') return;
+    if (typeof draft.source === 'string') source.value = draft.source;
+    if (typeof draft.day === 'string' && draft.day) date.value = draft.day;
+    if (typeof draft.notes === 'string') notes.value = draft.notes;
+    for (const [skill, { got, max }] of inputs) {
+      const v = draft.scores?.[skill];
+      if (typeof v?.max === 'string' && v.max) { max.value = v.max; got.max = v.max; }
+      if (typeof v?.got === 'string') got.value = v.got;
+    }
+  }
 
   async function save(ev) {
     ev.preventDefault();
@@ -66,6 +93,7 @@ export function mockView(root, ctx) {
     button.disabled = true;
     try {
       const record = await api.mock({ baseline: true, source: source.value.trim() || null, day: date.value, scores: parsed, notes: notes.value.trim() || null });
+      try { localStorage.removeItem(DRAFT_KEY); } catch { /* 已儲存的紀錄不受影響。 */ }
       announce('模考已儲存');
       const done = donePanel({
         code: '模考',
@@ -87,7 +115,8 @@ export function mockView(root, ctx) {
     }
   }
 
-  function update() {
+  function update({ store = true } = {}) {
+    if (store) storeDraft();
     const parsed = readScores(inputs);
     if (!parsed) {
       result.textContent = '填完四科後顯示總分與門檻。';

@@ -30,3 +30,20 @@ export function cardHead(card) {
   const f = card.front ?? {};
   return f.word || f.connector || f.verb || card.answer || card.id;
 }
+
+/**
+ * 答錯原因的短稱，進度頁的清單與長條圖用。
+ * wrong 在打字題是拼錯、在選擇題是按錯選項；資料庫只存一個 wrong，
+ * 原本進度頁一律印「拼錯」，連接詞卡選錯也被說成拼錯（2026-10-06 critique 抓到的）。
+ * 長條圖是好幾張卡加總，分不出哪一種，所以兩種都寫上。
+ */
+export const REASON_ZH = {
+  wrong: '拼錯／選錯', accent: '漏重音', case: '大小寫', empty: '沒作答',
+  elision: '省音', family: '性數／形式', missing: '少要素', article: '冠詞錯',
+};
+
+/** 單張卡的錯法：看得到卡，就能把 wrong 說準。 */
+export function reasonFor(card, reason) {
+  if (reason === 'wrong') return card?.mode === 'choice' ? '選錯' : '拼錯';
+  return REASON_ZH[reason] ?? reason ?? '';
+}

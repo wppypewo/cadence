@@ -72,7 +72,12 @@ const state = {
   page: null,
   cleanup: null,
   practiceSkill: 'PE',
+  // 從哪一頁進工作台，返回鈕與導覽高亮就回哪一頁；模考頁進來的若被送回今天，填到一半的分數就找不回來。
+  practiceFrom: 'today',
   reviewPreset: null,
+  // 今天頁與帳本指定的題型，只管這一輪複習，不寫回 scope。
+  // null 是沒指定、照使用者的範圍；[] 是全部題型。離開複習頁或自己改了範圍就作廢。
+  kindsOverride: null,
   guided: false,
 };
 
@@ -82,7 +87,6 @@ const ctx = {
   get settings() { return state.settings; },
   scopeQuery,
   scopeMenu,
-  setScope,
   setFocus,
   refreshBadge,
   toast,
@@ -94,6 +98,10 @@ const ctx = {
   get guided() { return state.guided; },
   endGuided() { state.guided = false; },
   get practiceSkill() { return state.practiceSkill; },
+  get practiceFrom() {
+    const page = PAGES.find((p) => p.id === state.practiceFrom) ?? PAGES[0];
+    return { id: page.id, label: page.label };
+  },
 };
 
 applyStoredTheme();
@@ -208,24 +216,32 @@ function moreMenu() {
 /**
  * 把 popover 貼在觸發鈕旁邊。沒用 CSS anchor positioning：
  * 這個 App 也會在 Safari 裡開，量一次矩形比較穩。
- * up 往上開（側欄底部的選單），否則往下開、右緣對齊按鈕。
+ * dir 只是偏好：up 往上開、左緣對齊按鈕（側欄底部的選單）；down 往下開、右緣對齊按鈕。
+ * 偏好那一側放不下就翻到另一側——手機版「更多」在頂列，照舊往上開會整塊掉出畫面
+ * （375×812 實測面板 top −227、right 557）。
  */
 function anchor(panel, btn, dir = 'down') {
   panel.addEventListener('beforetoggle', (ev) => {
     if (ev.newState !== 'open') return;
+    // beforetoggle 時面板還是 display:none，量不到尺寸。先用 inline 樣式撐開、藏起來量一次，
+    // 同一段同步程式裡收回，中間不會繪製。沒用 rAF 等顯示後再量：分頁在背景時 rAF 不跑，面板會卡在左上角。
+    // 上一次留下的 left 會壓縮可用寬度、量出比較窄的面板，先歸零。
+    Object.assign(panel.style, { top: '0px', left: '0px', right: 'auto', bottom: 'auto', visibility: 'hidden', display: 'block' });
+    const { width: w, height: hh } = panel.getBoundingClientRect();
+    Object.assign(panel.style, { display: '', visibility: '' });
     const r = btn.getBoundingClientRect();
     const gap = 6;
-    if (dir === 'up') {
-      panel.style.left = `${Math.max(gap, r.left)}px`;
-      panel.style.bottom = `${window.innerHeight - r.top + gap}px`;
-      panel.style.top = 'auto';
-      panel.style.right = 'auto';
-    } else {
-      panel.style.right = `${Math.max(gap, window.innerWidth - r.right)}px`;
-      panel.style.top = `${r.bottom + gap}px`;
-      panel.style.left = 'auto';
-      panel.style.bottom = 'auto';
-    }
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const above = r.top - gap;
+    const below = vh - r.bottom - gap;
+    const fitsUp = above - hh >= gap;
+    const fitsDown = below - hh >= gap;
+    const up = dir === 'up' ? fitsUp || (!fitsDown && above > below) : !fitsDown && (fitsUp || above > below);
+    const top = up ? r.top - gap - hh : r.bottom + gap;
+    const left = dir === 'up' ? r.left : r.right - w;
+    panel.style.top = `${Math.max(gap, Math.min(top, vh - hh - gap))}px`;
+    panel.style.left = `${Math.max(gap, Math.min(left, vw - w - gap))}px`;
   });
 }
 
@@ -249,9 +265,10 @@ function renderCloudWaiting() {
   els.main.focus();
 }
 
-/** 從今天頁或進度頁進入實作練習，科目只活在這次瀏覽器工作階段。 */
+/** 從今天、進度、模考或資源頁進入實作練習，科目只活在這次瀏覽器工作階段。 */
 function openPractice(skill, { guided = false } = {}) {
   if (!['CE', 'PE', 'CO', 'PO'].includes(skill)) return;
+  if (state.page && state.page !== 'practice') state.practiceFrom = state.page;
   state.practiceSkill = skill;
   state.guided = guided;
   go('practice', { force: true });
@@ -259,7 +276,8 @@ function openPractice(skill, { guided = false } = {}) {
 
 /** 統一處理一般複習、今日引導與弱點批次，避免各頁自己改半套狀態。 */
 function startReview({ kinds = null, preset = null, guided = false } = {}) {
-  if (Array.isArray(kinds)) setScope(kinds);
+  state.kindsOverride = Array.isArray(kinds) ? normalizeKinds(kinds) : null;
+  if (els.scopeNote) updateScopeNote();
   state.reviewPreset = preset;
   state.guided = guided;
   go('review', { force: true });
@@ -279,8 +297,6 @@ function takeReviewPreset() {
  */
 function scopePanel() {
   const box = h('div.scope');
-  // 「今天」頁按下去會直接改題型範圍，勾選框得跟著動，不然選單會跟實際範圍說兩套話。
-  els.toggles = new Map();
   // 這兩個字是勾選群組的名字，不是文件的一節。用 h2 的話，讀屏的標題清單會多出兩個
   // 底下沒有內文的「節」，而勾選框本身反而沒有被念出屬於哪一組。
   box.append(h('p.scope-h', { id: 'scope-kinds', text: '題型' }));
@@ -315,6 +331,8 @@ function scopeMenu() {
   panel.addEventListener('toggle', (ev) => {
     if (ev.newState !== 'closed') return;
     if (JSON.stringify(state.scope) === before) return;
+    // 自己動了勾選，就是要照自己的範圍練，今天頁指定的那一輪到此為止。
+    state.kindsOverride = null;
     refreshBadge();
     // 複習頁換範圍就是整批重抓，正在看的那張卡會直接換掉；不說一聲會像是卡被跳過了。
     if (state.page === 'review') toast('已換範圍，這一批卡依新範圍重抓');
@@ -327,14 +345,22 @@ function scopeMenu() {
 }
 
 function isNarrowed() {
-  return state.scope.kinds.length > 0 || state.scope.levels.length > 0;
+  const { kinds, levels } = scopeQuery();
+  return kinds.length > 0 || levels.length > 0;
 }
 
 function scopeLabel() {
-  const { kinds, levels } = state.scope;
-  if (!isNarrowed()) return '全部';
+  const { kinds, levels } = scopeQuery();
   const k = kinds.length === 1 ? KINDS.find((x) => x.id === kinds[0]).label : kinds.length ? `${kinds.length} 種題型` : null;
-  return [k, levels.length ? levels.join('／') : null].filter(Boolean).join('・');
+  const text = isNarrowed() ? [k, levels.length ? levels.join('／') : null].filter(Boolean).join('・') : '全部';
+  // 這一輪的題型是今天頁給的，不是選單裡勾的；不標出來，打開選單會看到兩套對不上的範圍。
+  return state.kindsOverride ? `${text}（這一輪）` : text;
+}
+
+/** 全勾等於沒篩：存成 [] 才不會被當成「縮小過」，也不會在新增題型後漏掉新的那種。 */
+function normalizeKinds(kinds) {
+  const list = KINDS.map((k) => k.id).filter((id) => kinds.includes(id));
+  return list.length === KINDS.length ? [] : list;
 }
 
 function toggle(label, group, value) {
@@ -350,34 +376,22 @@ function toggle(label, group, value) {
       updateScopeNote();
     },
   });
-  els.toggles.set(`${group}:${value}`, input);
   return h('label.toggle', {}, input, h('span', { text: label }));
-}
-
-/**
- * 由「今天」頁指定要練哪些題型。只動題型，不動程度——
- * 使用者可能刻意只練 B1，那個選擇不該被一顆「開始練」按鈕吃掉。
- */
-function setScope(kinds) {
-  state.scope.kinds = KINDS.map((k) => k.id).filter((id) => kinds.includes(id));
-  for (const k of KINDS) {
-    const input = els.toggles.get(`kinds:${k.id}`);
-    if (input) input.checked = state.scope.kinds.includes(k.id);
-  }
-  saveScope();
-  updateScopeNote();
-  refreshBadge();
 }
 
 function updateScopeNote() {
   const { kinds, levels } = state.scope;
-  els.scopeNote.textContent = !kinds.length && !levels.length
+  const own = !kinds.length && !levels.length
     ? '都不勾就是全部題型與程度。'
     : `只練 ${[kinds.length ? `${kinds.length} 種題型` : null, levels.length ? levels.join('／') : null].filter(Boolean).join('・')}。關掉選單後套用。`;
+  els.scopeNote.textContent = state.kindsOverride
+    ? `這一輪的題型照今天頁指定的練，勾選框是你自己的範圍；改了勾選就改照它練。${own}`
+    : own;
 }
 
+/** 題型先看這一輪有沒有被指定，程度一律照使用者的選擇。 */
 function scopeQuery() {
-  return { kinds: state.scope.kinds, levels: state.scope.levels };
+  return { kinds: state.kindsOverride ?? state.scope.kinds, levels: state.scope.levels };
 }
 
 function loadScope() {
@@ -422,9 +436,15 @@ function go(id, { force = false } = {}) {
   if (typeof state.cleanup === 'function') state.cleanup();
   state.cleanup = null;
   state.page = page.id;
+  // 指定題型只活在那一輪複習裡；去了別頁再回來，就回到使用者自己的範圍。
+  if (page.id !== 'review' && state.kindsOverride) {
+    state.kindsOverride = null;
+    if (els.scopeNote) updateScopeNote();
+  }
 
+  const navId = page.id === 'practice' ? state.practiceFrom : page.id;
   for (const { a, pages } of els.tabs.values()) {
-    if (pages.includes(page.id)) a.setAttribute('aria-current', 'page');
+    if (pages.includes(navId)) a.setAttribute('aria-current', 'page');
     else a.removeAttribute('aria-current');
   }
   document.title = `${page.label} · cadence`;
