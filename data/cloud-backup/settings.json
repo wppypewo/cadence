@@ -1,8 +1,8 @@
 {
-  "desired_retention": 0.9,
+  "desired_retention": 0.95,
   "daily_new_limit": null,
   "exam_date": "2027-05-01",
   "start_level": null,
   "timezone": "Asia/Taipei",
-  "updated_at": "2026-09-25T17:40:04.39+00:00"
+  "updated_at": "2026-10-07T12:21:18.787+00:00"
 }
