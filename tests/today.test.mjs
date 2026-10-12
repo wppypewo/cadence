@@ -245,3 +245,15 @@ test('byKind 帶 fresh 時新卡數以它為準', () => {
   assert.equal(t.tasks[0].fresh, 500);
   assert.equal(t.tasks[0].newAvailable, 500);
 });
+
+test('freshB2 逐題型相加；有一列沒帶就給 null，不當成 0', () => {
+  // 雲端 migration 還沒套用時 byKind 沒有 freshB2。當成 0 的話，前端會把 B2 全算進「B1 以下」。
+  const now = new Date('2026-09-09T10:00:00');
+  const byKind = BY_KIND.map((r) => ({ ...r, fresh: r.total - r.seen, freshB2: 10 }));
+  const t = buildToday({ ...BASE, byKind, newLimit: null, now });
+  const cardKinds = new Set(t.tasks.filter((x) => x.mode === 'cards').flatMap((x) => x.kinds));
+  assert.equal(t.freshB2, 10 * BY_KIND.filter((r) => cardKinds.has(r.kind)).length);
+
+  const partial = byKind.map((r, i) => (i === 0 ? { ...r, freshB2: undefined } : r));
+  assert.equal(buildToday({ ...BASE, byKind: partial, newLimit: null, now }).freshB2, null);
+});

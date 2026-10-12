@@ -162,7 +162,9 @@ function heroBlock(data, ctx) {
       });
       if (d.dueTotal > 0) go.append('開始複習 ', h('span.num', { text: num(d.dueTotal) }), ' 張');
       else go.append('開始學新卡');
-      act.append(go, h('p.hero-meta', { text: newCardLine(d) }));
+      // 同一個 <p> 裡斷行：.hero-act 是橫排的 flex，拆成兩個 <p> 會跟按鈕排成三欄。
+      const lines = newCardLines(d);
+      act.append(go, h('p.hero-meta', {}, ...lines.flatMap((text, i) => (i ? [h('br'), text] : [text]))));
       return;
     }
     act.append(
@@ -179,16 +181,24 @@ function heroBlock(data, ctx) {
 /**
  * 新卡那一句。額度共用是帳本每一列都不寫總數的原因，所以這句要留在主按鈕旁當總解釋。
  * 不設上限時「今天總共幾張」會把一萬多張沒學過的卡全算進去，那個數沒有意義，所以只寫剩幾張沒學。
+ * 剩幾張也要拆：B2 一萬多張，混在一起寫「另有新卡 2 萬多張」看不出 B1 以下還剩多少，
+ * 所以 B1 以下當主句、B2 另起一行（2026-10-12 使用者決定）。freshB2 為 null 是雲端還沒套用
+ * 20261012000000 migration，拆不了就照舊寫總數，不猜。
  */
-function newCardLine(d) {
+function newCardLines(d) {
   if (d.newLimit === null) {
-    return d.newAvailable > 0
-      ? `另有新卡 ${num(d.newAvailable)} 張，今天學了 ${num(d.newToday)} 張`
-      : '新卡都學過了';
+    if (d.newAvailable <= 0) return ['新卡都學過了'];
+    if (d.freshB2 == null) return [`另有新卡 ${num(d.newAvailable)} 張，今天學了 ${num(d.newToday)} 張`];
+    const core = d.newAvailable - d.freshB2;
+    const lines = [core > 0
+      ? `B1 以下另有新卡 ${num(core)} 張，今天學了 ${num(d.newToday)} 張`
+      : `B1 以下的新卡都學過了，今天學了 ${num(d.newToday)} 張`];
+    if (d.freshB2 > 0) lines.push(`B2 新卡另有 ${num(d.freshB2)} 張`);
+    return lines;
   }
-  return d.newAvailable > 0
+  return [d.newAvailable > 0
     ? `新卡今天還能學 ${num(d.newAvailable)} 張（${d.newToday}/${d.newLimit}），閱讀與寫作共用`
-    : `今天的新卡額度用完了（${d.newToday}/${d.newLimit}）`;
+    : `今天的新卡額度用完了（${d.newToday}/${d.newLimit}）`];
 }
 
 function cardKinds(tasks) {

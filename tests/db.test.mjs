@@ -758,3 +758,25 @@ test('變位新卡：動詞輪替，一次一個時態的 6 格，學過的不�
     cleanup(store, dir);
   }
 });
+
+test('byKind 的 freshB2 只數 B2 新卡，中翻法照樣先擋', async () => {
+  // 今天頁拿它把「另有新卡」拆成 B1 以下與 B2；口徑必須跟 fresh 一樣，否則兩行相減會出負數。
+  const bank = [
+    card('v:terme|NOM|r', { level: 'B2', freq: 30 }),
+    card('v:terme|NOM|p', { kind: 'vocab-produce', mode: 'typed', level: 'B2', freq: 30 }),
+    card('v:réseau|NOM|r', { level: 'B2', freq: 20 }),
+    card('v:réseau|NOM|p', { kind: 'vocab-produce', mode: 'typed', level: 'B2', freq: 20 }),
+    card('v:maison|NOM|r', { level: 'B1', freq: 90 }),
+  ];
+  const [store, dir] = await open(bank);
+  try {
+    const now = new Date(2026, 8, 9, 12, 0);
+    store.review({ cardId: 'v:terme|NOM|r', rating: 3, correct: true, at: now });
+    const row = (kind) => store.byKind({ active: true }, now).find((r) => r.kind === kind);
+    assert.deepEqual([row('vocab-recall').fresh, row('vocab-recall').freshB2], [2, 1]);
+    // réseau 的 |p 還鎖著，terme 的 |p 已解鎖。
+    assert.deepEqual([row('vocab-produce').fresh, row('vocab-produce').freshB2], [1, 1]);
+  } finally {
+    cleanup(store, dir);
+  }
+});

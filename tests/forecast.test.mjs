@@ -145,6 +145,23 @@ test('分母是範圍內全部的卡，沒學到的算 0 分', () => {
   assert.equal(sum + r.buckets.untouched, r.cardsInScope);
 });
 
+test('B2 與 B1 以下分開記，兩組加起來等於全範圍', () => {
+  // 推演頁「輪不到」那行拆成 B1 以下與 B2；兩組對不回總數的話，兩行字跟上面的分布條會打架。
+  const cards = makeCards(200, 100, FROM).map((c, i) => ({ ...c, level: i % 3 === 0 ? 'B2' : 'B1' }));
+  const r = simulate(baseOpts({ cards, dailyLimit: 5, dailyNew: 1 }));
+  const { core, b2 } = r.levels;
+  assert.equal(core.cards + b2.cards, r.cardsInScope);
+  assert.equal(b2.cards, cards.filter((c) => c.level === 'B2').length);
+  assert.equal(core.studied + b2.studied, r.studiedByExam);
+  assert.equal(core.untouched + b2.untouched, r.buckets.untouched);
+  assert.ok(Math.abs(core.expectedRecall + b2.expectedRecall - r.expectedRecall) < 1e-9);
+
+  // 沒帶 level 的卡（舊資料）全歸 B1 以下，不會被算成 B2。
+  const plain = simulate(baseOpts());
+  assert.equal(plain.levels.b2.cards, 0);
+  assert.equal(plain.levels.core.cards, plain.cardsInScope);
+});
+
 test('分鐘數只在有給每張秒數時才算', () => {
   const withTime = simulate(baseOpts({ secondsPerCard: 8 }));
   assert.ok(withTime.days.some((d) => d.minutes > 0));

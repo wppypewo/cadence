@@ -184,11 +184,19 @@ export function buildToday(input) {
   const cardTasks = tasks.filter((t) => t.mode === 'cards');
   const dueTotal = cardTasks.reduce((a, t) => a + t.due, 0);
   const freshTotal = cardTasks.reduce((a, t) => a + t.fresh, 0);
+  // 新卡裡有幾張是 B2。前端拿它把「另有新卡」拆成 B1 以下與 B2 兩行（2026-10-12 使用者決定）。
+  // 舊的 byKind（雲端 migration 還沒套用時）沒有 freshB2，給 null，前端照舊只寫一個總數，
+  // 不要把缺欄當成 0——那會把 B2 全算進 B1 以下。
+  const cardRows = cardTasks.flatMap((t) => t.kinds.map((k) => stats.get(k)).filter(Boolean));
+  const freshB2 = cardRows.every((r) => r.freshB2 != null)
+    ? cardRows.reduce((a, r) => a + r.freshB2, 0)
+    : null;
 
   return {
     day: localISODay(now),
     dueTotal,
     newAvailable: Math.min(newBudget, freshTotal),
+    freshB2,
     dayTotal: dueTotal + Math.min(newBudget, freshTotal),
     // Infinity 經過 JSON 會變成 null，這裡直接給 null，與 newLimit 的 null 同義。
     newBudget: unlimited ? null : newBudget,

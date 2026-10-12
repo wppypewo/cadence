@@ -1153,13 +1153,16 @@ Object.assign(Store.prototype, {
                 SUM(CASE WHEN s.card_id IS NOT NULL THEN 1 ELSE 0 END) seen,
                 SUM(CASE WHEN s.stability >= 21 THEN 1 ELSE 0 END) mature,
                 SUM(CASE WHEN s.due < ? THEN 1 ELSE 0 END) due,
-                SUM(CASE WHEN s.card_id IS NULL${PRODUCE_GATE} THEN 1 ELSE 0 END) fresh
+                SUM(CASE WHEN s.card_id IS NULL${PRODUCE_GATE} THEN 1 ELSE 0 END) fresh,
+                SUM(CASE WHEN s.card_id IS NULL AND c.level = 'B2'${PRODUCE_GATE} THEN 1 ELSE 0 END) fresh_b2
          FROM cards c LEFT JOIN states s ON s.card_id = c.id
          WHERE 1 = 1${clause}
          GROUP BY c.kind ORDER BY c.kind`,
       )
       .all(endOfLocalDay(now), ...params)
-      .map((r) => ({ kind: r.kind, total: r.total, seen: r.seen, mature: r.mature, due: r.due, fresh: r.fresh }));
+      .map((r) => ({
+        kind: r.kind, total: r.total, seen: r.seen, mature: r.mature, due: r.due, fresh: r.fresh, freshB2: r.fresh_b2,
+      }));
   },
 
   /** 未來 N 天的到期量，讓人看得到自己給未來的自己排了多少工作。 */

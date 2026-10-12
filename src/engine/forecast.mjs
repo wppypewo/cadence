@@ -89,7 +89,7 @@ export function firstRatingModel(rows, minKindSample = FIRST_RATING_MIN) {
  * 一次考前推演。
  *
  * @param {object} opts
- * @param {Array<{id:string, stability?:number, difficulty?:number, due?:string,locked?:boolean,prerequisite?:string}>} opts.cards
+ * @param {Array<{id:string, level?:string, stability?:number, difficulty?:number, due?:string,locked?:boolean,prerequisite?:string}>} opts.cards
  *        在範圍內的卡。沒有 state 的卡就是還沒學過的新卡。
  * @param {Date}   opts.from        起算日
  * @param {Date}   opts.examDate    考試日
@@ -122,11 +122,11 @@ export function simulate(opts) {
   let locked = 0;
   for (const c of opts.cards) {
     if (c.stability != null && c.difficulty != null) {
-      seen.push({ id: c.id, kind: c.kind, s: c.stability, d: c.difficulty, due: startOfDay(new Date(c.due)).getTime(), last: new Date(c.due).getTime() });
+      seen.push({ id: c.id, kind: c.kind, level: c.level, s: c.stability, d: c.difficulty, due: startOfDay(new Date(c.due)).getTime(), last: new Date(c.due).getTime() });
     } else if (c.locked) {
       locked += 1;
     } else {
-      fresh.push({ id: c.id, kind: c.kind, prerequisite: c.prerequisite ?? null, s: null, d: null, due: null, last: null });
+      fresh.push({ id: c.id, kind: c.kind, level: c.level, prerequisite: c.prerequisite ?? null, s: null, d: null, due: null, last: null });
     }
   }
   // 到期早的先做。逾期越久的卡遺忘越深，優先處理。
@@ -219,11 +219,18 @@ export function simulate(opts) {
   let expectedRecall = 0;
   let studiedCount = 0;
   const buckets = { strong: 0, shaky: 0, weak: 0, untouched: freshRemaining + locked };
+  // B2 與 B1 以下分開記（2026-10-12 使用者決定）：B2 一萬多張到考試前大多輪不到，
+  // 跟 B1 以下混在同一個分母裡，「輪不到」那個數幾乎全是 B2，看不出 B1 以下還差多少。
+  const levels = { core: levelGroup(), b2: levelGroup() };
+  for (const c of opts.cards) levels[groupOf(c.level)].cards += 1;
   for (const card of seen) {
     if (card.s == null) continue;
     studiedCount += 1;
     const r = scheduler.retrievability(card.s, Math.max(0, (examTime - card.last) / DAY_MS));
     expectedRecall += r;
+    const group = levels[groupOf(card.level)];
+    group.studied += 1;
+    group.expectedRecall += r;
     if (r >= 0.9) buckets.strong += 1;
     else if (r >= 0.7) buckets.shaky += 1;
     else buckets.weak += 1;
@@ -251,7 +258,18 @@ export function simulate(opts) {
     studiedByExam: studiedCount,
     coverage: inScope ? studiedCount / inScope : 0,
     buckets,
+    // 沒學到的＝這組的卡數減掉考前學過的（含 locked），與 buckets.untouched 同口徑。
+    levels: Object.fromEntries(Object.entries(levels).map(([key, g]) => [key, { ...g, untouched: g.cards - g.studied }])),
   };
+}
+
+function levelGroup() {
+  return { cards: 0, studied: 0, expectedRecall: 0 };
+}
+
+/** 呼叫端沒帶 level 的卡（舊測試、舊資料）歸 B1 以下，不會被誤算成 B2。 */
+function groupOf(level) {
+  return level === 'B2' ? 'b2' : 'core';
 }
 
 /**

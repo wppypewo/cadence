@@ -200,13 +200,7 @@ function verdict(p, inputs, targetRate) {
       h('b', { text: pct(Math.min(1, p.learnedRecallRate), 1) }), ' 記得',
       h('span.tone', { text: hit ? `，達到 ${pct(targetRate)} 目標。` : `，低於 ${pct(targetRate)} 目標。` }))
     : h('p.fc-learned', {}, h('span.tone', { text: '照這個設定，考試前一張也學不到。' })));
-  if (p.buckets?.untouched) {
-    card.append(h('p.fc-rate', {},
-      '整個範圍 ',
-      h('b', { text: pct(p.expectedRecallRate, 1) }),
-      h('span', { text: `：有 ${num(p.buckets.untouched)} 張到考試前輪不到，算 0 分。只列出來參考，不拿來比目標。` }),
-    ));
-  }
+  if (p.buckets?.untouched) card.append(...coverageLines(p));
   // 前提寫出來。今天頁那兩個數字用的是另一組前提，沒寫的話兩頁對不上會被當成算錯。
   card.append(h('p.sub', {
     text: `前提：從今天到 ${p.examDate} 每天做滿 ${num(p.dailyLimit)} 張，其中新卡 ${num(p.dailyNew)} 張；範圍是上方選的 ${num(p.cardsInScope)} 張卡。`
@@ -226,6 +220,37 @@ function verdict(p, inputs, targetRate) {
     : h('span.chip', { dataset: { kind: 'assumed' }, text: `每張 ${inputs.secondsPerCard} 秒（預設值）` }));
   card.append(asm);
   return card;
+}
+
+/**
+ * 「輪不到」那幾行。B2 一萬多張到考試前大多學不到，跟 B1 以下放在同一個分母裡，
+ * 輪不到的張數幾乎全是 B2，看不出 B1 以下還差多少——所以 B1 以下當主句，B2 另起一行
+ * （2026-10-12 使用者決定）。範圍只勾了其中一邊、或回應沒有 levels（舊後端）時照舊寫整個範圍。
+ */
+function coverageLines(p) {
+  const core = p.levels?.core;
+  const b2 = p.levels?.b2;
+  if (!core?.cards || !b2?.cards) {
+    return [h('p.fc-rate', {},
+      '整個範圍 ',
+      h('b', { text: pct(p.expectedRecallRate, 1) }),
+      h('span', { text: `：有 ${num(p.buckets.untouched)} 張到考試前輪不到，算 0 分。只列出來參考，不拿來比目標。` }),
+    )];
+  }
+  return [
+    h('p.fc-rate', {},
+      `B1 以下 ${num(core.cards)} 張記得 `,
+      h('b', { text: pct(core.expectedRecall / core.cards, 1) }),
+      h('span', {
+        text: core.untouched
+          ? `：有 ${num(core.untouched)} 張到考試前輪不到，算 0 分。只列出來參考，不拿來比目標。`
+          : '：考試前全部學得到。只列出來參考，不拿來比目標。',
+      }),
+    ),
+    h('p.fc-rate', {
+      text: `B2 另有 ${num(b2.cards)} 張，考試前學到 ${num(b2.studied)} 張，${num(b2.untouched)} 張輪不到。`,
+    }),
+  ];
 }
 
 /**
