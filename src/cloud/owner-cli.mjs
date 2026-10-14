@@ -49,7 +49,9 @@ export async function ownerSession(envFile) {
     body: JSON.stringify({ email, password }),
   });
   const body = await res.json().catch(() => null);
-  if (!res.ok || !body?.access_token) throw new Error(`登入失敗（HTTP ${res.status}）`);
+  // 只有狀態碼時，400 分不出是密碼錯、帳號未驗證還是請求格式問題；帶上 Supabase 的錯誤代碼（不含任何密鑰）
+  const reason = body?.error_code ?? body?.error ?? '';
+  if (!res.ok || !body?.access_token) throw new Error(`登入失敗（HTTP ${res.status}${reason ? ` ${reason}` : ''}）`);
   if (String(body.user?.email ?? '').toLowerCase() !== email) throw new Error('登入帳號不是 CADENCE_OWNER_EMAIL');
   return { url, key, token: body.access_token, owner: body.user.id };
 }
