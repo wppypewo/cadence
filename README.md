@@ -227,7 +227,7 @@ cadence doctor    [--json]                    檢查資料來源、題庫、索�
 ## 開發
 
 ```bash
-npm test      # 309 題，含 732 組 FSRS 黃金向量
+npm test      # 322 題，含 732 組 FSRS 黃金向量
 npm run lint  # node --check 全檔語法檢查
 npm run build:web  # 產生 Vercel 的 dist/
 ```
