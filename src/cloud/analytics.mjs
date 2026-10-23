@@ -20,10 +20,10 @@ export async function cloudStats(config, auth, query, fetchImpl = fetch) {
   const weakestLimit = clampInt(query?.weakest, 1, 100, 24);
   const scope = parseScope(query);
   const [cards, states, reviewRows, attempts, dashboard] = await Promise.all([
-    readAll(config, auth, 'cards?select=id,kind,level', fetchImpl),
-    readAll(config, auth, 'card_states?select=card_id,stability,difficulty,due,last_review,reps,lapses', fetchImpl),
+    readAll(config, auth, 'cards?select=id,kind,level&order=id.asc', fetchImpl),
+    readAll(config, auth, 'card_states?select=card_id,stability,difficulty,due,last_review,reps,lapses&order=card_id.asc', fetchImpl),
     readReviews(config, auth, fetchImpl),
-    readPayloads(config, auth, 'practice_events', 'at.desc', fetchImpl),
+    readPayloads(config, auth, 'practice_events', 'at.desc,event_id.asc', fetchImpl),
     rpc(config, auth, 'cadence_dashboard', { p_today: taipeiDay(), p_due_before: dueBefore(taipeiDay()) }, fetchImpl),
   ]);
   const stateById = new Map(states.map((state) => [state.card_id, state]));
@@ -208,9 +208,9 @@ export async function cloudOutlook(config, auth, fetchImpl = fetch) {
 
 export async function cloudSentence(config, auth, query, fetchImpl = fetch) {
   const [sentenceCards, vocabCards, states] = await Promise.all([
-    readAll(config, auth, 'cards?kind=in.(pick,rw)&select=id,kind,payload', fetchImpl),
-    readAll(config, auth, 'cards?kind=eq.vocab-recall&select=id,headword', fetchImpl),
-    readAll(config, auth, 'card_states?select=card_id,stability', fetchImpl),
+    readAll(config, auth, 'cards?kind=in.(pick,rw)&select=id,kind,payload&order=id.asc', fetchImpl),
+    readAll(config, auth, 'cards?kind=eq.vocab-recall&select=id,headword&order=id.asc', fetchImpl),
+    readAll(config, auth, 'card_states?select=card_id,stability&order=card_id.asc', fetchImpl),
   ]);
   const stateById = new Map(states.map((row) => [row.card_id, row]));
   const pool = [];
@@ -232,7 +232,9 @@ export async function cloudSentence(config, auth, query, fetchImpl = fetch) {
   const best = new Map();
   for (const row of vocabCards) {
     const stability = stateById.get(row.id)?.stability;
-    if (stability !== undefined) best.set(row.headword.toLowerCase(), Math.max(best.get(row.headword.toLowerCase()) ?? 0, stability));
+    // 上面建 words 時已經處理過 headword 為 null 的列，這裡也要，否則一張缺 headword 的卡就讓整頁 500
+    const word = String(row.headword ?? '').toLowerCase();
+    if (stability !== undefined && word) best.set(word, Math.max(best.get(word) ?? 0, stability));
   }
   const { tokens, counts } = readCheck(
     picked.text,
@@ -279,6 +281,9 @@ export async function correctCloudReview(config, auth, body, fetchImpl = fetch) 
     if (effectiveRating === 1) lapses += 1;
   }
   const due = new Date(Date.parse(lastReview) + state.intervalDays * DAY_MS).toISOString();
+  // version 是單張卡的樂觀鎖計數（cadence_record_review 只接受「目前版本 + 1」），
+  // 要從這張卡現在的狀態讀，不能用 reps 加全帳號的更正筆數去湊。
+  const current = await readCardVersion(config, auth, latest.card_id, fetchImpl);
   await recordReview(config, auth, {
     event_id: eventId, event_type: 'rating-correction',
     target_event_id: target, card_id: latest.card_id, at: payload.at,
@@ -287,7 +292,7 @@ export async function correctCloudReview(config, auth, body, fetchImpl = fetch) 
     card_id: latest.card_id,
     stability: state.stability, difficulty: state.difficulty, due,
     last_review: lastReview, reps, lapses,
-    version: reps + corrections.size, updated_at: payload.at,
+    version: current + 1, updated_at: payload.at,
   }, fetchImpl);
   return {
     id: eventId, target, rating,
@@ -302,8 +307,8 @@ export async function correctCloudReview(config, auth, body, fetchImpl = fetch) 
 /** 推演頁與今天頁共用的模擬輸入。卡、狀態、作答紀錄都整份讀，與 cloudForecast 原本的讀法相同。 */
 async function simulationInputs(config, auth, scope, fetchImpl, knownSettings = null) {
   const [cards, states, reviewRows, settings] = await Promise.all([
-    readAll(config, auth, 'cards?select=id,kind,level', fetchImpl),
-    readAll(config, auth, 'card_states?select=card_id,stability,difficulty,due,last_review,reps,lapses', fetchImpl),
+    readAll(config, auth, 'cards?select=id,kind,level&order=id.asc', fetchImpl),
+    readAll(config, auth, 'card_states?select=card_id,stability,difficulty,due,last_review,reps,lapses&order=card_id.asc', fetchImpl),
     readReviews(config, auth, fetchImpl),
     knownSettings ?? readSettings(config, auth, fetchImpl),
   ]);
@@ -330,7 +335,7 @@ async function simulationInputs(config, auth, scope, fetchImpl, knownSettings = 
 
 async function readReviews(config, auth, fetchImpl) {
   return readAll(config, auth,
-    'review_events?select=event_id,event_type,target_event_id,card_id,at,study_day,rating,elapsed_days,answered,correct,reason,response_ms,self_rated,payload&order=at.asc',
+    'review_events?select=event_id,event_type,target_event_id,card_id,at,study_day,rating,elapsed_days,answered,correct,reason,response_ms,self_rated,payload&order=at.asc,event_id.asc',
     fetchImpl);
 }
 
@@ -339,7 +344,14 @@ async function readPayloads(config, auth, table, order, fetchImpl) {
   return rows.map((row) => row.payload);
 }
 
+/**
+ * 用 Range 每次 1000 列翻頁。PostgREST 沒有 order 時順序不固定，排序鍵有重複時同值的列
+ * 在兩頁之間的先後也不固定，翻頁就會重複或漏列（owner-cli.mjs 的 readAll 是同一個坑）。
+ * 所以 path 必須帶 order，而且最後一個鍵要唯一：RLS 只回自己的列，owner_id 固定，
+ * 主鍵剩下的 id／card_id／event_id 就夠。
+ */
 async function readAll(config, auth, path, fetchImpl) {
+  if (!/[?&]order=/.test(path)) throw new Error(`readAll 需要唯一排序：${path}`);
   const out = [];
   const page = 1000;
   for (let offset = 0; ; offset += page) {
@@ -349,6 +361,13 @@ async function readAll(config, auth, path, fetchImpl) {
     out.push(...data);
     if (data.length < page) return out;
   }
+}
+
+async function readCardVersion(config, auth, cardId, fetchImpl) {
+  const { data } = await restRequest(config,
+    `card_states?card_id=eq.${encodeURIComponent(cardId)}&select=version&limit=1`,
+    { token: auth.token, fetchImpl });
+  return Number(data?.[0]?.version ?? 0);
 }
 
 async function readCardPayload(config, auth, id, fetchImpl) {

@@ -95,7 +95,11 @@ export async function authenticate(config, req, { fetchImpl = fetch, secure = tr
       cookies: sessionCookies(session, secure),
     };
   } catch (err) {
-    if (err instanceof CloudError && err.status !== 401) throw err;
+    // refresh token 過期、被撤銷或已用過時，Supabase 回 400（invalid_grant／refresh_token_not_found），
+    // 不是 401。照原樣丟出去，登入頁會把「Invalid Refresh Token…」英文原文當錯誤顯示
+    // （auth.mjs 只有 401 時不顯示錯誤），其他頁的請求則收到 400 而不是「請重新登入」。
+    // 403（非擁有者）、429、5xx 維持原狀。
+    if (err instanceof CloudError && err.status !== 400 && err.status !== 401) throw err;
     throw new CloudError(401, '登入已過期，請重新登入');
   }
 }

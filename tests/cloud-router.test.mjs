@@ -54,6 +54,29 @@ test('未登入不能讀取 summary', async () => {
   assert.equal(fetched, false);
 });
 
+test('refresh token 失效（Supabase 回 400）時轉成 401 與中文訊息', async () => {
+  const res = await run(createCloudHandler({
+    env: ENV,
+    fetchImpl: async (url) => {
+      assert.match(url, /\/auth\/v1\/token\?grant_type=refresh_token$/);
+      return json({
+        code: 400, error_code: 'refresh_token_not_found',
+        msg: 'Invalid Refresh Token: Refresh Token Not Found',
+      }, { status: 400 });
+    },
+  }), { method: 'GET', path: 'summary', headers: { cookie: 'cadence_refresh=stale-refresh' } });
+  assert.equal(res.statusCode, 401);
+  assert.equal(res.json.error, '登入已過期，請重新登入');
+});
+
+test('refresh 時 Supabase 5xx 不偽裝成登入過期', async () => {
+  const res = await run(createCloudHandler({
+    env: ENV,
+    fetchImpl: async () => json({ msg: 'upstream down' }, { status: 503 }),
+  }), { method: 'GET', path: 'summary', headers: { cookie: 'cadence_refresh=some-refresh' } });
+  assert.equal(res.statusCode, 502);
+});
+
 test('空的雲端資料庫回傳 cloudReady false', async () => {
   const fetchImpl = async (url) => {
     if (url.endsWith('/auth/v1/user')) return json({ id: 'user-1', email: 'ricky@example.com' });
@@ -370,6 +393,164 @@ test('沒設考試日期時，推演不讀整份題庫', async () => {
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.json, { examDate: null });
   assert.equal(seen.some((url) => url.includes('/rest/v1/cards')), false);
+});
+
+const WRITE_HEADERS = {
+  cookie: 'cadence_access=valid-token',
+  host: 'cadence.vercel.app', origin: 'https://cadence.vercel.app', 'x-forwarded-proto': 'https',
+};
+
+test('分頁讀取一律帶唯一排序，避免超過 1000 列時翻頁重複或漏列', async () => {
+  const reads = [];
+  const fetchImpl = async (url) => {
+    if (url.endsWith('/auth/v1/user')) return json({ id: 'user-1', email: 'ricky@example.com' });
+    if (url.includes('/rest/v1/rpc/')) return json({ due_now: 0, new_count: 0, streak: 0 });
+    if (url.includes('/rest/v1/user_settings')) return json([]);
+    if (url.includes('/rest/v1/')) { reads.push(url); return json([]); }
+    throw new Error(`未處理的 URL：${url}`);
+  };
+  const handler = createCloudHandler({ env: ENV, fetchImpl });
+  for (const path of ['stats', 'sentence']) {
+    const res = await run(handler, { method: 'GET', path, headers: { cookie: 'cadence_access=valid-token' } });
+    assert.equal(res.statusCode, 200, path);
+  }
+  await run(handler, { method: 'GET', path: 'backup', headers: { cookie: 'cadence_access=valid-token' } });
+  const unique = { cards: 'id.asc', card_states: 'card_id.asc' };
+  const paged = reads.filter((url) => /\/rest\/v1\/(cards|card_states|review_events|practice_events|checkin_events)\?/.test(url));
+  assert.ok(paged.length >= 8);
+  for (const url of paged) {
+    const table = url.match(/\/rest\/v1\/(\w+)\?/)[1];
+    const order = new URL(url).searchParams.get('order');
+    assert.ok(order, `${table} 缺 order`);
+    const last = order.split(',').at(-1);
+    assert.equal(last, unique[table] ?? 'event_id.asc', url);
+  }
+});
+
+test('每日一句：缺 headword 的單字卡不會讓整頁 500', async () => {
+  const fetchImpl = async (url) => {
+    if (url.endsWith('/auth/v1/user')) return json({ id: 'user-1', email: 'ricky@example.com' });
+    if (url.includes('kind=in.(pick,rw)')) {
+      return json([{ id: 'p1', kind: 'pick', payload: { front: { prompt: 'Le chat dort.' } } }]);
+    }
+    if (url.includes('kind=eq.vocab-recall')) return json([{ id: 'v1', headword: null }, { id: 'v2', headword: 'Chat' }]);
+    if (url.includes('/rest/v1/card_states?')) return json([{ card_id: 'v1', stability: 30 }, { card_id: 'v2', stability: 30 }]);
+    throw new Error(`未處理的 URL：${url}`);
+  };
+  const res = await run(createCloudHandler({ env: ENV, fetchImpl }), {
+    method: 'GET', path: 'sentence', headers: { cookie: 'cadence_access=valid-token' },
+  });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.json.total, 1);
+});
+
+test('同一張卡的作答撞到版本鎖（PT409）時回 409，不是 502', async () => {
+  const fetchImpl = async (url) => {
+    if (url.endsWith('/auth/v1/user')) return json({ id: 'user-1', email: 'ricky@example.com' });
+    if (url.includes('/rest/v1/cards?')) return json([{ payload: { id: 'card-1', kind: 'vocab-recall', mode: 'self' } }]);
+    if (url.includes('/rest/v1/card_states?')) {
+      return json([{ card_id: 'card-1', stability: 3, difficulty: 5, due: new Date().toISOString(), last_review: new Date().toISOString(), reps: 2, lapses: 0, version: 2 }]);
+    }
+    if (url.includes('/rest/v1/user_settings')) return json([]);
+    if (url.endsWith('/rest/v1/rpc/cadence_record_review')) {
+      return json({ code: 'PT409', message: 'card state changed', details: null, hint: null }, { status: 409 });
+    }
+    throw new Error(`未處理的 URL：${url}`);
+  };
+  const res = await run(createCloudHandler({ env: ENV, fetchImpl }), {
+    method: 'POST', path: 'review', headers: WRITE_HEADERS,
+    body: { cardId: sealForTest(ENV.CADENCE_TOKEN_SECRET, 'card-1'), rating: 3 },
+  });
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.json.error, '這張卡剛剛已經記錄過一次作答，請重新整理後再試');
+});
+
+test('作答送出的 version 是這張卡目前的版本 + 1', async () => {
+  let sent = null;
+  const fetchImpl = async (url, options = {}) => {
+    if (url.endsWith('/auth/v1/user')) return json({ id: 'user-1', email: 'ricky@example.com' });
+    if (url.includes('/rest/v1/cards?')) return json([{ payload: { id: 'card-1', kind: 'vocab-recall', mode: 'self' } }]);
+    if (url.includes('/rest/v1/card_states?')) {
+      return json([{ card_id: 'card-1', stability: 3, difficulty: 5, due: new Date().toISOString(), last_review: new Date().toISOString(), reps: 2, lapses: 0, version: 7 }]);
+    }
+    if (url.includes('/rest/v1/user_settings')) return json([]);
+    if (url.endsWith('/rest/v1/rpc/cadence_record_review')) { sent = JSON.parse(options.body); return new Response(null, { status: 204 }); }
+    throw new Error(`未處理的 URL：${url}`);
+  };
+  const res = await run(createCloudHandler({ env: ENV, fetchImpl }), {
+    method: 'POST', path: 'review', headers: WRITE_HEADERS,
+    body: { cardId: sealForTest(ENV.CADENCE_TOKEN_SECRET, 'card-1'), rating: 3 },
+  });
+  assert.equal(res.statusCode, 200);
+  assert.equal(sent.p_state.version, 8);
+  assert.equal(sent.p_state.reps, 3);
+});
+
+test('評分更正的 version 用該卡目前版本 + 1，不受其他卡的更正筆數影響', async () => {
+  let sent = null;
+  const at = (min) => new Date(Date.now() - min * 60_000).toISOString();
+  const rows = [
+    // 別張卡的兩筆更正：舊版會把它們算進 version
+    { event_id: 'x1', event_type: 'review', card_id: 'other', at: at(50), rating: 3, elapsed_days: 0, self_rated: true },
+    { event_id: 'x2', event_type: 'rating-correction', target_event_id: 'x1', card_id: 'other', at: at(49), rating: 2 },
+    { event_id: 'x3', event_type: 'rating-correction', target_event_id: 'x1', card_id: 'other', at: at(48), rating: 4 },
+    { event_id: 'a1', event_type: 'review', card_id: 'card-1', at: at(10), rating: 3, elapsed_days: 0, self_rated: true },
+  ];
+  const fetchImpl = async (url, options = {}) => {
+    if (url.endsWith('/auth/v1/user')) return json({ id: 'user-1', email: 'ricky@example.com' });
+    if (url.includes('/rest/v1/review_events?')) return json(rows);
+    if (url.includes('/rest/v1/user_settings')) return json([]);
+    if (url.includes('/rest/v1/card_states?card_id=eq.card-1')) return json([{ version: 5 }]);
+    if (url.endsWith('/rest/v1/rpc/cadence_record_review')) { sent = JSON.parse(options.body); return new Response(null, { status: 204 }); }
+    throw new Error(`未處理的 URL：${url}`);
+  };
+  const res = await run(createCloudHandler({ env: ENV, fetchImpl }), {
+    method: 'POST', path: 'review-correction', headers: WRITE_HEADERS, body: { id: 'a1', rating: 1 },
+  });
+  assert.equal(res.statusCode, 200);
+  assert.equal(sent.p_state.card_id, 'card-1');
+  assert.equal(sent.p_state.version, 6);
+  assert.equal(sent.p_state.lapses, 1);
+});
+
+test('設定欄位型別不符時回 400，不會被 Number() 轉成 0 存進去', async () => {
+  const writes = [];
+  const fetchImpl = async (url, options = {}) => {
+    if (url.endsWith('/auth/v1/user')) return json({ id: 'user-1', email: 'ricky@example.com' });
+    if (url.includes('/rest/v1/user_settings') && options.method === 'POST') {
+      writes.push(JSON.parse(options.body));
+      return json([JSON.parse(options.body)]);
+    }
+    if (url.includes('/rest/v1/user_settings')) return json([]);
+    throw new Error(`未處理的 URL：${url}`);
+  };
+  const handler = createCloudHandler({ env: ENV, fetchImpl });
+  const bad = [
+    { dailyNewLimit: '' },
+    { dailyNewLimit: true },
+    { dailyNewLimit: 3.5 },
+    { desiredRetention: '0.9' },
+    { examDate: ['2026-12-12'] },
+    { examDate: '2026-02-31' },
+    { examDate: 20261212 },
+  ];
+  for (const body of bad) {
+    const res = await run(handler, { method: 'POST', path: 'settings', headers: WRITE_HEADERS, body });
+    assert.equal(res.statusCode, 400, JSON.stringify(body));
+  }
+  const notObject = await run(handler, { method: 'POST', path: 'settings', headers: WRITE_HEADERS, body: '[1,2]' });
+  assert.equal(notObject.statusCode, 400);
+  assert.equal(writes.length, 0);
+
+  const ok = await run(handler, {
+    method: 'POST', path: 'settings', headers: WRITE_HEADERS,
+    body: { desiredRetention: 0.85, dailyNewLimit: null, examDate: '2027-05-01' },
+  });
+  assert.equal(ok.statusCode, 200);
+  assert.deepEqual(ok.json, { desiredRetention: 0.85, dailyNewLimit: null, examDate: '2027-05-01', startLevel: null });
+  const cleared = await run(handler, { method: 'POST', path: 'settings', headers: WRITE_HEADERS, body: { examDate: '' } });
+  assert.equal(cleared.statusCode, 200);
+  assert.equal(cleared.json.examDate, null);
 });
 
 function keySigner(kid) {
