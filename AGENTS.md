@@ -22,7 +22,7 @@
 
 ```bash
 npm run lint   # node --check 全檔
-npm test       # 309 題，含 732 組 FSRS 黃金向量
+npm test       # 322 題，含 732 組 FSRS 黃金向量
 npm run doctor # 四個外部來源、題庫、索引三邊對帳
 ```
 
