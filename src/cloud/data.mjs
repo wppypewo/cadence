@@ -41,6 +41,9 @@ export async function readSettings(config, auth, fetchImpl = fetch) {
 }
 
 export async function saveSettings(config, auth, input, fetchImpl = fetch) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw new CloudError(400, '設定內容格式錯誤');
+  }
   const current = await readSettings(config, auth, fetchImpl);
   const next = validateSettings({ ...current, ...input });
   const row = {
@@ -61,9 +64,9 @@ export async function saveSettings(config, auth, input, fetchImpl = fetch) {
 
 export async function backup(config, auth, fetchImpl = fetch) {
   const [reviews, checkins, attempts, settings] = await Promise.all([
-    payloads(config, auth.token, 'review_events', 'at.asc', fetchImpl),
-    payloads(config, auth.token, 'checkin_events', 'at.asc', fetchImpl),
-    payloads(config, auth.token, 'practice_events', 'at.asc', fetchImpl),
+    payloads(config, auth.token, 'review_events', 'at.asc,event_id.asc', fetchImpl),
+    payloads(config, auth.token, 'checkin_events', 'at.asc,event_id.asc', fetchImpl),
+    payloads(config, auth.token, 'practice_events', 'at.asc,event_id.asc', fetchImpl),
     readSettings(config, auth, fetchImpl),
   ]);
   return {
@@ -82,10 +85,19 @@ export async function backup(config, auth, fetchImpl = fetch) {
  * owner_id 由資料庫取 auth.uid()，這裡不傳。
  */
 export async function recordReview(config, auth, event, state, fetchImpl = fetch) {
-  await restRequest(config, 'rpc/cadence_record_review', {
-    method: 'POST', token: auth.token, fetchImpl,
-    body: { p_event: event, p_state: state },
-  });
+  try {
+    await restRequest(config, 'rpc/cadence_record_review', {
+      method: 'POST', token: auth.token, fetchImpl,
+      body: { p_event: event, p_state: state },
+    });
+  } catch (err) {
+    // state.version 不是資料庫裡的版本 + 1：同一張卡另一個請求先寫進去了（雙擊、兩個分頁）。
+    // RPC 以 PT409 整筆撤回，事件也沒寫入（20261023000000_record_review_version_lock.sql）。
+    if (err instanceof CloudError && err.detail?.code === 'PT409') {
+      throw new CloudError(409, '這張卡剛剛已經記錄過一次作答，請重新整理後再試');
+    }
+    throw err;
+  }
 }
 
 async function readMeta(config, auth, fetchImpl) {
@@ -97,6 +109,8 @@ async function readMeta(config, auth, fetchImpl) {
   return data?.[0]?.payload ?? null;
 }
 
+// 用 Range 翻頁，order 的最後一個鍵必須唯一（見 analytics.mjs 的 readAll）：
+// 同一毫秒的兩筆事件只靠 at 排時，在兩頁之間的先後不固定，匯出會重複或漏一筆。
 async function payloads(config, token, table, order, fetchImpl) {
   const all = [];
   const page = 1000;
@@ -118,21 +132,31 @@ function fromSettingsRow(row) {
   };
 }
 
+// 型別要嚴格比對，不能先 Number() 再檢查：Number('') 與 Number(true) 會變成 0 和 1，
+// 空字串就這樣存成「每天 0 張新卡」；陣列 ['2026-12-12'] 也會通過日期的 regex，
+// 到資料庫才失敗成 502。前端送的一律是 number／null／'YYYY-MM-DD'。
 function validateSettings(value) {
-  const retention = Number(value.desiredRetention);
-  if (!Number.isFinite(retention) || retention < 0.7 || retention > 0.98) {
+  const retention = value.desiredRetention;
+  if (typeof retention !== 'number' || !Number.isFinite(retention) || retention < 0.7 || retention > 0.98) {
     throw new CloudError(400, '目標記憶率需要在 0.70 到 0.98 之間');
   }
   const limit = value.dailyNewLimit;
-  if (limit !== null && (!Number.isInteger(Number(limit)) || Number(limit) < 0 || Number(limit) > 200)) {
+  if (limit !== null && (!Number.isInteger(limit) || limit < 0 || limit > 200)) {
     throw new CloudError(400, '每天新卡上限需要是 0 到 200，或不設上限');
   }
-  const examDate = value.examDate || null;
-  if (examDate && !/^\d{4}-\d{2}-\d{2}$/.test(examDate)) throw new CloudError(400, '考試日期格式錯誤');
+  const examDate = value.examDate === '' ? null : value.examDate ?? null;
+  if (examDate !== null && !isCalendarDate(examDate)) throw new CloudError(400, '考試日期格式錯誤');
   return {
     desiredRetention: retention,
-    dailyNewLimit: limit === null ? null : Number(limit),
+    dailyNewLimit: limit,
     examDate,
     startLevel: null,
   };
+}
+
+function isCalendarDate(text) {
+  if (typeof text !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
+  // 2026-02-31 這類日期 Date.parse 會往後滾，轉回字串比對才擋得住
+  const parsed = new Date(`${text}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === text;
 }

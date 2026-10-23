@@ -107,6 +107,11 @@ IPv6 對照 AWS 公開 IP 範圍查得）。沒設的話 Vercel 新專案預設�
 `cadence_record_review`，同一個交易，順便補掉「事件寫進去、狀態沒更新」的缺口。
 取捨：登出或撤銷後的 token 在到期（最多一小時）前仍會通過函式這關，但那個 token 本來就能直接打 PostgREST。
 
+2026-10-23 起 `cadence_record_review` 帶版本鎖：`card_states.version` 是單張卡的計數，RPC 只在資料庫裡的
+version 等於傳入值減一時更新，否則整筆撤回並回 409。同一張卡雙擊送出或兩個分頁同時作答時，
+第二筆不會再蓋掉第一筆、讓複習次數少算。部署順序是先部署程式、再跑
+`supabase/migrations/20261023000000_record_review_version_lock.sql`（舊版評分更正送的 version 會被新鎖擋下）。
+
 ```bash
 # 依檔名順序套用 supabase/migrations/*.sql，建立表、RLS、查詢函式與 B2 資源索引。
 # 接著在 Vercel 設定：
