@@ -13,7 +13,13 @@
 - 零 npm 依賴：後端只用 Node 內建模組（含 `node:sqlite`），前端是原生 ESM 加手寫 CSS，沒有打包器
 - 正式站跑在 Vercel 與 Supabase，鎖給一個擁有者使用
 
-介面是繁體中文。
+介面是繁體中文。可以用 `npm run demo` 在本機試用，不用安裝、不用帳號（見〈在本機跑〉）。
+
+| 今天 | 複習 | 辭典 |
+|---|---|---|
+| ![今天：考試倒數與 DELF 四科](docs/screenshots/today.png) | ![複習：打字題判定為只差重音](docs/screenshots/review.png) | ![辭典：faire 的完整變位表](docs/screenshots/browse.png) |
+
+<sub>截圖取自 `npm run demo`，用的是 `demo/sources/` 的小型示範題庫。</sub>
 
 ---
 
@@ -225,13 +231,24 @@ Verbiste（Copyright 2003–2016 Pierre Sarrazin）是 GPL-2.0-or-later。本專
 
 需要 Node 24 以上（用到內建的 `node:sqlite`），不需要 `npm install`。
 
-**題庫目前無法只靠這個 repo 建起來。** 上面五個來源少任何一個，`npm run build` 都會列出缺漏後停下；其中兩個是私有 repo。
-測試不需要那些來源，clone 下來就能跑：
+### 試用示範
 
 ```bash
-npm test          # 322 題，含 732 組 FSRS 黃金向量
+npm run demo      # 用 demo/sources/ 建一份示範題庫，打開 http://127.0.0.1:4173
+```
+
+真正的題庫由五個外部來源建成，其中兩個是私有 repo，只靠這個 repo 建不起來（`npm run build` 會列出缺漏後停下）。`demo/sources/` 是照同樣格式手寫的小份範例：207 張卡、七種題型都有，五個動詞附完整變位表，另有幾題連接詞、挑選題與改寫題。這個 repo 的 `lexicon/` 照常疊上去，所以單字卡會帶真的 Tatoeba 例句。範例裡的詞頻是編的。
+
+作答寫進一個暫存目錄，停掉伺服器時刪除；要保留就自己設 `CADENCE_DATA`。其餘參數交給 `cadence serve`，例如 `npm run demo -- --port 5000 --no-open`。
+
+測試不需要任何外部來源：
+
+```bash
+npm test          # 323 題，含 732 組 FSRS 黃金向量
 npm run lint      # node --check 全檔語法檢查
 ```
+
+### 用真正的來源
 
 有那五個來源的機器上：
 
@@ -269,7 +286,7 @@ cadence doctor    [--json]                    檢查資料來源、題庫、索�
 ## 開發
 
 ```bash
-npm test           # 322 題，含 732 組 FSRS 黃金向量
+npm test           # 323 題，含 732 組 FSRS 黃金向量
 npm run lint       # node --check 全檔語法檢查
 npm run build:web  # 產生 Vercel 的 dist/
 ```

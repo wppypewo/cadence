@@ -1,0 +1,46 @@
+{
+  "maison": {
+    "NOM": [
+      "house",
+      "home"
+    ]
+  },
+  "eau": {
+    "NOM": [
+      "water"
+    ]
+  },
+  "ville": {
+    "NOM": [
+      "town",
+      "city"
+    ]
+  },
+  "ami": {
+    "NOM": [
+      "friend"
+    ]
+  },
+  "rapide": {
+    "ADJ": [
+      "fast",
+      "quick"
+    ]
+  },
+  "souvent": {
+    "ADV": [
+      "often"
+    ]
+  },
+  "développement": {
+    "NOM": [
+      "development"
+    ]
+  },
+  "pourtant": {
+    "ADV": [
+      "yet",
+      "however"
+    ]
+  }
+}

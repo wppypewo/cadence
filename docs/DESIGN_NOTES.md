@@ -17,7 +17,7 @@
 
 ```bash
 npm run lint   # node --check 全檔
-npm test       # 322 題，含 732 組 FSRS 黃金向量
+npm test       # 323 題，含 732 組 FSRS 黃金向量
 ```
 
 兩個都綠才算完成，CI 也跑這兩個。動到 `src/engine/fsrs.mjs` 時，黃金向量測試紅了代表移植跑掉了，不要改測試去配合實作。
@@ -37,6 +37,8 @@ npm test       # 322 題，含 732 組 FSRS 黃金向量
 `src/build/sources.mjs` 是唯一知道外部目錄長什麼樣的檔案。路徑要改就改那裡，或設環境變數 `CADENCE_FEXGEN`／`CADENCE_VERBISTE`／`CADENCE_FLELEX`／`CADENCE_VAULT`／`CADENCE_PACKS`。其他模組不得自己拼路徑。
 
 五個外部來源都**不屬於本專案**，只在 `npm run build` 時讀、全部唯讀（FLELex 是 CC BY-NC-SA，只讀不複製）。其中 `french-exam-generator` 與 `Ricky-KnowledgeBase` 是另外兩個私有 repo，建置時不得修改其中任何檔案。
+
+`demo/sources/` 是 `npm run demo` 用的示範範例，格式照五個來源，內容**一律自己寫**：變位模板不得從 Verbiste 複製（會變成 GPL 衍生物），FLELex 的列不得照抄（CC BY-NC-SA），vault 與 study pack 不得拿個人筆記或教材原文。解析器改了格式就要一起改範例，`tests/demo.test.mjs` 會在任何一種題型變成 0 張時變紅。
 
 本專案自己的補充詞彙在 `lexicon/`（進版控）。Wiktionnaire 原文（CC BY-SA）只能留在 gitignore 的 `lexicon/.cache/`，進版控的只有性別、省音這類事實與自己寫的釋義；Tatoeba 例句（CC BY 2.0 FR）顯示時必須帶出處與作者。細節見 [lexicon/README.md](../lexicon/README.md)。
 

@@ -13,7 +13,13 @@ A single-user French review workbench, built for the DELF B1 exam in May 2027. I
 - Zero npm dependencies: the backend uses only Node built-ins (including `node:sqlite`); the frontend is native ES modules and hand-written CSS with no bundler
 - The production site runs on Vercel and Supabase, locked to one owner
 
-The interface is in Traditional Chinese.
+The interface is in Traditional Chinese. Try it locally with `npm run demo` (no install, no account; see [Running locally](#running-locally)).
+
+| Today | Review | Dictionary |
+|---|---|---|
+| ![Today: exam countdown and the four DELF papers](docs/screenshots/today.png) | ![Review: a typed answer graded as a missing accent](docs/screenshots/review.png) | ![Dictionary: the full conjugation table of faire](docs/screenshots/browse.png) |
+
+<sub>Screenshots from `npm run demo`, which uses the small sample bank in `demo/sources/`.</sub>
 
 ---
 
@@ -203,13 +209,24 @@ One more piece of data is not in the table above: `src/build/connector-gloss.mjs
 
 Requires Node 24 or later (for the built-in `node:sqlite`). There is nothing to `npm install`.
 
-**The card bank cannot currently be built from this repository alone.** If any of the five sources above is missing, `npm run build` lists what is missing and stops; two of them are private repositories.
-The tests do not need those sources and run straight after cloning:
+### Try the demo
 
 ```bash
-npm test          # 322 tests, including 732 FSRS golden vectors
+npm run demo      # builds a sample bank from demo/sources/ and opens http://127.0.0.1:4173
+```
+
+The real card bank is built from five external sources, two of them private repositories, so it cannot be built from this repository alone (`npm run build` lists what is missing and stops). `demo/sources/` contains small hand-written samples in the same formats: 207 cards covering all seven card types, five verbs with full conjugation tables, and a few connectors, multiple-choice and rewrite items. The `lexicon/` data in this repository is layered on top as usual, so vocabulary cards show real Tatoeba examples. Frequencies in the samples are made up.
+
+Answers go to a temporary directory that is deleted when you stop the server; set `CADENCE_DATA` to keep them. Extra arguments go to `cadence serve`, for example `npm run demo -- --port 5000 --no-open`.
+
+The tests need none of the external sources:
+
+```bash
+npm test          # 323 tests, including 732 FSRS golden vectors
 npm run lint      # syntax check of every file with node --check
 ```
+
+### With the real sources
 
 On a machine that has the five sources:
 
@@ -247,7 +264,7 @@ It checks the repository that contains `CADENCE_DATA` (for example `cadence-data
 ## Development
 
 ```bash
-npm test           # 322 tests, including 732 FSRS golden vectors
+npm test           # 323 tests, including 732 FSRS golden vectors
 npm run lint       # syntax check of every file with node --check
 npm run build:web  # produce dist/ for Vercel
 ```

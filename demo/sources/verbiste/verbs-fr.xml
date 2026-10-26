@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- cadence 示範用的動詞→模板對照，結構與 Verbiste 的 verbs-fr.xml 相容。 -->
+<verbs-fr>
+<v><i>être</i><t>:être</t></v>
+<v><i>avoir</i><t>:avoir</t></v>
+<v><i>aller</i><t>:aller</t></v>
+<v><i>faire</i><t>:faire</t></v>
+<v><i>parler</i><t>aim:er</t></v>
+<v><i>développer</i><t>aim:er</t></v>
+</verbs-fr>

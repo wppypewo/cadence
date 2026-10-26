@@ -8,6 +8,7 @@
   "bin": { "cadence": "./bin/cadence.mjs" },
   "scripts": {
     "start": "node bin/cadence.mjs serve",
+    "demo": "node scripts/demo.mjs",
     "build": "node bin/cadence.mjs build",
     "reindex": "node bin/cadence.mjs reindex",
     "stats": "node bin/cadence.mjs stats",
