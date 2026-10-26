@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!-- 每週日 21:00 跑 scripts/scheduled-backup.sh。安裝與移除步驟寫在那支腳本的檔首。
+     __REPO__ 與 __HOME__ 是佔位字，安裝時由 sed 換成 repo 的絕對路徑與家目錄（launchd 不展開 ~ 與變數）。
      Mac 睡著錯過的那次，launchd 會在醒來時補跑一次；關機期間錯過的不補。 -->
 <plist version="1.0">
 <dict>
@@ -9,7 +10,7 @@
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
-    <string>/Users/ricky/ClaudeCode/projects/cadence/scripts/scheduled-backup.sh</string>
+    <string>__REPO__/scripts/scheduled-backup.sh</string>
   </array>
   <key>StartCalendarInterval</key>
   <dict>
@@ -26,8 +27,8 @@
     <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>
   <key>StandardOutPath</key>
-  <string>/Users/ricky/Library/Logs/cadence-backup.log</string>
+  <string>__HOME__/Library/Logs/cadence-backup.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/ricky/Library/Logs/cadence-backup.log</string>
+  <string>__HOME__/Library/Logs/cadence-backup.log</string>
 </dict>
 </plist>
