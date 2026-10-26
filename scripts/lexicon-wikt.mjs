@@ -20,7 +20,8 @@ import { SOURCES, LEXICON, loadFlelex, exists } from '../src/build/sources.mjs';
 const CACHE = path.join(LEXICON, '.cache');
 const RAW = path.join(CACHE, 'frwikt.json');
 const PARSED = path.join(CACHE, 'parsed.json');
-const UA = 'cadence/1.0 (personal French study tool; zhuang060329@gmail.com)';
+// Wikimedia 要求 User-Agent 附聯絡方式，放 repo 網址（可開 issue），不放個人信箱。
+const UA = 'cadence/1.0 (personal French study tool; https://github.com/wppypewo/cadence)';
 // MediaWiki 未登入時一次最多 50 個標題；間隔照 fexgen 實測不會被 429 的值。
 const BATCH = 50;
 const DELAY_MS = 1500;

@@ -1,244 +1,264 @@
 # cadence
 
-法文複習工作台。把已經存在的詞彙表、文法規則、四科實作與 B2 資源，變成每天真的會打開的東西。
+[![CI](https://github.com/wppypewo/cadence/actions/workflows/ci.yml/badge.svg)](https://github.com/wppypewo/cadence/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Dependencies: 0](https://img.shields.io/badge/dependencies-0-informational.svg)
 
-同一份原生 ESM 前端有兩種執行模式：`npm start` 之後在 `http://127.0.0.1:4173` 打開，用本機 SQLite／JSONL，沒有帳號、全部跑在這台機器上；
-正式站用 Vercel Functions、Supabase Auth 與 Postgres。兩邊都沒有 npm 套件（前端另外放了一份 GSAP 做動畫，見〈資料與授權〉）。
+English | [繁體中文](README.zh-TW.md)
 
-**2026-09-26 起只用雲端版作答。**本機模式的程式留著，用來開發、跑測試與重建題庫；
-`data/reviews.jsonl` 停在 569 行不再增加，之後的作答只在 Supabase，定期用 `scripts/cloud-backup.mjs` 拉回本機存檔（見〈雲端正式版〉）。
+A single-user French review workbench, built for the DELF B1 exam in May 2027. It turns word lists, conjugation tables, grammar rules, practice for the four exam papers and a set of B2 resources into something worth opening every day.
 
-```bash
-npm run build     # 手動從五個外部來源與 lexicon/ 重建題庫（平常啟動時會自動檢查）
-npm start         # 啟動伺服器並打開瀏覽器
-```
+- 33,895 cards in seven card types, scheduled with FSRS-6 (a line-by-line port of the reference implementation, checked against 732 golden vectors)
+- A *Today* page that lays out all four DELF papers, so a neglected paper is visible
+- Zero npm dependencies: the backend uses only Node built-ins (including `node:sqlite`); the frontend is native ES modules and hand-written CSS with no bundler
+- The production site runs on Vercel and Supabase, locked to one owner
 
-## 它做什麼
+The interface is in Traditional Chinese.
 
-33,895 張卡，七種題型，詞彙涵蓋 A1–B2（B2 取自 FLELex 的 5,068 個實詞）：
+---
 
-| 題型 | 張數 | 出題方式 |
+## What it does
+
+33,895 cards, seven card types, vocabulary from A1 to B2 (B2 comes from the 5,068 content words in FLELex):
+
+| Card type | Cards | Prompt |
 |---|---|---|
-| 動詞變位 | 16,577 | 給不定式＋時態＋人稱，打出變位 |
-| 看字回想 | 8,507 | 給法文，自評想不想得起中文 |
-| 中翻法 | 8,506 | 給中文，打出法文，重音算數 |
-| 名詞化 | 92 | 給基詞，打出冠詞＋派生名詞 |
-| 改寫整句 | 88 | 給句子與要求，改寫後自評 |
-| 挑連接詞 | 75 | 四選一 |
-| 連接詞 | 50 | 這個連接詞後面接直陳式還是虛擬式 |
+| Conjugation | 16,577 | Infinitive + tense + person; type the form |
+| Recognition | 8,507 | French word; self-grade whether you recall the Chinese meaning |
+| Chinese → French | 8,506 | Chinese meaning; type the French, accents count |
+| Nominalisation | 92 | Base word; type article + derived noun |
+| Sentence rewrite | 88 | Sentence + instruction; rewrite, then self-grade |
+| Pick the connector | 75 | Multiple choice, four options |
+| Connector mood | 50 | Does this connector take the indicative or the subjunctive? |
 
-導覽列四項，雲端模式多一項：
+Four navigation items, plus one in cloud mode:
 
-- **今天** — 考試倒數、一顆主按鈕，下面是 DELF 四科的帳本，今天各要做什麼。預設落地頁。
-- **複習** — 今天該做的卡。進入後導覽收起、只剩卡片。打字題即時批改，答案與輸入逐字對齊比較，錯法分成拼錯與漏重音，大小寫不算錯。單字卡的卡面標名詞性別，翻面後附最多兩句 Tatoeba 例句（有中文翻譯就一起帶，每句標出處與作者）。
-- **進度** — 兩個分頁。**現況**：各題型進度、練習頻率熱力圖、最弱的卡、錯誤類型分布、未來 30 天工作量。**推演**：給一個考試日期，模擬到那天為止的每日負擔與預期記得的張數。
-- **辭典** — 查一個字，看它的釋義、詞性、等級與完整變位表。
-- **資源**（只在雲端模式）— B2 的免費來源（每筆標查證日期）、四科篩選，以及可直接進入工作台的一週行動計畫。
+- **Today**: exam countdown, one primary button, and a ledger of the four DELF papers showing what each needs today. The landing page.
+- **Review**: the cards due today. Navigation collapses to the card. Typed answers are graded immediately, compared character by character against the answer, with errors split into misspellings and missing accents; capitalisation does not count. Vocabulary cards show the noun's gender on the front and up to two Tatoeba example sentences on the back (with Chinese translations where available, each credited to its source and author).
+- **Progress**: two tabs. *Now*: progress per card type, a practice heatmap, weakest cards, error-type breakdown and the next 30 days of workload. *Forecast*: pick an exam date and simulate the daily load and expected number of remembered cards up to that day.
+- **Dictionary**: look up a word for its gloss, part of speech, level and full conjugation table.
+- **Resources** (cloud mode only): free B2 sources (each with the date it was last checked), filters for the four papers, and a one-week action plan that opens straight into the workbench.
 
-另有兩個工作台，不佔導覽列：從今天頁進 CE／PE／CO／PO 實作練習，從進度頁進四科模考紀錄。
-PE 有計時草稿與字數，CO 可播放本機音檔，PO 可在瀏覽器錄音回聽；聲音不會上傳或寫進紀錄。
-現況頁的弱點清單可以直接開一組有限批次，複習自評按錯時也能以追加事件更正剛才一筆。
+Two more workbenches sit outside the navigation: reading, writing, listening and speaking practice (from Today) and mock-exam records for all four papers (from Progress).
+Writing practice has a timed draft and a word count, listening plays local audio files, and speaking records in the browser for playback; audio is never uploaded or stored.
+The weak-cards list opens a bounded batch directly, and a self-graded "wrong" during review can be corrected afterwards by appending an event.
 
-## 為什麼是這幾個檢視
+## Why these views
 
-「今天」回答「現在坐下來，先做哪一件事」。DELF B1 的及格條件是四科總分 50/100
-**且單科不低於 5/25**，任一科掛零直接出局；七種題型攤在同一個佇列裡，練久了會自然
-全部倒向卡片最多的變位，另外幾科一張也沒動。這一頁存在的理由就是讓那件事藏不住。
-CO 與 PO 沒有卡片（題庫裡沒有音檔，發音與互動機器也判不了），那兩列指向 `study/`
-底下的官方樣題入口與 GPT 練習用的固定 prompt，做了沒有系統記不到，畫面上直接這樣寫。
-PE 兩邊都有：卡片練變位、詞彙與連接詞，但官方那張評分格裡的 Réalisation de la tâche
-與 Adéquation sociolinguistique 各 5 分、Cohérence et cohésion 一半，合計約 12,5 分
-沒有任何卡片碰得到。所以 PE 那一列除了卡片，另外掛一份寫作文件與一顆打卡鍵。
+*Today* answers "I have just sat down; what do I do first?" Passing DELF B1 needs 50/100 overall
+**and at least 5/25 on every paper**; one weak paper fails the exam. With all seven card types in one queue,
+practice drifts towards conjugation, which has the most cards, while other papers go untouched. This page exists so that drift cannot hide.
+Listening and speaking have no cards (the bank has no audio, and a machine cannot grade pronunciation or interaction), so those two rows point to official sample papers and fixed GPT practice prompts in `study/`. The app cannot record whether they were done, and the page says so.
+Writing has both: cards drill conjugation, vocabulary and connectors, but on the official marking grid *Réalisation de la tâche* and *Adéquation sociolinguistique* (5 points each) and half of *Cohérence et cohésion*, about 12.5 points in total, are out of reach of any card. So the writing row also carries a writing guide and a check-in button.
 
-複習頁是每天真正在用的頁面，其餘三個回答人腦算不出來的問題：
+Review is the page used every day. The other three answer questions a person cannot work out in their head:
 
-- **進度・現況**回答「我到底練到哪、哪裡最弱」。答錯次數與錯誤類型是累積出來的，記不住。
-- **進度・推演**回答「考試那天我大概會記得多少、每天要做幾張才夠」。三萬多張卡各自有自己的穩定度與到期日，遺忘曲線是冪律不是直線，這個計算憑感覺估不出來。
-- **辭典**回答「這個字到底怎麼變位」，省掉每次翻書。
+- **Progress · Now**: "How far have I got, and where am I weakest?" Error counts and error types accumulate; nobody remembers them.
+- **Progress · Forecast**: "How much will I remember on exam day, and how many cards a day is enough?" Over thirty thousand cards each have their own stability and due date, and forgetting follows a power law, not a straight line.
+- **Dictionary**: "How does this verb conjugate again?", without reaching for a book.
 
-## 排程：FSRS-6
+## Scheduling: FSRS-6
 
-間隔不是固定表，是每張卡各自算的。
+Intervals are not a fixed table; each card gets its own.
 
-FSRS 為每張卡維護三個量：**S**（穩定度，記憶從剛複習完掉到九成把握所需的天數）、**D**（難度 1–10）、**R**（此刻的可提取機率）。下次複習日由「你希望複習時還有幾成把握」反推。預設 0.9。
+FSRS tracks three values per card: **S** (stability, the number of days for recall probability to fall from just-reviewed to 90%), **D** (difficulty, 1–10) and **R** (the probability of recall right now). The next review date is worked back from the recall probability you want at review time; the default is 0.9.
 
-`src/engine/fsrs.mjs` 是 py-fsrs（MIT）`fsrs/scheduler.py` 的逐行移植，不是重新發明。**732 組黃金向量**由參考實作的原始碼直接執行產生，跑在 `tests/fsrs.test.mjs` 裡；移植如果有偏差，測試會紅。
+`src/engine/fsrs.mjs` is a line-by-line port of `fsrs/scheduler.py` from py-fsrs (MIT), not a reinvention. **732 golden vectors**, generated by running the reference implementation, are checked in `tests/fsrs.test.mjs`; any drift in the port turns the tests red. See [docs/fsrs.md](docs/fsrs.md).
 
-### 新卡怎麼排
+### How new cards are introduced
 
-到期的卡永遠先出，剩下的位置才給新卡。新卡**逐題型輪流取**，每種題型內部按頻率由高到低。
-不跨題型直接比頻率，是因為連接詞、挑連接詞、改寫整句三種是手寫題目，沒有頻率可言（全是 0）；
-直接比的話那 213 張排在一萬兩千多名之後，一天 15 張要兩年多才輪得到——考 B1 前根本看不到。
+Due cards always come first; new cards fill whatever room is left. New cards are taken **round-robin by card type**, most frequent first within each type.
+Frequencies are not compared across types because the three hand-written types (connector mood, pick the connector, sentence rewrite) have no frequency at all (all zero). Compared directly, those 213 cards would rank below 12,000 others, and at 15 new cards a day they would take over two years to appear, well after the exam.
 
-變位題例外，不照頻率一路排下去，而是**動詞輪替，一次一個時態的 6 格**：
-être 現在式 → être 複合過去式、avoir 現在式 → être 未完成過去式、avoir 複合過去式、faire 現在式……
-每一輪多一個新動詞，已經開始的動詞各往下推一個時態（現在式、複合過去式、未完成過去式、簡單將來式、條件式、虛擬式）。
-舊版同一個動詞的 36 張頻率相同、按 id 字母序出，être 第一張是條件式，而且要六個時態全做完才輪到 avoir。
+Conjugation is the exception: instead of following frequency, it **rotates verbs, one tense (six forms) at a time**:
+être present → être passé composé, avoir present → être imparfait, avoir passé composé, faire present…
+Each round adds a new verb and moves every started verb on by one tense (present, passé composé, imparfait, futur simple, conditional, subjunctive).
+Previously all 36 cards of a verb shared one frequency and came out in id order: être started with the conditional, and avoir only appeared after all six tenses of être.
 
-名詞化與改寫整句的新卡**第一次出現時先給看解答**，按「看過了，稍後再考」後移到這一批後面 4 張再正式考。
-這兩種題考的是規則，沒學過就要憑空寫，答錯記下來的不是忘記。看解答那一步不寫任何紀錄，排程從正式考的那次開始；
-解答由 `/api/preview` 另外取，只給還沒有排程狀態的這兩種卡。
+New nominalisation and rewrite cards **show the answer first**. After "Seen it, test me later" the card moves four places back in the batch and is then tested for real.
+These two types test rules; without having seen the rule you would be guessing, and a wrong answer would not mean forgetting. Viewing the answer writes nothing, and scheduling starts from the first real test.
+The answer comes from a separate `/api/preview` endpoint, which only serves these two types for cards with no scheduling state yet.
 
-中翻法的新卡要等同一個字的看字回想答過至少一次（答錯也算）才會出現。第一次見到的字就考拼寫，
-實測答對率只有 38–40%。側欄只勾中翻法時也照這個規則，所以那時的新卡量取決於看字回想做到哪裡。
+A Chinese → French card for a word only appears after its Recognition card has been answered at least once (right or wrong). Testing spelling on first sight measured only 38–40% correct.
 
-設定裡和新卡有關的是**每天新卡上限**，可以勾「不設上限」。代價是新卡幾天內就會回來變成到期卡，
-今天學 100 張，下週每天的到期量會跟著長；推演頁可以先算一次。
+The setting that matters for new cards is the **daily new-card limit**, which can be switched off. The cost: new cards come back within days as due cards, so learning 100 today grows every day's load next week. The Forecast tab can show the effect first.
 
-單字新卡只出 A2–B2，A1 不再出（`src/db.mjs` 的 `ACTIVE_LEVELS`），但有兩個例外：變位題不看動詞等級——
-être、avoir 被標成 A1，照等級切的話最常用的動詞一個都練不到；以前學過的 A1 卡照常到期、照常複習。
-今天、複習、統計、推演與 `npm run stats` 都用這同一個範圍，數字對得起來。側欄明確勾了某幾個等級時只照勾的。
-舊版的「新卡從哪一級開始」設定因此拿掉了，`/api/settings` 收到非 null 的 `startLevel` 會回 400。
+Vocabulary new cards come only from A2–B2 (`ACTIVE_LEVELS` in `src/db.mjs`), with two exceptions: conjugation ignores verb level, because être and avoir are tagged A1 and would otherwise never be drilled; and A1 cards already learned stay on their normal schedule.
+Today, Review, statistics, Forecast and `npm run stats` all use the same range, so their numbers agree.
 
-## 雲端正式版
+---
 
-Vercel 只部署 `web/`、白名單內的 `study/` 文件與同網域 `/api/*`。瀏覽器不直接持有
-Supabase token；登入狀態放在 HttpOnly、SameSite Cookie，伺服器端再以使用者 JWT 走 RLS。
-正式站只允許第一位 Supabase Auth 使用者，應先建立擁有者再開放登入。
+## Architecture
 
-`vercel.json` 把函式固定在 `hnd1`（東京），因為 Supabase 專案在 AWS ap-northeast-1（2026-09-29 以資料庫主機的
-IPv6 對照 AWS 公開 IP 範圍查得）。沒設的話 Vercel 新專案預設跑在 `iad1`（華盛頓特區），每支 API 要先在
-美東與東京之間來回：送出一次作答是驗證登入、讀卡片／狀態／設定、寫事件、寫狀態四趟串行請求，
-從台北量到 Supabase 單趟約 90–100ms，美東到東京還更遠。換 Supabase 區域時這裡要一起改。
+The same native-ESM frontend runs in two modes:
 
-2026-09-30 起作答從四趟減成兩趟。登入改在函式內用 Supabase 公開的 JWKS（`/auth/v1/.well-known/jwks.json`，
-快取十分鐘）驗 access token 的 ES256 簽章與 `iss`／`aud`／`exp`，不再每個請求先打 `/auth/v1/user`；
-驗不過的一律退回原本的 `/auth/v1/user`，所以最壞情況等於改動前。寫事件與寫狀態併成一支 RPC
-`cadence_record_review`，同一個交易，順便補掉「事件寫進去、狀態沒更新」的缺口。
-取捨：登出或撤銷後的 token 在到期（最多一小時）前仍會通過函式這關，但那個 token 本來就能直接打 PostgREST。
+- **Cloud (production)**: Vercel Functions, Supabase Auth and Postgres. Since 2026-09-26 all reviews happen here.
+- **Local**: `npm start`, then open `http://127.0.0.1:4173`. Local SQLite and JSONL, no account. Kept for development, tests and rebuilding the card bank.
 
-2026-10-23 起 `cadence_record_review` 帶版本鎖：`card_states.version` 是單張卡的計數，RPC 只在資料庫裡的
-version 等於傳入值減一時更新，否則整筆撤回並回 409。同一張卡雙擊送出或兩個分頁同時作答時，
-第二筆不會再蓋掉第一筆、讓複習次數少算。部署順序是先部署程式、再跑
-`supabase/migrations/20261023000000_record_review_version_lock.sql`（舊版評分更正送的 version 會被新鎖擋下）。
+Module layout and data flow are in [docs/architecture.md](docs/architecture.md); typed-answer grading is in [docs/grading.md](docs/grading.md).
+
+## Cloud deployment
+
+Vercel deploys only `web/`, an allow-listed set of `study/` documents and same-origin `/api/*`. The browser never holds a Supabase token; the session lives in an HttpOnly, SameSite cookie, and the server talks to Postgres with the user's JWT under row-level security.
+The site only admits the first Supabase Auth user, so create the owner before opening sign-in.
+
+`vercel.json` pins functions to `hnd1` (Tokyo) because the Supabase project is in AWS ap-northeast-1 (determined on 2026-09-29 by matching the database host's IPv6 address against AWS's published IP ranges). Without it a new Vercel project runs in `iad1` (Washington, D.C.), and every API call crosses between the US East Coast and Tokyo. Submitting one answer used to be four sequential requests (verify session, read card/state/settings, write event, write state); a single round trip from Taipei to Supabase measured 90–100 ms, and US East to Tokyo is further. Change this together with the Supabase region.
+
+Since 2026-09-30 submitting an answer takes two round trips instead of four. The function verifies the access token's ES256 signature and `iss`/`aud`/`exp` itself, against Supabase's public JWKS (`/auth/v1/.well-known/jwks.json`, cached for ten minutes), instead of calling `/auth/v1/user` on every request; anything that fails falls back to `/auth/v1/user`, so the worst case is the old behaviour. Writing the event and the state is now one RPC, `cadence_record_review`, in one transaction, which also closes the gap where an event was written but the state was not.
+Trade-off: a token that was signed out or revoked still passes the function until it expires (at most an hour), but that token could already call PostgREST directly.
+
+Since 2026-10-23 `cadence_record_review` has a version lock: `card_states.version` counts reviews per card, and the RPC only updates when the stored version equals the submitted value minus one; otherwise it rolls back and returns 409. A double-clicked submit or two tabs answering the same card no longer overwrite each other and undercount reviews. Deploy the code first, then run `supabase/migrations/20261023000000_record_review_version_lock.sql` (corrections sent by the old client would be rejected by the new lock).
 
 ```bash
-# 依檔名順序套用 supabase/migrations/*.sql，建立表、RLS、查詢函式與 B2 資源索引。
-# 接著在 Vercel 設定：
+# Apply supabase/migrations/*.sql in filename order: tables, RLS, query functions and the B2 resource index.
+# Then set these in Vercel:
 SUPABASE_URL=
 SUPABASE_PUBLISHABLE_KEY=
 CADENCE_OWNER_EMAIL=
-CADENCE_TOKEN_SECRET=   # 64 位十六進位亂數，只放 Production／Preview Secret
+CADENCE_TOKEN_SECRET=   # 64 random hex characters; Production/Preview secret only
 
 npm run build:web
 vercel deploy --prod
 ```
 
-最初的一次性搬移用的是 `scripts/cloud-import.mjs`：從本機資料建立快照後分批上傳，
-`reviews.jsonl` 的 569 筆歷史全部保留。Verbiste 衍生的變位卡與變位表不進雲端，
-相關事件仍以原始 payload 留在歷史中，避免把 GPL-2.0 衍生資料混入未隔離的正式題庫。
-
-那支腳本依賴的 RPC `cadence_import_batch` 搬完後已從正式資料庫移除（2026-09-26 實測查無），
-跑不動了，2026-09-27 刪除；原始碼可從 `dfdda6b` 取回。
-本機重建題庫、要讓雲端跟上時用 `scripts/cloud-sync-bank.mjs`：
+After rebuilding the card bank locally, bring the cloud in line with `scripts/cloud-sync-bank.mjs`:
 
 ```bash
-# .env.cloud 放 SUPABASE_URL、SUPABASE_PUBLISHABLE_KEY、CADENCE_OWNER_EMAIL；密碼執行時輸入或設 CADENCE_PASSWORD
-node scripts/cloud-sync-bank.mjs --env .env.cloud           # 預演：只讀，印出新增／刪除幾張
-node scripts/cloud-sync-bank.mjs --env .env.cloud --apply   # 寫入
+# .env.cloud holds SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, CADENCE_OWNER_EMAIL; the password is prompted for or read from CADENCE_PASSWORD
+node scripts/cloud-sync-bank.mjs --env .env.cloud           # dry run: read-only, prints how many cards would be added/removed
+node scripts/cloud-sync-bank.mjs --env .env.cloud --apply   # write
 ```
 
-它用擁有者帳密登入、受 RLS 限制，只動 `cards` 與 `reference_entries`；記憶狀態、作答與設定一律不碰，
-因為雲端作答不會回到本機，用本機算出的狀態覆寫會把雲端的進度退回去。
-新題庫沒有的舊卡只在沒有作答紀錄也沒有記憶狀態時才刪。
+It signs in as the owner under RLS and only touches `cards` and `reference_entries`. Memory states, reviews and settings are never written, because cloud reviews do not flow back to the local copy and overwriting with locally computed states would roll back cloud progress.
+Old cards missing from the new bank are deleted only when they have neither reviews nor a memory state.
 
-雲端是作答的唯一來源，備份用 `scripts/cloud-backup.mjs`，對雲端只讀：
+When the data first moved from local to cloud, all 569 entries of `reviews.jsonl` were kept. Verbiste-derived conjugation cards and tables do not go to the cloud; their events stay in history as raw payloads, so GPL-2.0-derived data never mixes into the production card bank.
+The one-off migration script `scripts/cloud-import.mjs` was deleted on 2026-09-27; it can be recovered from `dfdda6b`.
+
+## Review records and backups
+
+Review records are the only data that cannot be rebuilt, and they are append-only: undoing or correcting a grade appends another event.
+
+**They are not in this repository.** Review records are personal data and live in a private repository, `cadence-data` (moved out of here on 2026-10-26). This repository's `.gitignore` blocks those files from being added back.
+
+The cloud is the only source of reviews. Back it up with `scripts/cloud-backup.mjs`, which only reads from the cloud:
 
 ```bash
-node scripts/cloud-backup.mjs --env .env.cloud   # 寫進 data/cloud-backup/，跑完把新增的行 commit
+node scripts/cloud-backup.mjs --env .env.cloud   # writes to ../cadence-data/data/cloud-backup/ by default
 ```
 
-`review_events`、`checkin_events`、`practice_events` 各存成 `data/cloud-backup/<表名>.jsonl`，
-以 `event_id` 比對、只追加雲端多出來的列，既有行不改（jsonb 會重排鍵順序，不能拿整行內容比對）；
-本機有、雲端已查無的列只警告不刪——那正是備份要留住的東西。`settings.json` 是設定快照，每次覆寫。
-沒備份的有兩樣：`card_states` 可由作答事件重播算回；`practice_assets` 的 Storage 檔案不在資料表裡。
+- `review_events`, `checkin_events` and `practice_events` are each saved as `cloud-backup/<table>.jsonl`. Rows are matched by `event_id` and only rows new in the cloud are appended; existing lines never change (jsonb reorders keys, so whole lines cannot be compared).
+- Rows present in the backup but gone from the cloud trigger a warning and stay, which is exactly what a backup is for. `settings.json` is a snapshot, overwritten each time.
+- Two things are not backed up: `card_states` can be recomputed by replaying review events, and `practice_assets` files in Storage are not in any table.
+- `cadence-data` is expected next to this repository (same parent directory). Set `CADENCE_DATA_REPO`, or pass `--out`, if it lives elsewhere. If it cannot be found the script stops with an error instead of silently creating a directory outside any repository.
+- On macOS, launchd can run it weekly: `scripts/scheduled-backup.sh` checks that existing content was not rewritten, then commits in `cadence-data`. Installation steps are at the top of that script.
 
-## 本機資料的存法
-
-本機版 2026-09-26 起停用，以下是本機模式跑起來時的存法。`reviews.jsonl` 停在 569 行；另外兩個 JSONL 從沒產生過。
+Local-mode storage (local mode was retired on 2026-09-26; `reviews.jsonl` stopped at 569 lines and the other two JSONL files were never created):
 
 ```
-data/reviews.jsonl   每次作答一行 JSON，只增不改。事實來源，進版控。
-data/checkins.jsonl  CO／PE／PO 的手動打卡，一天一行，同樣只增不改、同樣進版控。
-data/attempts.jsonl  四科實作練習與模考，一次一行；只存文字與數字，不存音檔。
-data/settings.json   考試日期、每日新卡量（可不設上限）與目標記憶率，本機保存，不進版控。
-data/cadence.db      SQLite 索引。題庫、記憶狀態、統計都在這，可整個重算，不進版控。
-data/bank/           建置產物，由 npm run build 現算，不進版控。
-data/cloud-backup/   雲端事件表的備份（scripts/cloud-backup.mjs），只增不改，進版控。
+reviews.jsonl    One JSON line per answer, append-only. Source of truth; versioned in cadence-data.
+checkins.jsonl   Manual check-ins for listening, writing and speaking, one line per day, append-only.
+attempts.jsonl   Practice and mock-exam attempts for the four papers, one line each; text and numbers only, no audio.
+settings.json    Exam date, daily new-card limit (or none) and target retention. Local only, not versioned.
+cadence.db       SQLite index: card bank, memory states, statistics. Fully rebuildable, not versioned.
+bank/            Build output from npm run build. Not versioned.
 ```
 
-這樣切的理由：SQLite 檔壞掉、schema 改版、或這個專案被丟掉，練了幾百天的紀錄都還在，而且是 `cat` 就讀得懂的格式。索引壞了跑 `npm run reindex` 從三個 JSONL 重建。
+The reason for this split: if the SQLite file breaks, the schema changes or the project is abandoned, hundreds of days of practice are still there, in a format `cat` can read. A broken index is rebuilt from the three JSONL files with `npm run reindex`.
 
-## 資料與授權
+To read the records in `cadence-data` in local mode: `CADENCE_DATA=../cadence-data/data npm start`.
 
-題庫由五個外部來源在**建置時**現算，這些來源的內容與衍生產物都不進本 repo：
+## Data and licensing
 
-| 來源 | 用途 | 授權 |
+The code is under the [MIT license](LICENSE). Files outside its scope are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+The card bank is computed at **build time** from five external sources. Neither the sources nor anything derived from them is in this repository:
+
+| Source | Used for | License |
 |---|---|---|
-| `french-exam-generator/data` | A1–B1 詞彙、2,000 多筆人工中文釋義、英文定義 | 個人資料，未公開 |
-| Ricky-KnowledgeBase `raw/sources/french/verbiste` | 784 張動詞變位表 | **Verbiste，GPL-2.0-or-later** |
-| Ricky-KnowledgeBase `raw/sources/french/flelex` | B2 詞彙與詞頻（FLELex 原表） | CC BY-NC-SA 4.0 |
-| Ricky-KnowledgeBase `wiki/concepts/french` | 連接詞後接語氣等文法規則 | 個人筆記 |
-| Ricky-KnowledgeBase `wiki/outputs/study-packs` | 改寫題與挑選題的現成題目 | 個人筆記 |
+| `french-exam-generator/data` | A1–B1 vocabulary, 2,000+ hand-written Chinese glosses, English definitions | Personal data, not published |
+| Ricky-KnowledgeBase `raw/sources/french/verbiste` | 784 verb conjugation tables | **Verbiste, GPL-2.0-or-later** |
+| Ricky-KnowledgeBase `raw/sources/french/flelex` | B2 vocabulary and frequencies (original FLELex table) | CC BY-NC-SA 4.0 |
+| Ricky-KnowledgeBase `wiki/concepts/french` | Grammar rules such as the mood each connector takes | Personal notes |
+| Ricky-KnowledgeBase `wiki/outputs/study-packs` | Ready-made rewrite and multiple-choice items | Personal notes |
 
-另有一份進版控的補充資料 `lexicon/`，疊在上面那些詞表之上：名詞性別（fr.wiktionary）、
-自己逐筆寫的中文釋義（fexgen 自動抓的 1,470 筆重審，加 B2 全部）、Tatoeba 例句（CC BY 2.0 FR，前端每句標出處）、
-FLELex 的拼法更正。收了什麼、沒收什麼、怎麼重新產生，見 [lexicon/README.md](lexicon/README.md)。
+`lexicon/`, which is versioned here, sits on top of those lists: noun genders (from fr.wiktionary), Chinese glosses written one by one for this project (a review of 1,470 glosses fexgen had scraped, plus all of B2), Tatoeba example sentences (CC BY 2.0 FR, credited per sentence in the UI) and spelling corrections to FLELex. What is and is not included, and how to regenerate it, is in [lexicon/README.md](lexicon/README.md).
 
-前端另外帶兩樣第三方的東西，都直接放在 repo 裡、不經 npm：
+The frontend carries two third-party files directly, outside npm:
 
-| 檔案 | 用途 | 授權 |
+| File | Used for | License |
 |---|---|---|
-| `web/vendor/gsap.mjs` | GSAP 3.15.0，複習換卡、批改結果逐字揭示、數字滾動、打卡章與進場動畫（全部集中在 `web/js/motion.mjs`） | GreenSock「Standard "no charge"」授權，**不是開源授權**：一般應用可免費使用，禁止用來做與 Webflow 競爭的視覺化動畫編輯器；檔首版權聲明不得移除 |
-| `web/fonts/newsreader-*.woff2` | Newsreader，法文字與大數字 | SIL OFL 1.1，全文在 `web/fonts/OFL.txt` |
+| `web/vendor/gsap.mjs` | GSAP 3.15.0: card transitions, letter-by-letter grading reveal, number roll, check-in stamp and entrance animations (all in `web/js/motion.mjs`) | GreenSock Standard "no charge" license, **not open source**: free for ordinary applications, but may not be used to build a visual animation editor competing with Webflow; the copyright header must stay |
+| `web/fonts/newsreader-*.woff2` | Newsreader, for French text and large numerals | SIL OFL 1.1, full text in `web/fonts/OFL.txt` |
 
-系統設定「減少動態效果」時，GSAP 的動畫全部不跑。
+With the system "reduce motion" setting on, no GSAP animation runs.
 
-Verbiste（Copyright 2003–2016 Pierre Sarrazin）是 GPL-2.0-or-later。本專案只在 `npm run build` 時讀取那份 XML，產物一律寫進 `data/bank/`，而 `data/bank/` 在 `.gitignore` 裡。**這是刻意的隔離**：GPL 的傳染性只在散布衍生作品時發生，不散布就不觸發。要改這個安排之前先想清楚後果。
+Verbiste (Copyright 2003–2016 Pierre Sarrazin) is GPL-2.0-or-later. This project reads its XML only during `npm run build` and writes all output to `data/bank/`, which is git-ignored. **This isolation is deliberate**: GPL obligations attach when a derived work is distributed, and nothing derived is distributed. Think through the consequences before changing it.
 
-五個來源的位置可用環境變數覆寫：`CADENCE_FEXGEN`、`CADENCE_VERBISTE`、`CADENCE_FLELEX`、`CADENCE_VAULT`、`CADENCE_PACKS`。
-每次啟動會比對來源內容指紋；詞表、Verbiste、FLELex、法文 concept、study pack 或 `lexicon/` 有變動時，會先重建題庫與索引再開頁面。
+One more piece of data is not in the table above: `src/build/connector-gloss.mjs`. The authoritative connector table is organised by mood and has no Chinese column; the secondary table has Chinese but only for common connectors. For the 25 connectors in neither, no Chinese exists in the vault, so this project writes it. When merging, the secondary table always wins and this file only fills gaps; if the vault later adds the same connector, `npm run build` flags the row for removal.
 
-有一份資料不在上表：`src/build/connector-gloss.mjs`。權威表依語氣分列、沒有中文欄，輔助表有中文但只收常用的，兩張表交集之外那 25 個連接詞的中文在 vault 裡不存在，所以由本專案自己寫。合併時輔助表一律優先、這份只填空；vault 哪天補了同一個連接詞，`npm run build` 會把那一列點出來要人刪掉。
+---
 
-另有 `CADENCE_DATA` 可以換掉題庫、索引與作答紀錄的落點（預設是 repo 內的 `data/`）。它的用途是測試與示範：三個 `data/*.jsonl` 是不可重建的事實檔，隨手跑幾張卡或儲存練習就會寫進去。目錄要自己先備好（`bank/`；三個事實檔都會在第一次寫入時建立），不會自動建立。
+## Running locally
+
+Requires Node 24 or later (for the built-in `node:sqlite`). There is nothing to `npm install`.
+
+**The card bank cannot currently be built from this repository alone.** If any of the five sources above is missing, `npm run build` lists what is missing and stops; two of them are private repositories.
+The tests do not need those sources and run straight after cloning:
+
+```bash
+npm test          # 322 tests, including 732 FSRS golden vectors
+npm run lint      # syntax check of every file with node --check
+```
+
+On a machine that has the five sources:
+
+```bash
+npm run build     # rebuild the card bank from the five sources and lexicon/ (start-up also checks this)
+npm start         # start the server and open the browser
+```
+
+Source locations can be overridden with `CADENCE_FEXGEN`, `CADENCE_VERBISTE`, `CADENCE_FLELEX`, `CADENCE_VAULT` and `CADENCE_PACKS`.
+Each start compares a fingerprint of the source contents; if any source or `lexicon/` changed, the bank and index are rebuilt before the page opens.
+
+`CADENCE_DATA` moves the card bank, index and review records somewhere other than the repository's `data/`. It exists for tests and demos, since answering a few cards or saving a practice attempt writes to the append-only record files. The directory must exist with a `bank/` inside (the three record files are created on first write); it is not created for you.
 
 ```bash
 CADENCE_DATA=/tmp/cadence-demo npm start
 ```
 
-## 指令
+### Commands
 
 ```bash
-cadence serve     [--port 4173] [--no-open]   啟動本機伺服器
-cadence build     [--verbose]                 重建題庫
-cadence reindex                               從三個 JSONL 重建 SQLite 索引
-cadence stats     [--json]                    在終端機印出進度
+cadence serve     [--port 4173] [--no-open]   start the local server
+cadence build     [--verbose]                 rebuild the card bank
+cadence reindex                               rebuild the SQLite index from the three JSONL files
+cadence stats     [--json]                    print progress in the terminal
 cadence forecast  --exam YYYY-MM-DD [--limit 60] [--new 15] [--target 0.85]
-cadence restore   --file <backup.json> [--dry-run]  預覽或還原備份
-cadence doctor    [--json]                    檢查資料來源、題庫、索引是否一致
+cadence restore   --file <backup.json> [--dry-run]  preview or restore a backup
+cadence doctor    [--json]                    check sources, card bank and index for consistency
 ```
 
-`restore` 只會在目前 JSONL 是備份前綴時追加缺少的行；先加 `--dry-run` 可只看差異。
+`restore` only appends missing lines when the current JSONL is a prefix of the backup; add `--dry-run` to see the difference first.
 
-`doctor` 會分開列出尚未 commit 與尚未 push 到 `origin/main` 的事實。只有 push 後才有異地副本；提醒不影響結束碼。
-`CADENCE_DATA` 指到別處時不查。
+`doctor` lists records not yet committed and not yet pushed to `origin/main` separately. Only pushed records have an off-site copy; these reminders do not affect the exit code.
+It checks the repository that contains `CADENCE_DATA` (for example `cadence-data`), and skips the check when `CADENCE_DATA` is not a `data/` directory inside a repository.
 
-## 開發
+## Development
 
 ```bash
-npm test      # 322 題，含 732 組 FSRS 黃金向量
-npm run lint  # node --check 全檔語法檢查
-npm run build:web  # 產生 Vercel 的 dist/
+npm test           # 322 tests, including 732 FSRS golden vectors
+npm run lint       # syntax check of every file with node --check
+npm run build:web  # produce dist/ for Vercel
 ```
 
-零第三方依賴。本機模式直接載入 `web/`，零建置步驟；雲端模式只有一個複製白名單檔案的建置步驟（`npm run build:web`）。`engines` 寫 Node 24.x 是給 Vercel 選執行環境用的，本機 Node ≥ 24 即可（用到內建的 `node:sqlite`）。
-測試裡有四題會呼叫 `python3`：名詞化的排除清單與構詞規則是從
-`french-exam-generator/tools/nominalize.py` 照抄的，那四題直接跑原生版本比對，
-改一邊就紅。沒有 `python3` 或那個檔不在的機器上，那四題跳過，其餘照跑。前端是原生 ESM 加手寫 CSS，瀏覽器直接載 `web/js/*.mjs` 與 `web/vendor/gsap.mjs`，沒有打包器。
+CI runs lint and tests on every push to `main` and every pull request.
 
-細節見 [docs/](docs/)：
+Zero third-party dependencies. Local mode serves `web/` directly with no build step; cloud mode has one step that copies allow-listed files (`npm run build:web`). `engines` says Node 24.x so Vercel picks that runtime.
+Four tests call `python3`: the nominalisation exclusion list and derivation rules are copied from `french-exam-generator/tools/nominalize.py`, and those tests run the original to compare, so changing one side turns them red. Where `python3` or that file is unavailable (including CI), those tests are skipped and the rest run.
 
-- [docs/architecture.md](docs/architecture.md) — 模組怎麼分、資料怎麼流
-- [docs/fsrs.md](docs/fsrs.md) — FSRS-6 的移植與驗證方式
-- [docs/grading.md](docs/grading.md) — 打字題怎麼批改，重音為什麼算數
+Maintenance rules (zero dependencies, append-only records, GPL isolation, frontend rules) are in [docs/DESIGN_NOTES.md](docs/DESIGN_NOTES.md). The other documents, in Traditional Chinese:
+
+- [docs/architecture.md](docs/architecture.md): module layout and data flow
+- [docs/fsrs.md](docs/fsrs.md): how FSRS-6 was ported and verified
+- [docs/grading.md](docs/grading.md): how typed answers are graded, and why accents count

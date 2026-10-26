@@ -9,7 +9,8 @@
  *   lexicon/                    本 repo 自有：拼法更正、名詞性別、中文釋義覆寫、Tatoeba 例句
  *
  * 產物 data/bank/ 在 .gitignore 裡。它隨時可以重建，而且不該把別人的授權資料
- * 帶進本 repo 的歷史。真正不可重建的是 data/reviews.jsonl，那個才進版控。
+ * 帶進本 repo 的歷史。真正不可重建的是 data/reviews.jsonl，那個才進版控
+ * （私有 repo cadence-data，不在本 repo）。
  */
 
 import { mkdir, writeFile, readdir, readFile } from 'node:fs/promises';

@@ -301,15 +301,18 @@ async function doctor(flags) {
     problems.push(`實作練習紀錄與索引內容不一致：JSONL 有效 ${report.attempts.valid} 筆、索引 ${report.attempts.indexed} 筆${bad}。跑 npm run reindex`);
   }
 
-  // 事實檔的版控狀態。只在 DATA 就是 repo 自己的 data/ 時查：
-  // CADENCE_DATA 指到別處（測試、暫存區）時，那裡的檔本來就不歸這個 repo 管。
+  // 事實檔的版控狀態。只在 DATA 是某個 repo 根目錄下的 data/ 時查，查的是那個 repo：
+  // 本 repo 自己的 data/，或私有的 cadence-data/data（2026-10-26 起作答紀錄放那裡，
+  // 本 repo 是公開的）。CADENCE_DATA 指到其他地方（測試、暫存區）時不查——
+  // 和 src/backup.mjs 的 backupStatus() 用同一條判斷。
   // 沒 commit 只是提醒，不算問題、不改 exit code——作答完當下沒 commit 是常態；
   // 行數變少才是問題，因為這三個檔只增不改。
   const warnings = [];
-  if (DATA === path.join(ROOT, 'data')) {
+  if (path.basename(DATA) === 'data') {
     const { factsSinceRef, uncommittedFacts } = await import('../src/facts-git.mjs');
-    report.git = uncommittedFacts(ROOT);
-    report.remote = factsSinceRef(ROOT);
+    const factsRoot = path.dirname(DATA);
+    report.git = uncommittedFacts(factsRoot);
+    report.remote = factsSinceRef(factsRoot);
     for (const f of report.git ?? []) {
       if (f.removed) {
         problems.push(`${f.file} 比上一個 commit 少了 ${f.removed} 行。這個檔只增不改，先用 git diff 看是誰動的，不要直接 commit`);
