@@ -28,3 +28,16 @@ dist/
 
 # lexicon/ 的抓取快取：Wiktionnaire 原文（CC BY-SA）與 Tatoeba 原始匯出，可重抓，不進版控
 lexicon/.cache/
+
+# 作答紀錄是個人資料，2026-10-26 移到私有 repo cadence-data，不進這個公開 repo。
+# 本機模式要讀它時設 CADENCE_DATA=../cadence-data/data（見 README）。
+data/reviews.jsonl
+data/checkins.jsonl
+data/attempts.jsonl
+data/cloud-backup/
+
+# AI 代理人的本機工作檔（2026-10-26 移出版控，只留在本機）
+/CLAUDE.md
+/AGENTS.md
+/.claude/
+/docs/backlog.md

@@ -1,10 +1,13 @@
 #!/bin/bash
-# 給 launchd 每週跑的雲端備份：抓事件 → 核對只追加 → 只 commit data/cloud-backup/，不 push。
-# push 會觸發 Vercel 正式部署，所以異地備份留給手動 push 時一起帶上去。
+# 給 launchd 每週跑的雲端備份：抓事件 → 核對只追加 → 只 commit cadence-data 的 data/cloud-backup/，不 push。
+# 備份寫進私有 repo cadence-data（2026-10-26 起；本 repo 是公開的，作答紀錄不放這裡）。
+# cadence-data 預設 clone 在本 repo 旁邊，位置不同時設 CADENCE_DATA_REPO。
+# 以前不 push 是因為 push 本 repo 會觸發 Vercel 正式部署；cadence-data 沒接部署，
+# 要異地備份就到 cadence-data 手動 push。
 #
-# 安裝（一次）：
+# 安裝（一次，在本 repo 根目錄跑）：
 #   security add-generic-password -a cadence -s cadence-owner -w   # 擁有者密碼存進登入鑰匙圈，-w 放最後會跳提示輸入
-#   cp scripts/local.cadence.backup.plist ~/Library/LaunchAgents/
+#   sed -e "s|__REPO__|$PWD|" -e "s|__HOME__|$HOME|" scripts/local.cadence.backup.plist > ~/Library/LaunchAgents/local.cadence.backup.plist
 #   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.cadence.backup.plist
 # 手動跑一次：launchctl kickstart gui/$(id -u)/local.cadence.backup
 # 移除：launchctl bootout gui/$(id -u)/local.cadence.backup，再刪 plist 與鑰匙圈項目
@@ -12,6 +15,8 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
+DATA_REPO="${CADENCE_DATA_REPO:-$REPO/../cadence-data}"
+# 相對於 DATA_REPO；下面的 git 指令都在 DATA_REPO 裡跑
 DIR="data/cloud-backup"
 # launchd 的 PATH 只有系統目錄，node 要寫絕對路徑；Homebrew 的這個 symlink 升版後仍指向新版
 NODE="${CADENCE_NODE:-/opt/homebrew/bin/node}"
@@ -25,7 +30,9 @@ fail() {
   exit 1
 }
 
-cd "$REPO" || fail "找不到 repo：$REPO"
+[ -d "$DATA_REPO/.git" ] || fail "找不到 cadence-data：$DATA_REPO（設 CADENCE_DATA_REPO 指定位置）"
+DATA_REPO="$(cd "$DATA_REPO" && pwd)"
+cd "$DATA_REPO" || fail "進不去 cadence-data：$DATA_REPO"
 
 # Codex 或其他 session 正在跑 git 時不要搶 index，下週再跑
 [ -e .git/index.lock ] && fail ".git/index.lock 存在，git 正在被使用"
@@ -43,7 +50,9 @@ done
 
 # 密碼只放進 node 這一個行程的環境變數，不 export 給後面的 git
 PASS="$(security find-generic-password -s "$SERVICE" -w 2>/dev/null)" || fail "鑰匙圈裡沒有 $SERVICE"
-CADENCE_PASSWORD="$PASS" "$NODE" scripts/cloud-backup.mjs --env .env.cloud || fail "cloud-backup.mjs 結束碼非 0"
+# .env.cloud 在本 repo，--out 指到 cadence-data 的絕對路徑
+(cd "$REPO" && CADENCE_PASSWORD="$PASS" "$NODE" scripts/cloud-backup.mjs --env .env.cloud --out "$DATA_REPO/$DIR") \
+  || fail "cloud-backup.mjs 結束碼非 0"
 unset PASS
 
 while read -r size sum f; do

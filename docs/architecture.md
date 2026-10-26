@@ -34,7 +34,7 @@ api/router.mjs       Vercel Function 入口
 scripts/
   build-web.mjs      只複製可公開的 web/、study/ 與共用批改器
   cloud-sync-bank.mjs 本機重建題庫後同步到雲端，只動 cards 與 reference_entries
-  cloud-backup.mjs   把雲端作答、打卡、實作事件拉回 data/cloud-backup/，對雲端只讀
+  cloud-backup.mjs   把雲端作答、打卡、實作事件拉回私有 repo cadence-data 的 data/cloud-backup/，對雲端只讀
   lexicon-*.mjs      重新產生 lexicon/ 的四支腳本（抓 Wiktionnaire、性別、釋義、Tatoeba 例句），順序見 lexicon/README.md
 lexicon/             進版控的補充詞彙：性別、自寫釋義、例句、拼法更正
 supabase/migrations/ 可從空資料庫重建表、RLS、RPC 與 B2 資源索引
