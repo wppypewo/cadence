@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- cadence 示範用的變位模板。結構與 Verbiste 的 conjugation-fr.xml 相容，讓同一個解析器讀得懂；
+     內容是為示範自己寫的五個模板，沒有取自 Verbiste。模板名冒號後的長度決定詞幹切點，
+     冒號在最前面的模板（":être"）詞幹為空，<i> 裡寫的就是完整形式。 -->
+<conjugation-fr>
+<template name=":être">
+<infinitive><infinitive-present><p><i>être</i></p></infinitive-present></infinitive>
+<indicative><present><p><i>suis</i></p><p><i>es</i></p><p><i>est</i></p><p><i>sommes</i></p><p><i>êtes</i></p><p><i>sont</i></p></present><imperfect><p><i>étais</i></p><p><i>étais</i></p><p><i>était</i></p><p><i>étions</i></p><p><i>étiez</i></p><p><i>étaient</i></p></imperfect><future><p><i>serai</i></p><p><i>seras</i></p><p><i>sera</i></p><p><i>serons</i></p><p><i>serez</i></p><p><i>seront</i></p></future><simple-past><p><i>fus</i></p><p><i>fus</i></p><p><i>fut</i></p><p><i>fûmes</i></p><p><i>fûtes</i></p><p><i>furent</i></p></simple-past></indicative>
+<conditional><present><p><i>serais</i></p><p><i>serais</i></p><p><i>serait</i></p><p><i>serions</i></p><p><i>seriez</i></p><p><i>seraient</i></p></present></conditional>
+<subjunctive><present><p><i>sois</i></p><p><i>sois</i></p><p><i>soit</i></p><p><i>soyons</i></p><p><i>soyez</i></p><p><i>soient</i></p></present><imperfect><p><i>fusse</i></p><p><i>fusses</i></p><p><i>fût</i></p><p><i>fussions</i></p><p><i>fussiez</i></p><p><i>fussent</i></p></imperfect></subjunctive>
+<imperative><imperative-present><p><i>sois</i></p><p><i>soyons</i></p><p><i>soyez</i></p></imperative-present></imperative>
+<participle><present-participle><p><i>étant</i></p></present-participle><past-participle><p><i>été</i></p></past-participle></participle>
+</template>
+<template name=":avoir">
+<infinitive><infinitive-present><p><i>avoir</i></p></infinitive-present></infinitive>
+<indicative><present><p><i>ai</i></p><p><i>as</i></p><p><i>a</i></p><p><i>avons</i></p><p><i>avez</i></p><p><i>ont</i></p></present><imperfect><p><i>avais</i></p><p><i>avais</i></p><p><i>avait</i></p><p><i>avions</i></p><p><i>aviez</i></p><p><i>avaient</i></p></imperfect><future><p><i>aurai</i></p><p><i>auras</i></p><p><i>aura</i></p><p><i>aurons</i></p><p><i>aurez</i></p><p><i>auront</i></p></future><simple-past><p><i>eus</i></p><p><i>eus</i></p><p><i>eut</i></p><p><i>eûmes</i></p><p><i>eûtes</i></p><p><i>eurent</i></p></simple-past></indicative>
+<conditional><present><p><i>aurais</i></p><p><i>aurais</i></p><p><i>aurait</i></p><p><i>aurions</i></p><p><i>auriez</i></p><p><i>auraient</i></p></present></conditional>
+<subjunctive><present><p><i>aie</i></p><p><i>aies</i></p><p><i>ait</i></p><p><i>ayons</i></p><p><i>ayez</i></p><p><i>aient</i></p></present><imperfect><p><i>eusse</i></p><p><i>eusses</i></p><p><i>eût</i></p><p><i>eussions</i></p><p><i>eussiez</i></p><p><i>eussent</i></p></imperfect></subjunctive>
+<imperative><imperative-present><p><i>aie</i></p><p><i>ayons</i></p><p><i>ayez</i></p></imperative-present></imperative>
+<participle><present-participle><p><i>ayant</i></p></present-participle><past-participle><p><i>eu</i></p><p><i>eus</i></p><p><i>eue</i></p><p><i>eues</i></p></past-participle></participle>
+</template>
+<template name=":aller">
+<infinitive><infinitive-present><p><i>aller</i></p></infinitive-present></infinitive>
+<indicative><present><p><i>vais</i></p><p><i>vas</i></p><p><i>va</i></p><p><i>allons</i></p><p><i>allez</i></p><p><i>vont</i></p></present><imperfect><p><i>allais</i></p><p><i>allais</i></p><p><i>allait</i></p><p><i>allions</i></p><p><i>alliez</i></p><p><i>allaient</i></p></imperfect><future><p><i>irai</i></p><p><i>iras</i></p><p><i>ira</i></p><p><i>irons</i></p><p><i>irez</i></p><p><i>iront</i></p></future><simple-past><p><i>allai</i></p><p><i>allas</i></p><p><i>alla</i></p><p><i>allâmes</i></p><p><i>allâtes</i></p><p><i>allèrent</i></p></simple-past></indicative>
+<conditional><present><p><i>irais</i></p><p><i>irais</i></p><p><i>irait</i></p><p><i>irions</i></p><p><i>iriez</i></p><p><i>iraient</i></p></present></conditional>
+<subjunctive><present><p><i>aille</i></p><p><i>ailles</i></p><p><i>aille</i></p><p><i>allions</i></p><p><i>alliez</i></p><p><i>aillent</i></p></present><imperfect><p><i>allasse</i></p><p><i>allasses</i></p><p><i>allât</i></p><p><i>allassions</i></p><p><i>allassiez</i></p><p><i>allassent</i></p></imperfect></subjunctive>
+<imperative><imperative-present><p><i>va</i></p><p><i>allons</i></p><p><i>allez</i></p></imperative-present></imperative>
+<participle><present-participle><p><i>allant</i></p></present-participle><past-participle><p><i>allé</i></p><p><i>allés</i></p><p><i>allée</i></p><p><i>allées</i></p></past-participle></participle>
+</template>
+<template name=":faire">
+<infinitive><infinitive-present><p><i>faire</i></p></infinitive-present></infinitive>
+<indicative><present><p><i>fais</i></p><p><i>fais</i></p><p><i>fait</i></p><p><i>faisons</i></p><p><i>faites</i></p><p><i>font</i></p></present><imperfect><p><i>faisais</i></p><p><i>faisais</i></p><p><i>faisait</i></p><p><i>faisions</i></p><p><i>faisiez</i></p><p><i>faisaient</i></p></imperfect><future><p><i>ferai</i></p><p><i>feras</i></p><p><i>fera</i></p><p><i>ferons</i></p><p><i>ferez</i></p><p><i>feront</i></p></future><simple-past><p><i>fis</i></p><p><i>fis</i></p><p><i>fit</i></p><p><i>fîmes</i></p><p><i>fîtes</i></p><p><i>firent</i></p></simple-past></indicative>
+<conditional><present><p><i>ferais</i></p><p><i>ferais</i></p><p><i>ferait</i></p><p><i>ferions</i></p><p><i>feriez</i></p><p><i>feraient</i></p></present></conditional>
+<subjunctive><present><p><i>fasse</i></p><p><i>fasses</i></p><p><i>fasse</i></p><p><i>fassions</i></p><p><i>fassiez</i></p><p><i>fassent</i></p></present><imperfect><p><i>fisse</i></p><p><i>fisses</i></p><p><i>fît</i></p><p><i>fissions</i></p><p><i>fissiez</i></p><p><i>fissent</i></p></imperfect></subjunctive>
+<imperative><imperative-present><p><i>fais</i></p><p><i>faisons</i></p><p><i>faites</i></p></imperative-present></imperative>
+<participle><present-participle><p><i>faisant</i></p></present-participle><past-participle><p><i>fait</i></p><p><i>faits</i></p><p><i>faite</i></p><p><i>faites</i></p></past-participle></participle>
+</template>
+<template name="aim:er">
+<infinitive><infinitive-present><p><i>er</i></p></infinitive-present></infinitive>
+<indicative><present><p><i>e</i></p><p><i>es</i></p><p><i>e</i></p><p><i>ons</i></p><p><i>ez</i></p><p><i>ent</i></p></present><imperfect><p><i>ais</i></p><p><i>ais</i></p><p><i>ait</i></p><p><i>ions</i></p><p><i>iez</i></p><p><i>aient</i></p></imperfect><future><p><i>erai</i></p><p><i>eras</i></p><p><i>era</i></p><p><i>erons</i></p><p><i>erez</i></p><p><i>eront</i></p></future><simple-past><p><i>ai</i></p><p><i>as</i></p><p><i>a</i></p><p><i>âmes</i></p><p><i>âtes</i></p><p><i>èrent</i></p></simple-past></indicative>
+<conditional><present><p><i>erais</i></p><p><i>erais</i></p><p><i>erait</i></p><p><i>erions</i></p><p><i>eriez</i></p><p><i>eraient</i></p></present></conditional>
+<subjunctive><present><p><i>e</i></p><p><i>es</i></p><p><i>e</i></p><p><i>ions</i></p><p><i>iez</i></p><p><i>ent</i></p></present><imperfect><p><i>asse</i></p><p><i>asses</i></p><p><i>ât</i></p><p><i>assions</i></p><p><i>assiez</i></p><p><i>assent</i></p></imperfect></subjunctive>
+<imperative><imperative-present><p><i>e</i></p><p><i>ons</i></p><p><i>ez</i></p></imperative-present></imperative>
+<participle><present-participle><p><i>ant</i></p></present-participle><past-participle><p><i>é</i></p><p><i>és</i></p><p><i>ée</i></p><p><i>ées</i></p></past-participle></participle>
+</template>
+</conjugation-fr>

@@ -1,0 +1,26 @@
+{
+  "maison": {
+    "g": "f",
+    "elide": false
+  },
+  "eau": {
+    "g": "f",
+    "elide": true
+  },
+  "ville": {
+    "g": "f",
+    "elide": false
+  },
+  "ami": {
+    "g": "m",
+    "elide": true
+  },
+  "développement": {
+    "g": "m",
+    "elide": false
+  },
+  "rapidité": {
+    "g": "f",
+    "elide": false
+  }
+}
