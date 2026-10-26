@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # 零依賴，不需要 npm ci。Node 24 對齊 package.json 的 engines 與 Vercel 執行環境；
+      # node:sqlite 是內建模組。
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: Lint
+        run: npm run lint
+
+      # 需要 python3 與 french-exam-generator 的那幾題在 CI 上會跳過（測試自己判斷），其餘照跑
+      - name: Test
+        run: npm test
