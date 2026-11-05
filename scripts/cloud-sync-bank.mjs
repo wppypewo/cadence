@@ -41,12 +41,14 @@ async function main() {
 
   const session = await ownerSession(args.env);
   const owner = session.owner;
-  const readColumn = async (table, column, filter = '') => [...new Set((await readAll(session,
-    `${table}?select=${column}${filter ? `&${filter}` : ''}&order=${column}`)).map((row) => row[column]))];
+  // readAll 翻頁要靠唯一排序。column 在 review_events 不唯一（一張卡多筆作答），
+  // 要補 event_id，否則超過 1,000 筆後兩頁之間可能漏掉某張卡，那張卡就會被當成沒作答過、列進刪除清單。
+  const readColumn = async (table, column, filter = '', order = column) => [...new Set((await readAll(session,
+    `${table}?select=${column}${filter ? `&${filter}` : ''}&order=${order}`)).map((row) => row[column]))];
 
   const cloudIds = new Set(await readColumn('cards', 'id'));
   const reviewed = new Set([
-    ...await readColumn('review_events', 'card_id', 'card_id=not.is.null'),
+    ...await readColumn('review_events', 'card_id', 'card_id=not.is.null', 'card_id,event_id'),
     ...await readColumn('card_states', 'card_id'),
   ]);
   const cloudConnectors = await readColumn('reference_entries', 'entry_key', 'entry_type=eq.connector');
