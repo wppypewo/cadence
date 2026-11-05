@@ -7,7 +7,9 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalize, stripAccents, grade, diffChars, missingAccents } from '../src/engine/grade.mjs';
+import {
+  normalize, stripAccents, grade, diffChars, missingAccents, normPick, gradePick, gradeNom, gradeRewrite,
+} from '../src/engine/grade.mjs';
 
 test('normalize：NFC、撇號統一、空白收斂', () => {
   // 分解式的 e + U+0301 與預組合的 é 在畫面上一樣，字串比對卻不等。
@@ -130,4 +132,31 @@ test('missingAccents：只回報「同一個字母、少了符號」的位置', 
   assert.deepEqual(missingAccents('', 'école'), []);
   // 對齊後才比：前面少打一個字，後面的漏重音照樣抓得到。
   assert.deepEqual(missingAccents('leve', 'élevé'), ['é']);
+});
+
+// 方框題、名詞化、改寫走的是 normPick，不是 normalize：兩邊對分解形重音與 ʼ 的處理要一致，
+// 否則同一個正確答案在打字題算對、在這三種題型算錯。
+test('normPick 與 normalize 一樣轉 NFC、把 ʼ 當撇號', () => {
+  assert.equal(normPick('a\u0300 moins que'), 'à moins que');
+  assert.equal(normPick('quoiquʼil'), "quoiqu'il");
+});
+
+test('方框題：分解形重音與 ʼ 撇號的正確答案判為 exact', () => {
+  const opts = ['à moins que', 'pour que', 'quoique', 'quoi que'];
+  assert.equal(gradePick('a\u0300 moins que', 'à moins que', opts).reason, 'exact');
+  assert.equal(gradePick('quoiquʼil', 'quoiqu’il', opts).reason, 'exact');
+  // 省音錯仍然分得出來
+  assert.equal(gradePick('quoique il', 'quoiqu’il', opts).reason, 'elision');
+});
+
+test('名詞化：分解形重音與 ʼ 撇號的正確答案判為 exact', () => {
+  assert.equal(gradeNom('la re\u0301ussite', ['la réussite'], 'réussite').reason, 'exact');
+  assert.equal(gradeNom('lʼabsence', ['l’absence'], 'absence').reason, 'exact');
+  assert.equal(gradeNom('la reussite', ['la réussite'], 'réussite').reason, 'accent');
+});
+
+test('改寫：分解形重音不再被提示成重音錯', () => {
+  const r = gradeRewrite('Bien qu’il soit la\u0300', [['bien qu’il soit'], ['là']]);
+  assert.equal(r.correct, true);
+  assert.equal(r.reason, 'exact');
 });
