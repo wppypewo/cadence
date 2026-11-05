@@ -25,17 +25,26 @@ SERVICE="cadence-owner"
 log() { echo "$(date '+%F %T') $*"; }
 fail() {
   log "失敗：$1"
-  # 排程在背景跑，沒人看紀錄檔，失敗要跳通知才會被發現
-  osascript -e "display notification \"$1\" with title \"cadence 備份失敗\"" >/dev/null 2>&1 || true
+  # 排程在背景跑，沒人看紀錄檔，失敗要跳通知才會被發現。
+  # 訊息經 argv 傳進 AppleScript，不嵌進原始碼字串：訊息含 " 或 \（例如路徑）時，
+  # 嵌進去會變成語法錯誤，通知不會出現，而錯誤被 || true 吞掉。
+  osascript -e 'on run argv' -e 'display notification (item 1 of argv) with title "cadence 備份失敗"' -e 'end run' "$1" >/dev/null 2>&1 || true
   exit 1
 }
 
-[ -d "$DATA_REPO/.git" ] || fail "找不到 cadence-data：$DATA_REPO（設 CADENCE_DATA_REPO 指定位置）"
+# 用 git 判斷，不看 .git 是不是目錄：worktree 與 submodule 的 .git 是檔案。
+# 要求 DATA_REPO 本身就是 repo 根目錄：只是某個 repo 底下的普通資料夾時，
+# rev-parse 也會成功，接著就會 commit 進那個不相干的 repo。
+DATA_TOP="$(git -C "$DATA_REPO" rev-parse --show-toplevel 2>/dev/null)" || DATA_TOP=""
+[ -n "$DATA_TOP" ] && [ "$(cd "$DATA_TOP" && pwd -P)" = "$(cd "$DATA_REPO" && pwd -P)" ] \
+  || fail "找不到 cadence-data：$DATA_REPO（設 CADENCE_DATA_REPO 指定位置）"
 DATA_REPO="$(cd "$DATA_REPO" && pwd)"
 cd "$DATA_REPO" || fail "進不去 cadence-data：$DATA_REPO"
 
 # Codex 或其他 session 正在跑 git 時不要搶 index，下週再跑
-[ -e .git/index.lock ] && fail ".git/index.lock 存在，git 正在被使用"
+# 鎖檔位置交給 git 算（worktree 的 index 在主 repo 的 .git/worktrees/<名稱>/ 底下）
+LOCK="$(git rev-parse --git-path index.lock)"
+[ -e "$LOCK" ] && fail "$LOCK 存在，git 正在被使用"
 # 備份目錄有別人沒提交的改動時，混進自動 commit 會分不清來源
 [ -n "$(git status --porcelain -- "$DIR")" ] && fail "$DIR 有未提交的改動，先人工處理"
 
