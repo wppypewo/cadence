@@ -698,6 +698,8 @@ test('推演遵守中翻法解鎖門檻', async () => {
     assert.equal(api.scopedStates(Api.activeScope()).find((card) => card.id.endsWith('|p')).prerequisite, 'v:ami|r');
     api.review({ cardId: 'v:ami|r', rating: 3 });
     assert.equal(api.scopedStates(Api.activeScope()).find((card) => card.id.endsWith('|p')).prerequisite, undefined);
+    // 推演要用上次複習時間算經過天數（2026-11-06），沒帶出來就會退回拿 due 當上次複習。
+    assert.ok(api.scopedStates(Api.activeScope()).find((card) => card.id === 'v:ami|r').last_review);
   } finally { cleanup(store, dir); }
 });
 

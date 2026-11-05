@@ -9,6 +9,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { simulate, solveDailyNew, ratingDistribution } from '../src/engine/forecast.mjs';
+import { createScheduler, RATING } from '../src/engine/fsrs.mjs';
 
 /** 造一批卡：newCards 張沒學過的，seenCards 張有 state 的。 */
 function makeCards(newCards, seenCards, from) {
@@ -231,4 +232,33 @@ test('有前置認讀的產出卡會在認讀卡學過後才進新卡隊伍', ()
   assert.equal(result.days[0].learned, 1);
   assert.equal(result.days[1].learned, 1);
   assert.equal(result.studiedByExam, 2);
+});
+
+// 2026-11-06：模擬器曾拿 due 當上次複習時間，下面兩項鎖住「用 last_review 算經過天數」。
+test('考後才到期的卡，考試那天的 R 從上次複習起算，不是 1', () => {
+  const sched = createScheduler({ desiredRetention: 0.9 });
+  const lastReview = new Date(FROM.getTime() - 5 * 86_400_000);
+  const due = new Date(FROM.getTime() + 20 * 86_400_000);
+  const exam = new Date(FROM.getTime() + 2 * 86_400_000);
+  const card = { id: 'x', stability: 10, difficulty: 5, due: due.toISOString(), last_review: lastReview.toISOString() };
+  const p = simulate({ cards: [card], from: FROM, examDate: exam, dailyLimit: 10, dailyNew: 0 });
+  assert.equal(p.totalReviews, 0);
+  assert.ok(Math.abs(p.expectedRecall - sched.retrievability(10, 7)) < 1e-9);
+  assert.ok(p.expectedRecall < 1);
+});
+
+test('第一次模擬複習的經過天數從 last_review 算，走長期分支', () => {
+  const sched = createScheduler({ desiredRetention: 0.9 });
+  const lastReview = new Date(FROM.getTime() - 20 * 86_400_000);
+  const exam = new Date(FROM.getTime() + 3 * 86_400_000);
+  const card = { id: 'y', stability: 20, difficulty: 5, due: FROM.toISOString(), last_review: lastReview.toISOString() };
+  const p = simulate({ cards: [card], from: FROM, examDate: exam, dailyLimit: 10, dailyNew: 0 });
+  assert.equal(p.totalReviews, 1);
+  // 沒有評分分布時答對一律 Good；答錯是 Again。兩種結果都從 20 天的間隔算。
+  const outcomes = [RATING.GOOD, RATING.AGAIN].map((rating) => {
+    const next = sched.review({ stability: 20, difficulty: 5 }, rating, 20);
+    return next.intervalDays > 3 ? sched.retrievability(next.stability, 3) : null;
+  });
+  assert.ok(outcomes.some((r) => r != null && Math.abs(p.expectedRecall - r) < 1e-9),
+    `expectedRecall ${p.expectedRecall} 不是長期分支的結果 ${outcomes}`);
 });
