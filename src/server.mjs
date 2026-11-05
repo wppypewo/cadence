@@ -153,7 +153,14 @@ async function handleApi(api, req, res, url) {
 
   const verb = url.pathname.match(/^\/api\/verb\/(.+)$/);
   if (verb && req.method === 'GET') {
-    return send(res, 200, await api.verb(decodeURIComponent(verb[1])));
+    let name;
+    try {
+      name = decodeURIComponent(verb[1]);
+    } catch {
+      // 不合法的 %-序列是請求本身寫錯，不是伺服器出錯
+      throw new HttpError(400, '動詞名稱的網址編碼不正確');
+    }
+    return send(res, 200, await api.verb(name));
   }
   throw new HttpError(404, `沒有這個端點：${route}`);
 }
@@ -161,17 +168,24 @@ async function handleApi(api, req, res, url) {
 function body(req) {
   return new Promise((resolve, reject) => {
     let size = 0;
+    let tooLarge = false;
     const chunks = [];
     req.on('data', (c) => {
+      if (tooLarge) return;
       size += c.length;
       if (size > MAX_BODY) {
+        // 不 destroy：socket 一關，handler 接著送的 413 就到不了客戶端，前端只看到斷線。
+        // 剩下的內容照常讀完丟掉。伺服器只綁 127.0.0.1，且 guardLocalRequest 已擋掉
+        // 跨站寫入，讀完一個大請求不構成風險。
+        tooLarge = true;
+        chunks.length = 0;
         reject(new HttpError(413, '請求內容過大'));
-        req.destroy();
         return;
       }
       chunks.push(c);
     });
     req.on('end', () => {
+      if (tooLarge) return;
       const raw = Buffer.concat(chunks).toString('utf8');
       if (!raw) return resolve({});
       try {

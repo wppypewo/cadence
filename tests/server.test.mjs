@@ -84,3 +84,35 @@ test('真正啟動 HTTP 後，首頁、讀取與寫入路由可用，未知路�
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('請求本身寫錯時回 4xx 與可讀的錯誤訊息，不是 500 或斷線', async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'cadence-server-'));
+  mkdirSync(path.join(dir, 'bank'), { recursive: true });
+  writeFileSync(path.join(dir, 'bank', 'cards.json'), JSON.stringify([{
+    id: 'v:test', kind: 'vocab-recall', mode: 'self', level: 'A2', freq: 1,
+    tags: ['test'], answer: '測試', accept: null, front: { word: 'test', gloss: '測試' },
+  }]));
+  const app = await serve({ port: 0, dataDir: dir });
+  const base = `http://127.0.0.1:${app.port}`;
+  try {
+    // decodeURIComponent 遇到不完整的 %-序列會丟 URIError，以前落到 500
+    const bad = await fetch(`${base}/api/verb/%E0%A4%A`);
+    assert.equal(bad.status, 400);
+    assert.match((await bad.json()).error, /編碼/);
+
+    // 以前超過上限就 req.destroy()，客戶端只拿到 ECONNRESET
+    const big = await fetch(`${base}/api/settings`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ pad: 'x'.repeat(200 * 1024) }),
+    });
+    assert.equal(big.status, 413);
+    assert.match((await big.json()).error, /過大/);
+
+    // 同一個 server 之後照常服務
+    assert.equal((await fetch(`${base}/api/summary`)).status, 200);
+  } finally {
+    await new Promise((resolve) => app.server.close(resolve));
+    app.store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
