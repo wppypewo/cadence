@@ -353,7 +353,7 @@ export class Api {
     const clause = ` WHERE 1 = 1${where}`;
     const rows = this.store.db
       .prepare(
-        `SELECT c.id, c.kind, c.level, s.stability, s.difficulty, s.due,
+        `SELECT c.id, c.kind, c.level, s.stability, s.difficulty, s.due, s.last_review,
                 EXISTS (SELECT 1 FROM states g
                   WHERE g.card_id = substr(c.id, 1, length(c.id) - 1) || 'r') recall_seen,
                 EXISTS (SELECT 1 FROM cards g2

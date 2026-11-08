@@ -89,7 +89,7 @@ export function firstRatingModel(rows, minKindSample = FIRST_RATING_MIN) {
  * 一次考前推演。
  *
  * @param {object} opts
- * @param {Array<{id:string, level?:string, stability?:number, difficulty?:number, due?:string,locked?:boolean,prerequisite?:string}>} opts.cards
+ * @param {Array<{id:string, level?:string, stability?:number, difficulty?:number, due?:string,last_review?:string,locked?:boolean,prerequisite?:string}>} opts.cards
  *        在範圍內的卡。沒有 state 的卡就是還沒學過的新卡。
  * @param {Date}   opts.from        起算日
  * @param {Date}   opts.examDate    考試日
@@ -122,7 +122,9 @@ export function simulate(opts) {
   let locked = 0;
   for (const c of opts.cards) {
     if (c.stability != null && c.difficulty != null) {
-      seen.push({ id: c.id, kind: c.kind, level: c.level, s: c.stability, d: c.difficulty, due: startOfDay(new Date(c.due)).getTime(), last: new Date(c.due).getTime() });
+      // last 要用上次複習的時間。拿 due 代替時，第一次模擬複習的間隔會變成 0（R=1、走同日分支、穩定度幾乎不長），
+      // 考後才到期的卡在考試那天也會算成 R=1。舊呼叫端沒傳 last_review 時退回 due。
+      seen.push({ id: c.id, kind: c.kind, level: c.level, s: c.stability, d: c.difficulty, due: startOfDay(new Date(c.due)).getTime(), last: new Date(c.last_review ?? c.due).getTime() });
     } else if (c.locked) {
       locked += 1;
     } else {
