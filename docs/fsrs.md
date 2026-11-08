@@ -46,6 +46,27 @@ I = (S / FACTOR) × (target^(1/DECAY) − 1)
 
 py-fsrs 用 Python 內建的 `round()`，那是**銀行家捨入**（round half to even），不是 JavaScript 的 `Math.round()`（round half up）。`roundHalfToEven()` 在 `fsrs.mjs` 裡就是為了這件事。間隔剛好落在 .5 的情況不常見，但一旦發生就會與參考實作分岔，而且分岔之後每一步都會偏。黃金向量抓得到這個。
 
+## 與 py-fsrs 的一處刻意差異：經過天數用小數
+
+py-fsrs 的經過天數取 `(review_datetime - card.last_review).days`，也就是 `timedelta.days`，小數部分直接捨去：隔 1 天 22 小時算 1 天。cadence 用毫秒差除以一天（`src/db.mjs` 第 349、423 行，`src/cloud/learning.mjs` 第 78、147 行），隔 1 天 22 小時就是 1.92 天，原樣傳進 `review()`。
+
+保留小數的理由：R 本來就是連續函數，捨去小數等於把每次複習都當成提早到，S 小的卡被高估得最多。cadence 一天會複習同一張卡好幾次的情況不少（同日公式、打字題重考），整數天會讓同一天內的先後順序失去意義。
+
+差異有多大，用 `src/engine/fsrs.mjs` 實算（D = 5、評 Good、`target` 0.9）：
+
+| 情況 | cadence（小數） | py-fsrs 的算法（取整） |
+|---|---|---|
+| S = 1.5，隔 1.9 天 | R = 0.883，新 S = 6.84，下次 7 天後 | 當成 1 天：R = 0.925，新 S = 4.85，下次 5 天後 |
+| S = 30，隔 30.9 天 | R = 0.898，新 S = 86.2，下次 86 天後 | 當成 30 天：R = 0.900，新 S = 85.0，下次 85 天後 |
+
+S 小的卡差到 2 天，S 大的卡只差 1 天以內。方向固定：小數天數的 R 較低，答對時 S 漲得較多、間隔較長。
+
+影響範圍：
+
+- 黃金向量（`tests/fixtures/fsrs-golden.json`）全部用整數天數，測的是公式移植正確，不涵蓋這個差異。
+- `elapsedDays < 1` 走同日公式，兩邊判斷一致；差異只出現在隔 1 天以上、且不是整數天的複習。
+- 拿 cadence 的紀錄去給 py-fsrs 或官方 optimizer 用時，要先把 `elapsed` 取整，否則重播出來的 S 與 cadence 存的不同。
+
 ## 參數
 
 用官方預設的 21 個權重，沒有做個人化最佳化（optimizer）。理由：最佳化需要數千筆自己的作答紀錄才穩，紀錄不夠時它給出的參數比預設值差。`data/reviews.jsonl` 攢夠之後可以再考慮，資料格式已經留好了。
