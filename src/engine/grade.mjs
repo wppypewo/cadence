@@ -171,9 +171,14 @@ export function expandOption(opt) {
   return new Set(forms.map((f) => f.replace(/\s+/g, ' ').trim().toLowerCase()).filter(Boolean));
 }
 
-/** 統一撇號與空白。**不還原省音**——省音本身就是考點，不能抹掉。 */
+/**
+ * 統一撇號與空白。**不還原省音**——省音本身就是考點，不能抹掉。
+ *
+ * 和 normalize() 一樣先轉 NFC、把 ʼ 也算成撇號：分解形重音（貼上的文字常見）
+ * 或 ʼ 不先統一，方框題會判成選錯格、名詞化會判成只差重音，正確答案被記成錯。
+ */
 export function normPick(s) {
-  return String(s ?? '').replace(/\*\*/g, '').replace(/[’‘]/g, "'")
+  return String(s ?? '').normalize('NFC').replace(/\*\*/g, '').replace(/[’‘ʼ]/g, "'")
     .replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
@@ -185,7 +190,7 @@ export function normPick(s) {
  */
 export function unelide(s) {
   return String(s ?? '')
-    .replace(/[’‘]/g, "'")
+    .replace(/[’‘ʼ]/g, "'")
     .replace(/qu'/g, 'que ')
     .replace(/d'/g, 'de ')
     .replace(/s'/g, 'si ')
