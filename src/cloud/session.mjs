@@ -13,7 +13,7 @@ const jwksCache = new Map();
 
 export async function login(config, credentials, { fetchImpl = fetch, secure = true } = {}) {
   const email = bounded(credentials?.email, 320, '電子郵件');
-  const password = bounded(credentials?.password, 1024, '密碼');
+  const password = bounded(credentials?.password, 1024, '密碼', { trim: false });
   let result;
   try {
     result = await authRequest(config, '/token?grant_type=password', {
@@ -36,7 +36,7 @@ export async function login(config, credentials, { fetchImpl = fetch, secure = t
 export async function register(config, credentials, { fetchImpl = fetch, secure = true } = {}) {
   const email = bounded(credentials?.email, 320, '電子郵件').toLowerCase();
   if (email !== config.ownerEmail) throw new CloudError(403, '此網站只接受指定的擁有者信箱');
-  const password = bounded(credentials?.password, 1024, '密碼');
+  const password = bounded(credentials?.password, 1024, '密碼', { trim: false });
   if (password.length < 12) throw new CloudError(400, '密碼至少需要 12 個字元');
   let result;
   try {
@@ -220,8 +220,11 @@ function assertOwner(config, user) {
   if (!email || email !== config.ownerEmail) throw new CloudError(403, '這個帳號沒有 cadence 使用權限');
 }
 
-function bounded(value, max, label) {
-  const text = String(value ?? '').trim();
+// 密碼不能 trim：前後空白是密碼的一部分。trim 掉的話，註冊時「 abc…」存成「abc…」，
+// 之後在別的用戶端（Supabase 後台、其他 app）照原樣輸入反而登不進去。
+function bounded(value, max, label, { trim = true } = {}) {
+  const raw = String(value ?? '');
+  const text = trim ? raw.trim() : raw;
   if (!text || text.length > max) throw new CloudError(400, `${label}格式不正確`);
   return text;
 }

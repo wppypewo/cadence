@@ -71,7 +71,9 @@ export function createCloudHandler({ env = process.env, fetchImpl = fetch } = {}
         throw new CloudError(404, '雲端版未收錄 Verbiste 變位表；GPL-2.0 衍生資料仍只保留在本機');
       }
 
-      throw new CloudError(503, '這個雲端功能會在資料搬移階段啟用');
+      // 沒有這條路由就是 404。以前回 503「會在資料搬移階段啟用」，搬移早已完成，
+      // 503 會讓監控把打錯網址當成服務故障，也讓用戶端誤以為稍後重試會成功。
+      throw new CloudError(404, '找不到這個雲端 API');
     } catch (err) {
       const status = err instanceof CloudError ? err.status : 500;
       if (status >= 500) console.error(err);
@@ -88,11 +90,13 @@ function routePath(req) {
   return url.pathname.replace(/^\/api\/?/, '').replace(/^router\/?/, '').replace(/^\/+|\/+$/g, '');
 }
 
+// 只拿 Host 比對，不看 x-forwarded-host：那是用戶端也能自己帶的標頭，
+// 跨站頁面雖然改不了瀏覽器送的 Host，但只要哪天前面多一層會原樣轉送
+// x-forwarded-host 的代理，攻擊者就能把它設成自己的網域，讓 Origin 比對通過。
 function guardOrigin(req) {
   const origin = req.headers?.origin;
   if (!origin) return;
-  const forwarded = req.headers['x-forwarded-host'];
-  const host = String(forwarded ?? req.headers.host ?? '').split(',')[0].trim();
+  const host = String(req.headers.host ?? '').trim();
   const proto = String(req.headers['x-forwarded-proto'] ?? (host.startsWith('localhost') ? 'http' : 'https'))
     .split(',')[0].trim();
   if (!host || origin !== `${proto}://${host}`) throw new CloudError(403, '拒絕跨站寫入');
