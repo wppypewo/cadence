@@ -9,6 +9,7 @@ import { readSettings, recordReview } from './data.mjs';
 import { summarizePractice } from './practice.mjs';
 
 const DAY_MS = 86_400_000;
+const TAIPEI_OFFSET_MS = 8 * 3_600_000;
 const KINDS = ['vocab-recall', 'vocab-produce', 'conj', 'connector', 'pick', 'rw', 'nom'];
 const LEVELS = ['A2', 'B1', 'B2'];
 const DEFAULT_SECONDS = 8;
@@ -317,7 +318,10 @@ async function simulationInputs(config, auth, scope, fetchImpl, knownSettings = 
   const cardIds = new Set(cards.map((card) => card.id));
   const simulationCards = scoped.map((card) => {
     const state = stateById.get(card.id);
-    if (state) return { id: card.id, kind: card.kind, level: card.level, ...state };
+    if (state) {
+      return { id: card.id, kind: card.kind, level: card.level, ...state,
+        due: simulationClock(state.due), last_review: simulationClock(state.last_review) };
+    }
     const prerequisite = card.kind === 'vocab-produce' && card.id.endsWith('|p')
       && cardIds.has(`${card.id.slice(0, -1)}r`) && !stateById.has(`${card.id.slice(0, -1)}r`)
       ? `${card.id.slice(0, -1)}r` : null;
@@ -447,6 +451,20 @@ function validDay(value) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const parsed = new Date(`${value}T00:00:00Z`);
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+/**
+ * 模擬器用執行環境的時區切日（startOfDay），Vercel 是 UTC。台北凌晨 0–8 點到期的卡，
+ * 在 UTC 還是前一天，推演會提早一天排進去。台北固定 UTC+8、沒有日光節約，
+ * 把時間點平移「台北與執行環境的時差」，執行環境的日界就對上台北的日界；
+ * 在台北時區執行（本機開發、測試）時平移量是 0。
+ */
+export function simulationClock(iso) {
+  if (!iso) return iso;
+  const at = Date.parse(iso);
+  if (Number.isNaN(at)) return iso;
+  const localOffset = -new Date(at).getTimezoneOffset() * 60_000;
+  return new Date(at + TAIPEI_OFFSET_MS - localOffset).toISOString();
 }
 
 export function cloudCalendarDate(day) {

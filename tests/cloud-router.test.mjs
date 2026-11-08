@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createCipheriv, generateKeyPairSync, randomBytes, sign } from 'node:crypto';
 import { createCloudHandler } from '../src/cloud/router.mjs';
 import { practiceEntry, mockEntry, summarizePractice } from '../src/cloud/practice.mjs';
-import { cloudCalendarDate } from '../src/cloud/analytics.mjs';
+import { cloudCalendarDate, simulationClock } from '../src/cloud/analytics.mjs';
 
 const ENV = {
   SUPABASE_URL: 'https://example.supabase.co',
@@ -222,6 +222,45 @@ test('雲端四科紀錄沿用本機的驗證與統計語意', () => {
 
 test('雲端推演用 UTC 中午承載日曆日期，不會少算一天', () => {
   assert.equal(cloudCalendarDate('2027-05-01').toISOString(), '2027-05-01T12:00:00.000Z');
+});
+
+test('雲端推演在 UTC 執行時，台北凌晨到期的卡排在台北的那一天', async () => {
+  const taipei = (offsetDays) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei' })
+    .format(new Date(Date.now() + offsetDays * 86_400_000));
+  const tomorrow = taipei(1);
+  const early = `${tomorrow}T07:00:00+08:00`;
+  const late = `${tomorrow}T09:00:00+08:00`;
+  const lastReview = new Date(Date.parse(early) - 3 * 86_400_000).toISOString();
+  const fetchImpl = async (url) => {
+    if (url.endsWith('/auth/v1/user')) return json({ id: 'user-1', email: 'ricky@example.com' });
+    if (url.includes('/rest/v1/user_settings')) return json([{ desired_retention: 0.9, daily_new_limit: 0, start_level: 'A2' }]);
+    if (url.includes('/rest/v1/cards?')) {
+      return json([{ id: 'c1', kind: 'vocab-recall', level: 'B1' }, { id: 'c2', kind: 'vocab-recall', level: 'B1' }]);
+    }
+    if (url.includes('/rest/v1/card_states?')) {
+      return json([
+        { card_id: 'c1', stability: 3, difficulty: 5, due: new Date(early).toISOString(), last_review: lastReview, reps: 2, lapses: 0 },
+        { card_id: 'c2', stability: 3, difficulty: 5, due: new Date(late).toISOString(), last_review: lastReview, reps: 2, lapses: 0 },
+      ]);
+    }
+    if (url.includes('/rest/v1/review_events?')) return json([]);
+    throw new Error(`未處理的 URL：${url}`);
+  };
+  const savedTz = process.env.TZ;
+  process.env.TZ = 'UTC';
+  try {
+    const res = await run(createCloudHandler({ env: ENV, fetchImpl }), {
+      method: 'GET', path: 'forecast', query: { exam: taipei(10) }, headers: { cookie: 'cadence_access=valid-token' },
+    });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json.plan.days[0].due, 0);
+    assert.equal(res.json.plan.days[1].due, 2);
+    // 平移後在 UTC 切日，落在台北的同一天。
+    assert.equal(simulationClock(new Date(early).toISOString()).slice(0, 10), tomorrow);
+  } finally {
+    if (savedTz === undefined) delete process.env.TZ;
+    else process.env.TZ = savedTz;
+  }
 });
 
 test('B2 資源只回啟用中的查證索引，不把內容複製進站內', async () => {
@@ -589,7 +628,7 @@ function json(value, { status = 200, headers = {} } = {}) {
   });
 }
 
-async function run(handler, { method, path, headers = {}, body } = {}) {
+async function run(handler, { method, path, query = {}, headers = {}, body } = {}) {
   const saved = new Map();
   let raw = '';
   const res = {
@@ -597,6 +636,6 @@ async function run(handler, { method, path, headers = {}, body } = {}) {
     setHeader(name, value) { saved.set(String(name).toLowerCase(), value); },
     end(value = '') { raw = String(value); },
   };
-  await handler({ method, query: { path }, headers, body }, res);
+  await handler({ method, query: { ...query, path }, headers, body }, res);
   return { statusCode: res.statusCode, headers: saved, body: raw, json: JSON.parse(raw) };
 }
