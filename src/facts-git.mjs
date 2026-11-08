@@ -8,6 +8,11 @@
  *
  * 只用 node:child_process 呼叫系統的 git，不引套件。查不了（沒裝 git、不是 repo、
  * 還沒有任何 commit）一律回 null，由呼叫端決定要不要提；查不了不等於有問題。
+ *
+ * 被 .gitignore 擋住、又沒被追蹤的事實檔跳過：那個 repo 刻意不存它。2026-10-26 起本 repo
+ * 是公開的，作答紀錄改放私有 repo cadence-data，本 repo 的 data/*.jsonl 都在 .gitignore 裡；
+ * 不跳過的話 doctor 會提示「git add 後 commit、push」，照做（加 -f）就把作答紀錄再推上公開 repo。
+ * 三個檔都被擋住時回 null，不回空陣列——空陣列會被顯示成「都已 commit／已推送」。
  */
 
 import { execFileSync } from 'node:child_process';
@@ -21,6 +26,16 @@ function gitAt(root) {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'ignore'],
   });
+}
+
+/** git check-ignore：結束碼 0 = 被擋住；1 = 沒被擋（已追蹤的檔一律算沒被擋）；其他錯誤當成沒被擋，照常檢查。 */
+function isIgnored(git, file) {
+  try {
+    git('check-ignore', '-q', '--', file);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -38,7 +53,10 @@ export function uncommittedFacts(root, files = FACT_FILES) {
   }
 
   const out = [];
+  let checked = 0;
   for (const file of files) {
+    if (isIgnored(git, file)) continue;
+    checked += 1;
     // checkins.jsonl 第一次打卡才會建立，建立之後在 commit 之前都是 untracked，
     // git diff 看不到它，要另外數行。
     if (git('ls-files', '--', file).trim() === '') {
@@ -54,7 +72,7 @@ export function uncommittedFacts(root, files = FACT_FILES) {
     const [added, removed] = stat.split('\t').map(Number);
     if (added || removed) out.push({ file, added, removed, untracked: false });
   }
-  return out;
+  return checked ? out : null;
 }
 
 /**
@@ -74,7 +92,10 @@ export function factsSinceRef(root, ref = 'origin/main', files = FACT_FILES) {
   }
 
   const out = [];
+  let checked = 0;
   for (const file of files) {
+    if (isIgnored(git, file)) continue;
+    checked += 1;
     const abs = path.join(root, file);
     if (!existsSync(abs)) continue;
     const trackedAtRef = git('ls-tree', '-r', '--name-only', ref, '--', file).trim() !== '';
@@ -88,5 +109,5 @@ export function factsSinceRef(root, ref = 'origin/main', files = FACT_FILES) {
     const [added, removed] = stat.split('\t').map(Number);
     if (added || removed) out.push({ file, added, removed, newSinceRef: false });
   }
-  return out;
+  return checked ? out : null;
 }

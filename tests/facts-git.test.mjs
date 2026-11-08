@@ -94,3 +94,54 @@ test('未推送行數以遠端 ref 為準，已 commit 但未 push 仍算', { sk
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('被 .gitignore 擋住的事實檔不叫人 git add；三個都擋住時回 null，不說成已備份', { skip: !hasGit }, () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'cadence-git-'));
+  try {
+    git(dir, 'init', '-q');
+    // 公開 repo 的現況：作答紀錄移到私有 repo，三個檔都在 .gitignore 裡
+    writeFileSync(path.join(dir, '.gitignore'), 'data/reviews.jsonl\ndata/checkins.jsonl\ndata/attempts.jsonl\n');
+    git(dir, 'add', '.gitignore');
+    git(dir, 'commit', '-q', '-m', 'init');
+    git(dir, 'branch', 'origin/main');
+    mkdirSync(path.join(dir, 'data'));
+    writeFileSync(path.join(dir, 'data', 'reviews.jsonl'), '{"a":1}\n{"a":2}\n');
+    writeFileSync(path.join(dir, 'data', 'checkins.jsonl'), '{"skill":"CO"}\n');
+
+    assert.equal(uncommittedFacts(dir), null);
+    assert.equal(factsSinceRef(dir), null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('只擋住部分事實檔時，沒被擋的照常計算；已追蹤的檔就算符合 .gitignore 也照常計算', { skip: !hasGit }, () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'cadence-git-'));
+  try {
+    git(dir, 'init', '-q');
+    mkdirSync(path.join(dir, 'data'));
+    const reviews = path.join(dir, 'data', 'reviews.jsonl');
+    writeFileSync(reviews, '{"a":1}\n');
+    git(dir, 'add', 'data/reviews.jsonl');
+    // reviews.jsonl 已追蹤，之後才被加進 .gitignore：git 仍會追蹤它的改動，所以要照算
+    writeFileSync(path.join(dir, '.gitignore'), 'data/reviews.jsonl\ndata/checkins.jsonl\n');
+    git(dir, 'add', '.gitignore');
+    git(dir, 'commit', '-q', '-m', 'init');
+    git(dir, 'branch', 'origin/main');
+
+    appendFileSync(reviews, '{"a":2}\n');
+    writeFileSync(path.join(dir, 'data', 'checkins.jsonl'), '{"skill":"CO"}\n');
+    writeFileSync(path.join(dir, 'data', 'attempts.jsonl'), '{"type":"practice"}\n');
+
+    assert.deepEqual(uncommittedFacts(dir), [
+      { file: 'data/reviews.jsonl', added: 1, removed: 0, untracked: false },
+      { file: 'data/attempts.jsonl', added: 1, removed: 0, untracked: true },
+    ]);
+    assert.deepEqual(factsSinceRef(dir), [
+      { file: 'data/reviews.jsonl', added: 1, removed: 0, newSinceRef: false },
+      { file: 'data/attempts.jsonl', added: 1, removed: 0, newSinceRef: true },
+    ]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
