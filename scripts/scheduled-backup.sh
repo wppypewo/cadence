@@ -77,7 +77,9 @@ fi
 
 # 摘要每個 jsonl 追加了幾行，寫進 commit 訊息
 summary=$(git diff --numstat -- "$DIR" | awk '$3 ~ /\.jsonl$/ { sub(".*/", "", $3); sub("\\.jsonl$", "", $3); printf "%s%s +%s", sep, $3, $1; sep="、" }')
-new=$(git ls-files --others --exclude-standard -- "$DIR" | xargs -n1 basename 2>/dev/null | tr '\n' ' ')
+# 用 sed 取檔名，不用 xargs basename：GNU xargs 沒有輸入時仍會跑一次 basename，
+# 失敗後結束碼 123，在 pipefail 下讓整支腳本中止（CI 的 Linux 上會發生，macOS 不會）
+new=$(git ls-files --others --exclude-standard -- "$DIR" | sed 's#.*/##' | tr '\n' ' ')
 git add -- "$DIR"
 # 帶路徑的 commit 只收這個目錄，別人已經 stage 的檔案不會被一起帶走
 git commit -q -m "chore: 雲端備份 $(date +%F)（排程）${summary:+——$summary}${new:+ 新檔 $new}" -- "$DIR" || fail "git commit 失敗"
