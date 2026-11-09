@@ -121,6 +121,101 @@ test('跨站 POST 在送到 Supabase 前被拒絕', async () => {
   assert.equal(fetched, false);
 });
 
+test('偽造 x-forwarded-host 不能讓跨站 POST 通過 Origin 檢查', async () => {
+  let fetched = false;
+  const res = await run(createCloudHandler({
+    env: ENV,
+    fetchImpl: async () => { fetched = true; throw new Error('不該呼叫'); },
+  }), {
+    method: 'POST', path: 'auth/login',
+    headers: {
+      host: 'cadence.vercel.app',
+      'x-forwarded-host': 'evil.example',
+      origin: 'https://evil.example',
+      'x-forwarded-proto': 'https',
+    },
+    body: { email: 'ricky@example.com', password: 'secret' },
+  });
+  assert.equal(res.statusCode, 403);
+  assert.equal(fetched, false);
+});
+
+test('Host 相符時，就算 x-forwarded-host 寫別的也照常放行', async () => {
+  const res = await run(createCloudHandler({
+    env: ENV,
+    fetchImpl: async () => json({ error_code: 'invalid_credentials' }, { status: 400 }),
+  }), {
+    method: 'POST', path: 'auth/login',
+    headers: {
+      host: 'cadence.vercel.app',
+      'x-forwarded-host': 'other.example',
+      origin: 'https://cadence.vercel.app',
+      'x-forwarded-proto': 'https',
+    },
+    body: { email: 'ricky@example.com', password: 'wrong' },
+  });
+  // 401 代表已經過了 Origin 檢查、真的去問了 Supabase
+  assert.equal(res.statusCode, 401);
+});
+
+test('登入與註冊送給 Supabase 的密碼保留前後空白', async () => {
+  const sent = [];
+  const fetchImpl = async (url, options) => {
+    sent.push(JSON.parse(options.body));
+    if (url.includes('/signup')) return json({ user: { id: 'user-1', email: 'ricky@example.com' }, session: null });
+    return json({
+      access_token: 'a', refresh_token: 'r', expires_in: 3600,
+      user: { id: 'user-1', email: 'ricky@example.com' },
+    });
+  };
+  const headers = { host: 'cadence.vercel.app', origin: 'https://cadence.vercel.app', 'x-forwarded-proto': 'https' };
+  const handler = createCloudHandler({ env: ENV, fetchImpl });
+  const login = await run(handler, {
+    method: 'POST', path: 'auth/login', headers,
+    body: { email: '  ricky@example.com ', password: '  spaced pass  ' },
+  });
+  assert.equal(login.statusCode, 200);
+  const reg = await run(handler, {
+    method: 'POST', path: 'auth/register', headers,
+    body: { email: 'ricky@example.com', password: ' twelve-letters ' },
+  });
+  assert.equal(reg.statusCode, 200);
+  // 信箱仍然 trim，密碼原樣
+  assert.deepEqual(sent, [
+    { email: 'ricky@example.com', password: '  spaced pass  ' },
+    { email: 'ricky@example.com', password: ' twelve-letters ' },
+  ]);
+});
+
+test('密碼全是空白或空字串仍回 400，不送 Supabase', async () => {
+  let fetched = false;
+  const handler = createCloudHandler({
+    env: ENV,
+    fetchImpl: async () => { fetched = true; throw new Error('不該呼叫'); },
+  });
+  for (const password of ['', undefined]) {
+    const res = await run(handler, {
+      method: 'POST', path: 'auth/login',
+      headers: { host: 'cadence.vercel.app', origin: 'https://cadence.vercel.app', 'x-forwarded-proto': 'https' },
+      body: { email: 'ricky@example.com', password },
+    });
+    assert.equal(res.statusCode, 400);
+  }
+  assert.equal(fetched, false);
+});
+
+test('已登入但路徑不存在時回 404，不是 503', async () => {
+  const fetchImpl = async (url) => {
+    if (url.endsWith('/auth/v1/user')) return json({ id: 'user-1', email: 'ricky@example.com' });
+    throw new Error(`未處理的 URL：${url}`);
+  };
+  const res = await run(createCloudHandler({ env: ENV, fetchImpl }), {
+    method: 'GET', path: 'no-such-route', headers: { cookie: 'cadence_access=valid-token' },
+  });
+  assert.equal(res.statusCode, 404);
+  assert.equal(res.json.error, '找不到這個雲端 API');
+});
+
 test('錯誤登入不洩漏 Supabase 原始訊息', async () => {
   const res = await run(createCloudHandler({
     env: ENV,
