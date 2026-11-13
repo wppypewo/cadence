@@ -39,5 +39,6 @@ data/cloud-backup/
 # AI 代理人的本機工作檔（2026-10-26 移出版控，只留在本機）
 /CLAUDE.md
 /AGENTS.md
+/TASKS.md
 /.claude/
 /docs/backlog.md
