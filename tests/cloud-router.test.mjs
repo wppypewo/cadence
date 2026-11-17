@@ -25,7 +25,7 @@ test('雲端登入只把 token 放進 HttpOnly Cookie', async () => {
   };
   const res = await run(createCloudHandler({ env: ENV, fetchImpl }), {
     method: 'POST', path: 'auth/login',
-    headers: { host: 'cadence.vercel.app', origin: 'https://cadence.vercel.app', 'x-forwarded-proto': 'https' },
+    headers: { host: 'cadence-wheat-mu.vercel.app', origin: 'https://cadence-wheat-mu.vercel.app', 'x-forwarded-proto': 'https' },
     body: { email: 'ricky@example.com', password: 'correct horse battery staple' },
   });
 
@@ -113,7 +113,7 @@ test('跨站 POST 在送到 Supabase 前被拒絕', async () => {
     fetchImpl: async () => { fetched = true; throw new Error('不該呼叫'); },
   }), {
     method: 'POST', path: 'auth/login',
-    headers: { host: 'cadence.vercel.app', origin: 'https://evil.example', 'x-forwarded-proto': 'https' },
+    headers: { host: 'cadence-wheat-mu.vercel.app', origin: 'https://evil.example', 'x-forwarded-proto': 'https' },
     body: { email: 'ricky@example.com', password: 'secret' },
   });
   assert.equal(res.statusCode, 403);
@@ -129,7 +129,7 @@ test('偽造 x-forwarded-host 不能讓跨站 POST 通過 Origin 檢查', async 
   }), {
     method: 'POST', path: 'auth/login',
     headers: {
-      host: 'cadence.vercel.app',
+      host: 'cadence-wheat-mu.vercel.app',
       'x-forwarded-host': 'evil.example',
       origin: 'https://evil.example',
       'x-forwarded-proto': 'https',
@@ -147,9 +147,9 @@ test('Host 相符時，就算 x-forwarded-host 寫別的也照常放行', async 
   }), {
     method: 'POST', path: 'auth/login',
     headers: {
-      host: 'cadence.vercel.app',
+      host: 'cadence-wheat-mu.vercel.app',
       'x-forwarded-host': 'other.example',
-      origin: 'https://cadence.vercel.app',
+      origin: 'https://cadence-wheat-mu.vercel.app',
       'x-forwarded-proto': 'https',
     },
     body: { email: 'ricky@example.com', password: 'wrong' },
@@ -168,7 +168,7 @@ test('登入與註冊送給 Supabase 的密碼保留前後空白', async () => {
       user: { id: 'user-1', email: 'ricky@example.com' },
     });
   };
-  const headers = { host: 'cadence.vercel.app', origin: 'https://cadence.vercel.app', 'x-forwarded-proto': 'https' };
+  const headers = { host: 'cadence-wheat-mu.vercel.app', origin: 'https://cadence-wheat-mu.vercel.app', 'x-forwarded-proto': 'https' };
   const handler = createCloudHandler({ env: ENV, fetchImpl });
   const login = await run(handler, {
     method: 'POST', path: 'auth/login', headers,
@@ -196,7 +196,7 @@ test('密碼全是空白或空字串仍回 400，不送 Supabase', async () => {
   for (const password of ['', undefined]) {
     const res = await run(handler, {
       method: 'POST', path: 'auth/login',
-      headers: { host: 'cadence.vercel.app', origin: 'https://cadence.vercel.app', 'x-forwarded-proto': 'https' },
+      headers: { host: 'cadence-wheat-mu.vercel.app', origin: 'https://cadence-wheat-mu.vercel.app', 'x-forwarded-proto': 'https' },
       body: { email: 'ricky@example.com', password },
     });
     assert.equal(res.statusCode, 400);
@@ -222,7 +222,7 @@ test('錯誤登入不洩漏 Supabase 原始訊息', async () => {
     fetchImpl: async () => json({ error_code: 'invalid_credentials', msg: 'Invalid login credentials' }, { status: 400 }),
   }), {
     method: 'POST', path: 'auth/login',
-    headers: { host: 'cadence.vercel.app', origin: 'https://cadence.vercel.app', 'x-forwarded-proto': 'https' },
+    headers: { host: 'cadence-wheat-mu.vercel.app', origin: 'https://cadence-wheat-mu.vercel.app', 'x-forwarded-proto': 'https' },
     body: { email: 'ricky@example.com', password: 'wrong' },
   });
   assert.equal(res.statusCode, 401);
@@ -239,7 +239,7 @@ test('唯一信箱可以建立帳號，但回應不帶密碼或 token', async ()
     },
   }), {
     method: 'POST', path: 'auth/register',
-    headers: { host: 'cadence.vercel.app', origin: 'https://cadence.vercel.app', 'x-forwarded-proto': 'https' },
+    headers: { host: 'cadence-wheat-mu.vercel.app', origin: 'https://cadence-wheat-mu.vercel.app', 'x-forwarded-proto': 'https' },
     body: { email: 'RICKY@example.com', password: 'twelve-letters-or-more' },
   });
   assert.equal(res.statusCode, 200);
@@ -257,7 +257,7 @@ test('其他信箱不能建立帳號，也不會呼叫 Supabase', async () => {
     fetchImpl: async () => { fetched = true; throw new Error('不該呼叫'); },
   }), {
     method: 'POST', path: 'auth/register',
-    headers: { host: 'cadence.vercel.app', origin: 'https://cadence.vercel.app', 'x-forwarded-proto': 'https' },
+    headers: { host: 'cadence-wheat-mu.vercel.app', origin: 'https://cadence-wheat-mu.vercel.app', 'x-forwarded-proto': 'https' },
     body: { email: 'other@example.com', password: 'twelve-letters-or-more' },
   });
   assert.equal(res.statusCode, 403);
@@ -274,7 +274,7 @@ test('重複按建立帳號時，明確告知驗證信已寄出', async () => {
     }, { status: 429 }),
   }), {
     method: 'POST', path: 'auth/register',
-    headers: { host: 'cadence.vercel.app', origin: 'https://cadence.vercel.app', 'x-forwarded-proto': 'https' },
+    headers: { host: 'cadence-wheat-mu.vercel.app', origin: 'https://cadence-wheat-mu.vercel.app', 'x-forwarded-proto': 'https' },
     body: { email: 'ricky@example.com', password: 'twelve-letters-or-more' },
   });
   assert.equal(res.statusCode, 429);
@@ -290,7 +290,7 @@ test('即使 Supabase 驗證成功，非擁有者仍不能登入', async () => {
     }),
   }), {
     method: 'POST', path: 'auth/login',
-    headers: { host: 'cadence.vercel.app', origin: 'https://cadence.vercel.app', 'x-forwarded-proto': 'https' },
+    headers: { host: 'cadence-wheat-mu.vercel.app', origin: 'https://cadence-wheat-mu.vercel.app', 'x-forwarded-proto': 'https' },
     body: { email: 'other@example.com', password: 'twelve-letters-or-more' },
   });
   assert.equal(res.statusCode, 403);
@@ -451,7 +451,7 @@ test('作答的事件與排程合成一次 RPC 寫入，不再分兩支請求', 
     method: 'POST', path: 'review',
     headers: {
       cookie: 'cadence_access=valid-token',
-      host: 'cadence.vercel.app', origin: 'https://cadence.vercel.app', 'x-forwarded-proto': 'https',
+      host: 'cadence-wheat-mu.vercel.app', origin: 'https://cadence-wheat-mu.vercel.app', 'x-forwarded-proto': 'https',
     },
     body: { cardId: sealForTest(ENV.CADENCE_TOKEN_SECRET, 'card-1'), rating: 3 },
   });
@@ -531,7 +531,7 @@ test('沒設考試日期時，推演不讀整份題庫', async () => {
 
 const WRITE_HEADERS = {
   cookie: 'cadence_access=valid-token',
-  host: 'cadence.vercel.app', origin: 'https://cadence.vercel.app', 'x-forwarded-proto': 'https',
+  host: 'cadence-wheat-mu.vercel.app', origin: 'https://cadence-wheat-mu.vercel.app', 'x-forwarded-proto': 'https',
 };
 
 test('分頁讀取一律帶唯一排序，避免超過 1000 列時翻頁重複或漏列', async () => {
