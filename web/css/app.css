@@ -237,6 +237,21 @@ body[data-focus] .main { padding: 0; }
   background: var(--surface); color: var(--text);
   border: 1px solid var(--line-strong); border-radius: var(--r);
   box-shadow: var(--shadow);
+  /* 從觸發鈕那一側長出來：位置在 app.mjs 的 anchor() 算，順手標上 data-side。
+     display／overlay 要 allow-discrete，關閉時才留得住那 100ms 的離場。 */
+  transform-origin: right top;
+  transition: opacity var(--dur-in) var(--ease-out), transform var(--dur-in) var(--ease-out),
+              display var(--dur-in) allow-discrete, overlay var(--dur-in) allow-discrete;
+}
+.menu[data-side="up"] { transform-origin: left bottom; }
+.menu:not(:popover-open) {
+  opacity: 0; transform: translateY(-4px) scale(0.98);
+  transition-duration: var(--dur-out); transition-timing-function: var(--ease-exit);
+}
+.menu[data-side="up"]:not(:popover-open) { transform: translateY(4px) scale(0.98); }
+@starting-style {
+  .menu:popover-open { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  .menu[data-side="up"]:popover-open { transform: translateY(4px) scale(0.98); }
 }
 .menu-list { display: flex; flex-direction: column; margin: 0 calc(-1 * var(--s2)); }
 .menu-item {
@@ -298,6 +313,13 @@ body[data-focus] .main { padding: 0; }
   background: var(--text); color: var(--bg);
   border-radius: var(--r); box-shadow: var(--shadow);
   font-size: var(--t-sm); max-width: min(90vw, 520px);
+  /* 從底部升上來 8px；收掉時往下沉 4px 淡出，比出現快。離場由 app.mjs 標 data-leaving 再移除。 */
+  transition: opacity var(--dur-in) var(--ease-out), transform var(--dur-in) var(--ease-out);
+}
+@starting-style { .toast { opacity: 0; transform: translateY(8px); } }
+.toast[data-leaving] {
+  opacity: 0; transform: translateY(4px);
+  transition-duration: var(--dur-out); transition-timing-function: var(--ease-exit);
 }
 .toast svg { flex: none; width: 16px; height: 16px; }
 .toast .btn { color: var(--bg); border-color: transparent; text-decoration: underline; text-underline-offset: 3px; }
@@ -315,8 +337,23 @@ body[data-focus] .main { padding: 0; }
   padding: 0; border: 1px solid var(--line-strong); border-radius: var(--r);
   background: var(--surface); color: var(--text);
   box-shadow: var(--shadow);
+  /* 關閉狀態（離場）用 --ease-exit；[open] 覆寫成進場。遮罩比面板早一點收完，面板不會懸在空中。 */
+  opacity: 0; transform: translateY(8px);
+  transition: opacity var(--dur-out) var(--ease-exit), transform var(--dur-out) var(--ease-exit),
+              display var(--dur-out) allow-discrete, overlay var(--dur-out) allow-discrete;
 }
-.sheet::backdrop { background: var(--scrim); }
+.sheet[open] {
+  opacity: 1; transform: none;
+  transition-duration: var(--dur-in); transition-timing-function: var(--ease-out);
+}
+@starting-style { .sheet[open] { opacity: 0; transform: translateY(8px); } }
+.sheet::backdrop {
+  background: var(--scrim); opacity: 0;
+  transition: opacity calc(var(--dur-out) * 0.7) var(--ease-exit),
+              display var(--dur-out) allow-discrete, overlay var(--dur-out) allow-discrete;
+}
+.sheet[open]::backdrop { opacity: 1; transition-duration: var(--dur-in); transition-timing-function: var(--ease-out); }
+@starting-style { .sheet[open]::backdrop { opacity: 0; } }
 .sheet-body { display: flex; flex-direction: column; gap: var(--s5); padding: var(--s5) var(--s5) var(--s4); }
 .sheet-body > h2 {
   font: 500 var(--t-xl)/1.1 var(--font-fr);

@@ -167,10 +167,10 @@ export function forecastView(root, ctx) {
     // ---- 反推新卡量 ----
     if (d.solved) out.append(solvedPanel(d.solved));
 
-    // 三個招牌動作：結論的數字滾上來、分布條長出來、各節依序浮上來。
-    motion.countUp(out.querySelector('.fc-big .num'), Math.round(p.expectedRecall), { duration: 1.2 });
-    motion.grow(strip.children, { delay: 0.3, stagger: 0.08 });
-    motion.rise(out.querySelectorAll('.sec'), { delay: 0.2, stagger: 0.06 });
+    // 這是按下「模擬」才算出來的結果：結論數字滾上來（0.5 秒）、分布條長出來，其餘整塊淡入。
+    motion.swapIn(out);
+    motion.countUp(out.querySelector('.fc-big .num'), Math.round(p.expectedRecall));
+    motion.grow(strip.children, { delay: 0.1 });
   }
 
   return () => {

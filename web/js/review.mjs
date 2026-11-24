@@ -254,7 +254,7 @@ export function reviewView(root, ctx) {
     return state.amend ?? state.cards[state.idx] ?? null;
   }
 
-  /** 換卡動畫。計時從新卡真的出現才開始，滑動那半秒不算作答時間。 */
+  /** 換卡動畫。計時從新卡真的出現才開始，換卡那 0.34 秒不算作答時間。 */
   function slide() {
     state.sliding = true;
     motion.slideCard(stage, () => {
@@ -265,7 +265,8 @@ export function reviewView(root, ctx) {
   }
 
   function next() {
-    if (state.sliding) return;
+    // 換卡中再按一次「下一張」：把這次換卡直接播完，不排第二次。
+    if (state.sliding) { motion.finishSlide(stage); return; }
     state.verdict = null;
     state.selfPhase = null;
     if (state.rescope) {
@@ -497,7 +498,8 @@ export function reviewView(root, ctx) {
     // 按住不放的自動重複一律不算：按住 Enter 會一路「下一張」，批改結果連看都沒看到。
     if (ev.repeat) return;
     if (ev.key === 'Escape') return void leaveKey(ev);
-    if (state.sliding) return;
+    // 換卡中的按鍵只用來把動畫播完，不做別的：新卡還沒出現，不能讓這一下落到它身上。
+    if (state.sliding) { motion.finishSlide(stage); return; }
     if (state.amend) {
       const t = ev.target;
       // 焦點在更正評分的按鈕或摘要上時，Enter／Space 是按那顆，不是離開。
@@ -930,7 +932,7 @@ function selfAnswer(card, submit) {
         back.hidden = false;
         reveal.hidden = true;
         rate.hidden = false;
-        motion.rise([back, rate], { y: 8, stagger: 0.08, duration: 0.35 });
+        motion.rise([back, rate]);
         // 焦點落在群組上，不落在第一顆「忘了」：翻面之後順手再按一次 Enter，
         // 落在按鈕上就是一筆「忘了」寫進只增不改的紀錄。
         rate.focus();
@@ -1131,7 +1133,7 @@ function verdictPanel(card, res, next, correct, animate, amending = false) {
     const rest = [...box.children].filter((el) => !el.classList.contains('diff') && !el.classList.contains('verdict-head'));
     queueMicrotask(() => {
       if (letters.length) motion.revealGrade(letters, rest);
-      else motion.rise(rest, { y: 6, stagger: 0.04, duration: 0.3 });
+      else motion.rise(rest);
     });
   }
   // 從 toast 叫回來改評分時，焦點放在評分群組上，不放在第一顆「忘了」：

@@ -75,11 +75,9 @@ export function todayView(root, ctx) {
     );
     if (hero.cast) fillOutlook(hero.cast, alive);
 
-    // 這一頁的三個招牌動作：倒數滾上來、帳本逐列浮出（條一起長）、打卡蓋章。其餘都不動。
-    if (data.daysLeft !== null) motion.countUp(hero.num, Math.abs(data.daysLeft));
-    motion.rise([hero.cap, hero.cast, hero.act, side], { delay: 0.2, stagger: 0.08 });
-    motion.rise(ledger.rows, { y: 8, delay: 0.4, stagger: 0.06, duration: 0.45 });
-    motion.grow(ledger.bars, { delay: 0.6 });
+    // 骨架換成內容只淡入；倒數天數每天都看，直接顯示不滾。帳本的條長出來，說明它是比例。
+    motion.swapIn(box);
+    motion.grow(ledger.bars, { delay: 0.1 });
   }
 }
 
@@ -291,7 +289,7 @@ async function fillOutlook(el, alive) {
     ? `考試那天記得的張數，照最近 ${o.window} 天的節奏推演。差的 ${num(gain)} 張，是每天這 ${num(o.pace)} 題換來的。`
     : `考試那天記得的張數，照最近 ${o.window} 天的節奏推演。`;
   el.replaceChildren(go.el, stop.el, h('p.cast-note', { text: note }));
-  motion.grow([go.fill, stop.fill], { delay: 0.1, stagger: 0.12 });
+  motion.grow([go.fill, stop.fill], { delay: 0.1, stagger: 0.08 });
 }
 
 const WORD_TIER = {

@@ -29,6 +29,7 @@ import { practiceView } from './practice.mjs';
 import { mockView } from './mock.mjs';
 import { KIND_ZH } from './kinds.mjs';
 import { resourcesView } from './resources.mjs';
+import { pageIn } from './motion.mjs';
 
 // scoped 標的是「這一頁的內容真的會跟著範圍選單的題型／程度變」，也只有這幾頁的頁首放得出那顆範圍鈕。
 // 沒標的兩頁各有理由：「今天」問的是今天整體該做什麼，本來就要看全部四科；
@@ -245,9 +246,14 @@ function anchor(panel, btn, dir = 'down') {
     // beforetoggle 時面板還是 display:none，量不到尺寸。先用 inline 樣式撐開、藏起來量一次，
     // 同一段同步程式裡收回，中間不會繪製。沒用 rAF 等顯示後再量：分頁在背景時 rAF 不跑，面板會卡在左上角。
     // 上一次留下的 left 會壓縮可用寬度、量出比較窄的面板，先歸零。
-    Object.assign(panel.style, { top: '0px', left: '0px', right: 'auto', bottom: 'auto', visibility: 'hidden', display: 'block' });
-    const { width: w, height: hh } = panel.getBoundingClientRect();
-    Object.assign(panel.style, { display: '', visibility: '' });
+    // 尺寸用 offsetWidth/Height：關閉狀態帶 scale(0.98) 的進場起點，getBoundingClientRect 會少量 2%。
+    // 這次量測會留下一份算好的樣式，打開時 transition 從它起跳（@starting-style 反而用不上），
+    // 所以 data-side 要在收回 display 之前標好，再讀一次樣式定案：起點才是正確那一側的位移。
+    // 量測期間 transition 先關掉：兩次強制計算之間姿勢從 -4px 換成 +4px，開著的話會自己起一段過渡，
+    // 打開時從那段的中途接手，等於從錯的一側長出來（無頭 Chrome 實測）。
+    Object.assign(panel.style, { top: '0px', left: '0px', right: 'auto', bottom: 'auto', visibility: 'hidden', display: 'block', transition: 'none' });
+    const w = panel.offsetWidth;
+    const hh = panel.offsetHeight;
     const r = btn.getBoundingClientRect();
     const gap = 6;
     const vw = window.innerWidth;
@@ -258,6 +264,10 @@ function anchor(panel, btn, dir = 'down') {
     const fitsDown = below - hh >= gap;
     const up = dir === 'up' ? fitsUp || (!fitsDown && above > below) : !fitsDown && (fitsUp || above > below);
     const top = up ? r.top - gap - hh : r.bottom + gap;
+    // 進場從按鈕那一側長出來（app.css 的 .menu[data-side]）。
+    panel.dataset.side = up ? 'up' : 'down';
+    void getComputedStyle(panel).transform;
+    Object.assign(panel.style, { display: '', visibility: '', transition: '' });
     const left = dir === 'up' ? r.left : r.right - w;
     panel.style.top = `${Math.max(gap, Math.min(top, vh - hh - gap))}px`;
     panel.style.left = `${Math.max(gap, Math.min(left, vw - w - gap))}px`;
@@ -492,6 +502,8 @@ function go(id, { force = false } = {}) {
   state.cleanup = page.view(els.main, ctx) ?? null;
   els.main.focus({ preventScroll: true });
   window.scrollTo(0, 0);
+  // 舊頁已經拆掉，新頁淡入、上移 4px。各頁自己不再做進場，只在資料到了時淡入內容。
+  pageIn(els.main);
 }
 
 /** 專注模式：導覽整條收起來。只有複習頁在出卡時會開。 */
@@ -560,7 +572,8 @@ function openSettings({ focus = null } = {}) {
   for (const stale of document.querySelectorAll('dialog.sheet')) stale.remove();
 
   const dlg = h('dialog.sheet');
-  const dismiss = () => { dlg.close(); dlg.remove(); };
+  // close() 之後留 150ms 給 app.css 的離場（100ms）播完再拆；這段時間內再開設定，開頭那道掃除會先把它拿掉。
+  const dismiss = () => { dlg.close(); setTimeout(() => dlg.remove(), 150); };
   const retention = h('input', {
     type: 'range', min: '0.7', max: '0.98', step: '0.01',
     value: String(state.settings.desiredRetention),
@@ -714,16 +727,27 @@ function toast(message, tone = 'info', action = null, { persist = false } = {}) 
       ? h('button.btn.btn-quiet.btn-sm', {
         type: 'button',
         text: action.label,
-        onclick: () => { node.remove(); action.run(); },
+        onclick: () => { leave(node); action.run(); },
       })
       : null);
   els.toasts.append(node);
   // 帶按鈕的提示要留得夠久才按得到；滑鼠或焦點還停在上面時不收，否則會在按下去前消失。
   const close = () => {
     if (node.matches(':hover, :focus-within')) setTimeout(close, 1000);
-    else node.remove();
+    else leave(node);
   };
   if (!persist) setTimeout(close, action ? 10000 : 4200);
   // 回傳關閉函式：呼叫端要能在提示過期時（例如下一題已經作答）先收掉它。
-  return () => node.remove();
+  return () => leave(node);
+}
+
+/**
+ * toast 離場：標 data-leaving 播 100ms 的下沉淡出，播完才移除。
+ * 離場中設 inert，按鈕不能再按、讀屏也不再念；重複呼叫只算一次。
+ */
+function leave(node) {
+  if (!node.isConnected || node.dataset.leaving !== undefined) return;
+  node.dataset.leaving = '';
+  node.inert = true;
+  setTimeout(() => node.remove(), 150);
 }
