@@ -127,12 +127,19 @@ function heroBlock(data, ctx) {
   const top = left === null
     ? h('p.hero-none', { text: '還沒設考試日期' })
     : h('p.hero-num', {}, numEl);
-  const cap = h('p.hero-cap', {
-    text: left === null
-      ? '在「更多 › 設定」填上，這裡會變成倒數。'
-      // 不寫死哪一級：B1 考完後這個日期會改成 B2 的，寫死會讓倒數掛錯考試名。
-      : left >= 0 ? `天後考試，${zhDate(data.examDate)}` : '天前考完了。記得到設定裡改成下一場的日期。',
+  // 沒日期或已經考完時，說明旁邊直接放一顆鍵打開設定、游標停在考試日期上，
+  // 不叫人自己去「更多 › 設定」裡找。
+  const fixDate = (label) => h('button.btn.btn-sm.hero-fix', {
+    type: 'button',
+    text: label,
+    onclick: () => ctx.openSettings({ focus: 'examDate' }),
   });
+  const cap = left === null
+    ? h('p.hero-cap', {}, '填上考試日期，這裡會變成倒數。', fixDate('設定考試日期'))
+    // 不寫死哪一級：B1 考完後這個日期會改成 B2 的，寫死會讓倒數掛錯考試名。
+    : left >= 0
+      ? h('p.hero-cap', { text: `天後考試，${zhDate(data.examDate)}` })
+      : h('p.hero-cap', {}, '天前考完了。', fixDate('改成下一場'));
   // 先佔住一行，模擬算完再換字；不佔的話那一行晚到會把主按鈕往下推。
   const cast = left !== null && left >= 0
     ? h('div.hero-cast', { 'aria-busy': 'true' },
@@ -468,7 +475,7 @@ function ledgerRow(task, ctx, onChange) {
     paintMeter(task, meter, bar);
     paintDue(task, due);
     if (!check) return;
-    const stamped = paintCheck(task, check, () => toggleCheck(task, ctx, (next) => {
+    const stamped = paintCheck(task, check, (ev) => toggleCheck(task, ctx, ev.currentTarget, (next) => {
       paint(true);
       onChange(next);
     }));
@@ -574,13 +581,24 @@ function paintCheck(task, cell, onToggle) {
   return stamp;
 }
 
-async function toggleCheck(task, ctx, done) {
+// 送出中的科目。連按兩下會送出「打卡、取消」兩筆，結果跟按一下相反。
+const checking = new Set();
+
+async function toggleCheck(task, ctx, btn, done) {
+  if (checking.has(task.id)) return;
+  checking.add(task.id);
+  btn.disabled = true;
+  btn.setAttribute('aria-busy', 'true');
   let data;
   try {
     data = await api.checkin({ skill: task.id, done: !task.done });
   } catch (err) {
-    ctx.toast(err.message, 'bad');
+    btn.disabled = false;
+    btn.removeAttribute('aria-busy');
+    if (!err.expired) ctx.toast(`${task.done ? '取消打卡' : '打卡'}沒有存到：${err.message}`, 'bad');
     return;
+  } finally {
+    checking.delete(task.id);
   }
   // 用伺服器回來的那一份覆蓋手上的 task，不自己把 done 反過來寫：
   // recent 與 lastDay 只有後端算得出來，猜的話畫面會跟事實檔分岔。

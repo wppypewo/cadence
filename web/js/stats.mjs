@@ -1,6 +1,6 @@
 /**
  * 進度頁的「現況」。這一頁的存在理由是回答四個人腦記不住的問題：
- *   1. 我到底練到哪了？（各題型的已掌握／學過／未學）
+ *   1. 我到底練到哪了？（各題型的記穩／學過／未學）
  *   2. 我有沒有在練？（每日熱力圖與連續天數）
  *   3. 我哪裡最弱？（錯最多次的卡，附上最近一次是怎麼錯的）
  *   4. 我未來給自己排了多少工作？（到期量預估）
@@ -86,7 +86,7 @@ export function statsView(root, ctx) {
     const accuracy = s.todayReviews ? s.todayCorrect / s.todayReviews : null;
 
     const figs = [
-      ['已掌握', s.matureCards, '張', `全部 ${num(s.totalCards)} 張`],
+      ['記穩', s.matureCards, '張', `全部 ${num(s.totalCards)} 張`],
       ['學過', s.seenCards, '張', `未學 ${num(s.newCards)} 張`],
       ['到期', s.dueNow, '張', s.dueNow ? '今天該做' : '沒有欠帳'],
       ['連續', s.streakDays, '天', '卡片、實作、打卡都算'],
@@ -156,14 +156,14 @@ function kindsBlock(d) {
     seen.style.width = `${((k.seen - k.mature) / k.total) * 100}%`;
     list.append(h('div.krow', {},
       h('span.name', { text: KIND_ZH[k.kind] ?? k.kind }),
-      h('div.meter', { role: 'img', 'aria-label': `${KIND_ZH[k.kind] ?? k.kind}：已掌握 ${k.mature}，學過 ${k.seen}，共 ${k.total}` }, mature, seen),
+      h('div.meter', { role: 'img', 'aria-label': `${KIND_ZH[k.kind] ?? k.kind}：記穩 ${k.mature}，學過 ${k.seen}，共 ${k.total}` }, mature, seen),
       h('span.n', {}, h('b', { text: num(k.mature) }), ` / ${num(k.seen)} / ${num(k.total)}`),
     ));
   }
   const legend = h('div.legend', {},
-    swatch('已掌握', 'var(--accent)'), swatch('學過但未穩', 'var(--accent-mid)'), swatch('未學', 'var(--sunken)'),
+    swatch('記穩', 'var(--accent)'), swatch('學過但未穩', 'var(--accent-mid)'), swatch('未學', 'var(--sunken)'),
   );
-  return section('各題型', '已掌握 / 學過 / 全部', [list, legend]);
+  return section('各題型', '記穩 / 學過 / 全部', [list, legend]);
 }
 
 function activityBlock(d) {
@@ -204,7 +204,7 @@ function upcomingBlock(d) {
       { height: 140, title: '未來 30 天每日到期量' },
     ));
   }
-  return section('未來的工作量', 'FSRS 已經排好的複習', out);
+  return section('未來的工作量', '已經排好的複習', out);
 }
 
 function weakBlock(d, ctx) {

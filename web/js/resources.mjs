@@ -5,13 +5,10 @@
 
 import { h, clear, icon } from './dom.mjs';
 import { api } from './net.mjs';
+import { SKILL_ZH } from './kinds.mjs';
 
-const SKILLS = {
-  CE: '閱讀',
-  PE: '寫作',
-  CO: '聽力',
-  PO: '口說',
-};
+// 四科簡稱跟片段標籤共用 kinds.mjs 那一份，兩處各寫一份遲早會走樣。
+const SKILLS = SKILL_ZH;
 
 export function resourcesView(root, ctx) {
   const box = h('div.resources-page');

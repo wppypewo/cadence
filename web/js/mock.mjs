@@ -2,6 +2,7 @@
 
 import { h, clear, announce } from './dom.mjs';
 import { api } from './net.mjs';
+import { SKILL_ZH } from './kinds.mjs';
 import { workbenchHead, donePanel, field, afterSection, skillName } from './practice.mjs';
 import * as motion from './motion.mjs';
 
@@ -22,11 +23,11 @@ export function mockView(root, ctx) {
 
   const scores = h('div.mock-scores');
   for (const skill of SKILLS) {
-    const got = h('input.input', { type: 'number', min: 0, max: 25, step: 0.5, inputmode: 'decimal', required: true, 'aria-label': `${skill} 得分`, oninput: update });
+    const got = h('input.input', { type: 'number', min: 0, max: 25, step: 0.5, inputmode: 'decimal', required: true, 'aria-label': `${SKILL_ZH[skill]}得分`, oninput: update });
     // 滿分可以改，得分的上限要跟著改，不然滿分填 50 時瀏覽器會擋下 26 以上的得分。
-    const max = h('input.input', { type: 'number', min: 0.5, max: 100, step: 0.5, value: '25', inputmode: 'decimal', required: true, 'aria-label': `${skill} 滿分`, oninput: () => { got.max = max.value || '100'; update(); } });
+    const max = h('input.input', { type: 'number', min: 0.5, max: 100, step: 0.5, value: '25', inputmode: 'decimal', required: true, 'aria-label': `${SKILL_ZH[skill]}滿分`, oninput: () => { got.max = max.value || '100'; update(); } });
     inputs.set(skill, { got, max });
-    scores.append(h('div.mock-score', {}, h('strong', { text: skill }), got, h('span.of', { text: '/' }), max));
+    scores.append(h('div.mock-score', {}, h('strong', { text: SKILL_ZH[skill] }), got, h('span.of', { text: '/' }), max));
   }
 
   box.append(
@@ -38,8 +39,8 @@ export function mockView(root, ctx) {
       h('ol.baseline-flow', { 'aria-label': '基準模考流程' },
         ...SKILLS.map((skill, index) => h('li.baseline-step', {},
           h('span.num', { 'aria-hidden': 'true', text: String(index + 1) }),
-          h('div', {}, h('strong', { text: skill }), h('small', { text: baselineInstruction(skill) })),
-          h('button.btn.btn-sm', { type: 'button', text: `開 ${skill} 工作台`, onclick: () => ctx.openPractice(skill) }),
+          h('div', {}, h('strong', { text: `${skill} ${skillName(skill)}` }), h('small', { text: baselineInstruction(skill) })),
+          h('button.btn.btn-sm', { type: 'button', text: `開${skillName(skill)}工作台`, onclick: () => ctx.openPractice(skill) }),
         )),
       ),
       h('form.practice-form', { onsubmit: save },

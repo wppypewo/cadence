@@ -5,6 +5,8 @@
 
 import { isCloudRuntime } from './runtime.mjs';
 
+export const SESSION_EXPIRED = '登入已過期。';
+
 async function call(method, path, { query, body } = {}) {
   const url = new URL(path, location.origin);
   for (const [k, v] of Object.entries(query ?? {})) {
@@ -38,8 +40,18 @@ async function call(method, path, { query, body } = {}) {
     throw new Error(`伺服器回了不是 JSON 的東西（HTTP ${res.status}）`);
   }
   if (!res.ok) {
-    const err = new Error(data?.error ?? `HTTP ${res.status}`);
+    // 登入過期（雲端版）：每一頁各自 toast 後端那句「請重新登入」，畫面上卻沒有登入的入口。
+    // 改成在這裡統一講清楚，並廣播給外殼放一顆「重新登入」。登入相關端點自己會處理 401，不廣播。
+    const expired = res.status === 401 && !path.startsWith('/api/auth/') && path !== '/api/session';
+    const message = expired
+      ? (method === 'GET' ? SESSION_EXPIRED : `${SESSION_EXPIRED}這一筆沒有存到。`)
+      : data?.error ?? `HTTP ${res.status}`;
+    const err = new Error(message);
     err.status = res.status;
+    if (expired) {
+      err.expired = true;
+      globalThis.dispatchEvent?.(new Event('cadence:session-expired'));
+    }
     throw err;
   }
   return data;
