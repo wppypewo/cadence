@@ -17,7 +17,7 @@
  */
 
 import { h, clear, icon, announce } from './dom.mjs';
-import { api } from './net.mjs';
+import { api, SESSION_EXPIRED } from './net.mjs';
 import { requireSession, signOut } from './auth.mjs';
 import { isCloudRuntime } from './runtime.mjs';
 import { todayView } from './today.mjs';
@@ -74,6 +74,10 @@ const state = {
   practiceSkill: 'PE',
   // 從哪一頁進工作台，返回鈕與導覽高亮就回哪一頁；模考頁進來的若被送回今天，填到一半的分數就找不回來。
   practiceFrom: 'today',
+  // 從哪一頁進複習。「回…」與 Esc 都回這一頁。
+  reviewFrom: 'today',
+  // 複習頁自己處理換範圍（見 review.mjs），其他頁照舊整頁重畫。
+  scopeHook: null,
   reviewPreset: null,
   // 今天頁與帳本指定的題型，只管這一輪複習，不寫回 scope。
   // null 是沒指定、照使用者的範圍；[] 是全部題型。離開複習頁或自己改了範圍就作廢。
@@ -92,6 +96,7 @@ const ctx = {
   toast,
   go,
   saveSettings,
+  openSettings,
   openPractice,
   startReview,
   takeReviewPreset,
@@ -102,6 +107,11 @@ const ctx = {
     const page = PAGES.find((p) => p.id === state.practiceFrom) ?? PAGES[0];
     return { id: page.id, label: page.label };
   },
+  get reviewFrom() {
+    const page = PAGES.find((p) => p.id === state.reviewFrom) ?? PAGES[0];
+    return { id: page.id, label: page.label };
+  },
+  onScopeChange(fn) { state.scopeHook = typeof fn === 'function' ? fn : null; },
 };
 
 applyStoredTheme();
@@ -133,6 +143,15 @@ async function boot() {
   const session = await requireSession();
   if (!session) return;
   buildShell();
+  // 登入過期：常駐一則帶「重新登入」的提示。重新載入就會回到登入畫面；
+  // 練習工作台與模考的草稿都在 localStorage，登入回來還在。
+  window.addEventListener('cadence:session-expired', () => {
+    if (els.reauth?.isConnected) return;
+    const close = toast(`${SESSION_EXPIRED}重新登入後，剛才沒存到的那一筆要再做一次。`, 'bad',
+      { label: '重新登入', run: () => location.reload() }, { persist: true });
+    els.reauth = els.toasts.lastElementChild;
+    els.closeReauth = close;
+  });
   window.addEventListener('hashchange', () => {
     const id = hashPage();
     // 不認得的 hash 不換頁，只把網址改回目前這一頁。replaceState 不會再觸發 hashchange。
@@ -245,6 +264,10 @@ function anchor(panel, btn, dir = 'down') {
   });
 }
 
+/**
+ * 雲端題庫一張卡都沒有時（summary 的 cloudReady 為 false，見 src/cloud/data.mjs）。
+ * 讀取失敗不會走到這裡，那會直接丟錯誤；所以這一頁只說「題庫是空的」，不說「讀不到」。
+ */
 function renderCloudWaiting() {
   state.page = 'cloud-setup';
   els.scope.hidden = true;
@@ -253,15 +276,11 @@ function renderCloudWaiting() {
   clear(els.main);
   els.main.dataset.page = 'cloud-setup';
   els.main.append(h('section.cloud-wait', {},
-    h('h1', { text: '登入與雲端資料庫已接通' }),
-    h('p', { text: '目前仍是空庫。下一階段會先搬入題庫與複習紀錄，核對無誤後才啟用完整學習頁面。' }),
-    h('div.cloud-checks', {},
-      h('p', { text: '帳號驗證　已啟用' }),
-      h('p', { text: '匿名存取　已封鎖' }),
-      h('p', { text: '個人資料　尚未上傳' }),
-    ),
+    h('h1', { text: '雲端題庫還是空的' }),
+    h('p', { text: '帳號已經登入，但雲端資料庫裡還沒有任何卡片。題庫匯入之後重新整理，就能開始複習。' }),
+    h('button.btn.btn-primary', { type: 'button', text: '重新整理', onclick: () => location.reload() }),
   ));
-  document.title = '雲端設定 · cadence';
+  document.title = '題庫是空的 · cadence';
   els.main.focus();
 }
 
@@ -327,15 +346,23 @@ function scopeMenu() {
   btn.popoverTargetElement = panel;
   if (isNarrowed()) btn.dataset.narrowed = '';
   anchor(panel, btn, 'down');
-  const before = JSON.stringify(state.scope);
+  let before = JSON.stringify(state.scope);
   panel.addEventListener('toggle', (ev) => {
     if (ev.newState !== 'closed') return;
     if (JSON.stringify(state.scope) === before) return;
     // 自己動了勾選，就是要照自己的範圍練，今天頁指定的那一輪到此為止。
     state.kindsOverride = null;
     refreshBadge();
-    // 複習頁換範圍就是整批重抓，正在看的那張卡會直接換掉；不說一聲會像是卡被跳過了。
-    if (state.page === 'review') toast('已換範圍，這一批卡依新範圍重抓');
+    // 複習頁自己決定什麼時候重抓：正在作答時等這張答完，不把打到一半的答案整頁洗掉。
+    if (state.page === 'review' && state.scopeHook) {
+      // 頁面不重畫，按鈕上的字與比較基準要自己更新。
+      before = JSON.stringify(state.scope);
+      label.textContent = scopeLabel();
+      if (isNarrowed()) btn.dataset.narrowed = '';
+      else delete btn.dataset.narrowed;
+      state.scopeHook();
+      return;
+    }
     go(state.page, { force: true });
   });
   document.body.append(panel);
@@ -435,6 +462,10 @@ function go(id, { force = false } = {}) {
 
   if (typeof state.cleanup === 'function') state.cleanup();
   state.cleanup = null;
+  // 從工作台進複習的話回工作台的來源頁：工作台本身是由別頁帶科目進來的，不是可以直接回去的地方。
+  if (page.id === 'review' && state.page && state.page !== 'review') {
+    state.reviewFrom = state.page === 'practice' ? state.practiceFrom : state.page;
+  }
   state.page = page.id;
   // 指定題型只活在那一輪複習裡；去了別頁再回來，就回到使用者自己的範圍。
   if (page.id !== 'review' && state.kindsOverride) {
@@ -522,7 +553,7 @@ async function exportBackup() {
 
 /* ── 設定 ─────────────────────────────────────────────────────── */
 
-function openSettings() {
+function openSettings({ focus = null } = {}) {
   // 不靠 dialog 的 close 事件清場。實測這台的 Electron 殼（Chrome 148）
   // 呼叫 close() 之後不會派送 close，靠它 remove 就會在 DOM 裡積一疊關著的 dialog。
   // 關的地方自己 remove，另外開新的之前先掃掉舊的——Esc 關掉的那種只能靠這一道。
@@ -560,27 +591,33 @@ function openSettings() {
 
   const exam = h('input.input', { type: 'date', value: state.settings.examDate ?? '' });
 
-  const err = h('p.field-error', { text: '', hidden: true });
+  const err = h('p.field-error', { text: '', hidden: true, role: 'alert' });
+  const submit = h('button.btn.btn-primary', { type: 'submit', text: '儲存' });
   const form = h('form.sheet-body', { method: 'dialog' },
     h('h2', { text: '設定' }),
 
     field('目標記憶率', h('div.range-row', {}, retention, retOut),
-      '每張卡排到複習那天時，預期還記得的機率。調高，複習更密、量更大；調低，省時間但忘得多。FSRS 預設 0.90。'),
+      '每張卡排到複習那天時，預期還記得的機率。調高，複習更密、量更大；調低，省時間但忘得多。預設 90%。'),
 
     field('每天新卡上限', freshRow,
       '一天最多學幾張新卡。學過的卡之後幾週都會回來，不設上限時到期量會跟著變大；會多多少，「進度 › 推演」算得出來。'),
 
     field('考試日期', exam,
-      '「進度 › 推演」的預設日期。還沒報名就留空。'),
+      '今天頁的倒數與「進度 › 推演」都用這個日期。還沒報名就留空。'),
 
     err,
     h('div.sheet-foot', {},
       h('button.btn.btn-quiet', { type: 'button', text: '取消', onclick: dismiss }),
-      h('button.btn.btn-primary', { type: 'submit', text: '儲存' }),
+      submit,
     ),
   );
   form.addEventListener('submit', async (ev) => {
     ev.preventDefault();
+    // 雲端慢的時候按下去畫面要有變化，不然會再按一次，或以為沒反應就按了取消。
+    if (submit.disabled) return;
+    submit.disabled = true;
+    submit.textContent = '儲存中…';
+    err.hidden = true;
     try {
       await saveSettings({
         desiredRetention: Number(retention.value),
@@ -594,13 +631,18 @@ function openSettings() {
       refreshBadge();
       toast('設定已儲存', 'ok');
     } catch (e) {
-      err.textContent = e.message;
+      err.textContent = `設定沒有存到：${e.message}`;
       err.hidden = false;
+    } finally {
+      submit.disabled = false;
+      submit.textContent = '儲存';
     }
   });
   dlg.append(form);
   document.body.append(dlg);
   dlg.showModal();
+  // 從今天頁的「設定考試日期」進來時，直接停在考試日期欄位，不必自己找。
+  if (focus === 'examDate') exam.focus();
 }
 
 /**
@@ -659,7 +701,9 @@ function themeSwitch() {
  * 提示條。只用在「操作結果」與錯誤，不用在慶祝。
  * aria-live 用 polite，不打斷螢幕閱讀器正在念的批改結果。
  */
-function toast(message, tone = 'info', action = null) {
+function toast(message, tone = 'info', action = null, { persist = false } = {}) {
+  // 登入過期時常駐提示已經講了，各頁再丟一則同樣的話只是重複。
+  if (els.reauth?.isConnected && String(message).startsWith(SESSION_EXPIRED)) return () => {};
   // 不在 toast 本身掛 role="status"：live region 要先存在、內容後變才保證會念，
   // 每次新插一個帶 role 的節點，部分報讀器（NVDA、VoiceOver）會直接漏掉。改走常駐的 #live。
   announce(message);
@@ -679,7 +723,7 @@ function toast(message, tone = 'info', action = null) {
     if (node.matches(':hover, :focus-within')) setTimeout(close, 1000);
     else node.remove();
   };
-  setTimeout(close, action ? 10000 : 4200);
+  if (!persist) setTimeout(close, action ? 10000 : 4200);
   // 回傳關閉函式：呼叫端要能在提示過期時（例如下一題已經作答）先收掉它。
   return () => node.remove();
 }

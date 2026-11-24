@@ -26,8 +26,12 @@ export function forecastView(root, ctx) {
   let dead = false;
 
   const form = h('form.fc-form', { onsubmit: (ev) => { ev.preventDefault(); run(); } });
-  const saved = ctx.settings?.examDate ?? null;
-  const exam = input({ type: 'date', value: saved ?? defaultExam(), required: true });
+  // 設定裡的日期已經過了（考完還沒改成下一場）就當作沒設，不然帶入舊日期、按下去必定失敗。
+  const today = isoDay(new Date());
+  const stored = ctx.settings?.examDate ?? null;
+  const expired = Boolean(stored && stored < today);
+  const saved = expired ? null : stored;
+  const exam = input({ type: 'date', value: saved ?? defaultExam(), min: today, required: true });
   // 只有使用者自己動過這一格才寫回設定。原本只要值跟設定不同就存，
   // 沒設考試日期的人開頁按一次推演，60 天後這個暫代值就悄悄變成「今天」頁的倒數。
   let examTouched = false;
@@ -37,7 +41,7 @@ export function forecastView(root, ctx) {
   const target = input({ type: 'number', min: 50, max: 99, step: 1, value: 85 });
 
   form.append(
-    field('考試日期', exam, examHint(saved)),
+    field('考試日期', exam, expired ? '設定裡的考試日期已經過了，先用 60 天後；改了日期再推演才會記住' : examHint(saved)),
     field('每天最多做', limit, '含新卡'),
     // 設定成不設上限時，這一格的預設 15 不是設定值，要講明，不然會被當成「照設定推演」。
     field('每天學新卡', fresh, ctx.settings?.dailyNewLimit === null ? '設定是不設上限，這裡填預計每天學幾張' : null),
@@ -97,7 +101,7 @@ export function forecastView(root, ctx) {
           run: () => ctx.saveSettings({ examDate: before })
             .then(() => {
               // 只改回設定的話，欄位與下面的推演結果都還停在剛才那個日期，畫面上會有兩個日子。
-              exam.value = before ?? defaultExam();
+              exam.value = before && before >= isoDay(new Date()) ? before : defaultExam();
               examTouched = false;
               paintHint(before);
               ctx.toast(before ? `考試日期改回 ${before}，重新推演中` : '考試日期改回未設定，重新推演中', 'ok');
@@ -150,7 +154,7 @@ export function forecastView(root, ctx) {
       if (n / totalCards > 0.06) seg.textContent = num(n);
       strip.append(seg);
     }
-    out.append(section('考試當天，這些卡的狀態', '依 FSRS 推算的可提取度分組', [
+    out.append(section('考試當天，這些卡的狀態', '依考試那天還記得的機率分組', [
       strip,
       h('div.legend', {},
         swatch('記得牢（≥90%）', 'var(--ok)'),
@@ -213,7 +217,7 @@ function verdict(p, inputs, targetRate) {
   const asm = h('div.assumptions', {}, h('span.chip', { text: '模型假設' }));
   asm.append(p.ratingModel === 'observed'
     ? h('span.chip', { text: `答對評分：${inputs.ratingSample} 筆，樣本足夠時分題型` })
-    : h('span.chip', { dataset: { kind: 'assumed' }, text: '評分分布：歷史不足，一律當作 Good' }));
+    : h('span.chip', { dataset: { kind: 'assumed' }, text: '評分分布：歷史不足，一律當作「想起來了」' }));
   asm.append(...firstRatingChips(inputs));
   asm.append(inputs.secondsSource === 'observed'
     ? h('span.chip', { text: `時間：中位數 ${inputs.secondsPerCard} 秒，樣本足夠時分題型` })
@@ -272,7 +276,7 @@ function firstRatingChips(inputs) {
     const who = assumed.length <= 3 ? assumed.map((kind) => KIND_ZH[kind] ?? kind).join('、')
       : !sampled.length ? '各題型'
         : `其餘 ${assumed.length} 種題型`;
-    chips.push(h('span.chip', { dataset: { kind: 'assumed' }, text: `首次作答：${who}不足 ${min} 張，當作 Good` }));
+    chips.push(h('span.chip', { dataset: { kind: 'assumed' }, text: `首次作答：${who}不足 ${min} 張，當作「想起來了」` }));
   }
   return chips;
 }
@@ -435,6 +439,10 @@ function examHint(saved) {
 
 /** 沒設考試日期時，預設兩個月後——夠遠到看得出排程效果，夠近到還有壓力。 */
 function defaultExam() {
-  const d = new Date(Date.now() + 60 * 86400000);
+  return isoDay(new Date(Date.now() + 60 * 86400000));
+}
+
+/** 本地時區的 YYYY-MM-DD，跟 date 欄位的值同一種寫法，可以直接用字串比大小。 */
+function isoDay(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }

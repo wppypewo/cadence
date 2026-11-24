@@ -142,6 +142,7 @@
 }
 .hero-none { font: italic 400 var(--t-2xl)/1.2 var(--font-fr); color: var(--text-muted); }
 .hero-cap { margin-top: var(--s3); font-size: var(--t-lg); color: var(--text-muted); }
+.hero-fix { margin-left: var(--s3); vertical-align: middle; }
 
 /*
  * 推演：兩列對照「照最近的節奏」與「今天起停下」，考試那天各記得幾張。

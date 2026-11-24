@@ -228,7 +228,7 @@ function verbRow(entry, out, back) {
     h('span.tag', { text: '動詞變位' }),
     f.level ? h('span.lv', { text: f.level }) : null,
     entry.seen
-      ? h('span.s.num', { text: `已學 ${entry.seen}/${entry.count} 張` })
+      ? h('span.s.num', { text: `學過 ${entry.seen}/${entry.count} 張` })
       : h('span.s.dim', { text: '未學過' }),
     openHint(),
   );
@@ -250,7 +250,7 @@ function vocabRow(entry, out, back) {
     h('span.tag', { text: VOCAB_KINDS.filter((k) => entry.kinds.has(k)).map((k) => KIND_ZH[k]).join('・') }),
     f.level ? h('span.lv', { text: f.level }) : null,
     entry.seen
-      ? h('span.s.num', { text: `已學 ${entry.seen}/${entry.count} 個方向` })
+      ? h('span.s.num', { text: `學過 ${entry.seen}/${entry.count} 個方向` })
       : h('span.s.dim', { text: '未學過' }),
   );
 
@@ -300,7 +300,11 @@ function hitRow({ card, state }, out, back, q = '') {
     h('span.tag', { text: KIND_ZH[card.kind] ?? card.kind }),
     f.level ? h('span.lv', { text: f.level }) : null,
     state
-      ? h('span.s.num', { text: `穩定 ${state.stability.toFixed(1)} 天・${relDays(daysTo(state.due))}到期` })
+      ? h('span.s.num', {
+          // stability 是「從上次複習起，記得的機率掉到九成要幾天」，直接寫成白話，不丟術語給人。
+          title: '從上次複習起算，大約這麼多天內還有九成把握想得起來',
+          text: `記得住約 ${fmtDays(state.stability)} 天・${relDays(daysTo(state.due))}到期`,
+        })
       : h('span.s.dim', { text: '未學過' }),
   );
 
@@ -459,4 +463,9 @@ function hint(example) {
 
 function daysTo(iso) {
   return Math.round((new Date(iso) - Date.now()) / 86_400_000);
+}
+
+/** 記憶天數：不到 10 天留一位小數（0.4 天跟 1 天差很多），之後取整數。 */
+function fmtDays(d) {
+  return d < 10 ? d.toFixed(1).replace(/\.0$/, '') : String(Math.round(d));
 }

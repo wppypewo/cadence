@@ -45,6 +45,7 @@ export function practiceView(root, ctx) {
   const save = h('button.btn', { type: 'button', text: '儲存這次練習', onclick: saveAttempt });
   const status = h('p.field-error', { role: 'alert', hidden: true });
   const specific = specificTool(skill);
+  const DRAFT_KEY = `cadence.draft.form.${skill}`;
 
   // 有專屬工具（草稿、音檔、錄音）的科目排成兩欄：左邊做、右邊記。
   // 閱讀理解沒有工具，只剩表單，單欄就好，硬排兩欄會留下一整欄空白。
@@ -59,7 +60,7 @@ export function practiceView(root, ctx) {
     // dataset 的值會被轉成字串，傳 null 會變成 data-solo="null"，所以整個屬性物件二選一。
     h('div.wb-grid', hasTool ? {} : { dataset: { solo: '1' } },
       specific.node,
-      h('form.practice-form', { onsubmit: (ev) => { ev.preventDefault(); saveAttempt(); } },
+      h('form.practice-form', { onsubmit: (ev) => { ev.preventDefault(); saveAttempt(); }, oninput: keepDraft, onchange: keepDraft },
         // 跟左欄的工具標題同一層，兩欄的頂端才對得齊。
         h('div.practice-tool-head', {}, h('h3', { text: '這一次' })),
         field('題目或來源', title),
@@ -75,7 +76,44 @@ export function practiceView(root, ctx) {
     ),
   );
 
+  restoreDraft();
+  // 重新整理或關分頁不會走到 cleanup，計時要在這裡補存一次。
+  window.addEventListener('pagehide', keepDraft);
+
   return cleanup;
+
+  // 表單草稿：題目、分數、規準、筆記與已計的時間。跟作文草稿、模考草稿一樣留在這台瀏覽器，
+  // 換頁、重新整理或登入過期回來都還在，存好才清掉。
+  function keepDraft() {
+    const ms = elapsed + (startedAt ? Date.now() - startedAt : 0);
+    const draft = { title: title.value, score: score.value, maxScore: maxScore.value, notes: notes.value, elapsed: ms, assessment: assessment.snapshot() };
+    const empty = !draft.title && !draft.notes && !draft.score && ms < 1000 && !assessment.touched();
+    try {
+      if (empty) localStorage.removeItem(DRAFT_KEY);
+      else localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+    } catch { /* 無痕模式寫不進去，草稿仍留在目前頁面。 */ }
+  }
+
+  function restoreDraft() {
+    let draft = null;
+    try { draft = JSON.parse(localStorage.getItem(DRAFT_KEY) ?? 'null'); } catch { /* 壞掉的草稿就從空白開始。 */ }
+    if (!draft || typeof draft !== 'object') return;
+    if (typeof draft.title === 'string') title.value = draft.title;
+    if (typeof draft.notes === 'string') notes.value = draft.notes;
+    if (typeof draft.maxScore === 'string' && draft.maxScore) maxScore.value = draft.maxScore;
+    if (typeof draft.score === 'string') score.value = draft.score;
+    assessment.restore(draft.assessment);
+    if (Number.isFinite(draft.elapsed) && draft.elapsed > 0) {
+      elapsed = draft.elapsed;
+      timerButton.textContent = '繼續';
+      renderClock();
+      syncPrimary();
+    }
+  }
+
+  function clearFormDraft() {
+    try { localStorage.removeItem(DRAFT_KEY); } catch { /* 已儲存的紀錄不受影響。 */ }
+  }
 
   function toggleTimer() {
     if (startedAt) return pauseTimer();
@@ -100,6 +138,7 @@ export function practiceView(root, ctx) {
     tick = null;
     timerButton.textContent = elapsed ? '繼續' : '開始計時';
     renderClock();
+    keepDraft();
   }
 
   function resetTimer() {
@@ -108,6 +147,7 @@ export function practiceView(root, ctx) {
     timerButton.textContent = '開始計時';
     renderClock();
     syncPrimary();
+    keepDraft();
   }
 
   function renderClock() {
@@ -149,6 +189,7 @@ export function practiceView(root, ctx) {
       };
       const result = await api.practice(body);
       specific.clearDraft();
+      clearFormDraft();
       announce(`${skill} 練習已儲存`);
       const done = savedPanel(result, ctx);
       clear(box).append(done);
@@ -156,7 +197,8 @@ export function practiceView(root, ctx) {
       done.querySelector('.landing')?.focus();
       motion.stamp(done.querySelector('.stamp'));
     } catch (err) {
-      status.textContent = err.message;
+      // 前綴講清楚這一筆沒進資料庫；表單與草稿都還在，修好再按一次就好。
+      status.textContent = `這次練習沒有存到：${err.message}`;
       status.hidden = false;
       save.disabled = false;
     }
@@ -266,6 +308,9 @@ export function practiceView(root, ctx) {
   }
 
   function cleanup() {
+    window.removeEventListener('pagehide', keepDraft);
+    // 已經存好、畫面換成完成頁的話，表單不在了，不要把舊值寫回草稿。
+    if (save.isConnected) keepDraft();
     window.clearInterval(tick);
     stream?.getTracks().forEach((track) => track.stop());
     if (recordingUrl) URL.revokeObjectURL(recordingUrl);
@@ -335,6 +380,15 @@ function assessmentTool(skill, score, maxScore) {
         return n > 0 && n < selects.size ? `評分規準還有 ${selects.size - n} 項未評；全部評完，或全部改回「未評」。` : null;
       },
       details: () => (picked().length ? { rubric: Object.fromEntries([...selects].map(([key, input]) => [key, Number(input.value)])) } : null),
+      snapshot: () => ({ rubric: Object.fromEntries([...selects].map(([key, input]) => [key, input.value])) }),
+      touched: () => picked().length > 0,
+      restore: (saved) => {
+        for (const [key, input] of selects) {
+          const v = saved?.rubric?.[key];
+          if (typeof v === 'string' && [...input.options].some((o) => o.value === v)) input.value = v;
+        }
+        update();
+      },
     };
   }
   const tags = new Map();
@@ -348,6 +402,12 @@ function assessmentTool(skill, score, maxScore) {
     usesRubric: false,
     node: h('fieldset.assessment', {}, h('legend', { text: '這次失分在哪裡' }), list),
     details: () => ({ mistakes: [...tags].filter(([, input]) => input.checked).map(([label]) => label) }),
+    snapshot: () => ({ mistakes: [...tags].filter(([, input]) => input.checked).map(([label]) => label) }),
+    touched: () => [...tags.values()].some((input) => input.checked),
+    restore: (saved) => {
+      const list = Array.isArray(saved?.mistakes) ? saved.mistakes : [];
+      for (const [label, input] of tags) input.checked = list.includes(label);
+    },
   };
 }
 

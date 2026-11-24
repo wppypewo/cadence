@@ -121,6 +121,8 @@ export function reviewView(root, ctx) {
     // amend 是叫回來正在改的那張卡，畫面暫時蓋過佇列目前那張。
     last: null,
     amend: null,
+    // 作答途中換了範圍，等這張結束再重抓。
+    rescope: false,
   };
   let dismissAmend = null;
 
@@ -141,9 +143,11 @@ export function reviewView(root, ctx) {
     onclick: () => { if (state.last) amend(state.last); },
   }, '改上一張', h('kbd', { text: 'Z', 'aria-hidden': 'true' }));
   const tools = h('div.focus-tools', {}, remainEl, scopeBtn);
+  // 從哪一頁進來就回哪一頁，跟工作台的返回鈕一樣；從進度頁點進弱點批次的，按 Esc 不該被送去今天。
+  const from = ctx.reviewFrom;
   const leave = h('button.btn.btn-quiet.btn-sm.focus-leave', {
-    type: 'button', 'aria-keyshortcuts': 'Escape', onclick: () => ctx.go('today'),
-  }, '離開', h('kbd', { text: 'Esc', 'aria-hidden': 'true' }));
+    type: 'button', 'aria-keyshortcuts': 'Escape', onclick: () => ctx.go(from.id),
+  }, `回${from.label}`, h('kbd', { text: 'Esc', 'aria-hidden': 'true' }));
   const stage = h('div.stage');
   const frame = h('div.focus', { dataset: { mode: 'card' } },
     progressEl,
@@ -257,6 +261,13 @@ export function reviewView(root, ctx) {
     if (state.sliding) return;
     state.verdict = null;
     state.selfPhase = null;
+    if (state.rescope) {
+      // 作答途中換過範圍，這張答完才照新範圍重抓。
+      state.rescope = false;
+      state.amend = null;
+      load();
+      return;
+    }
     if (state.amend) {
       // 改完評分回到原本排著的那張，idx 在自動前進時已經加過了。
       state.amend = null;
@@ -320,7 +331,7 @@ export function reviewView(root, ctx) {
       render();
       ctx.refreshBadge();
     } catch (err) {
-      ctx.toast(err.message, 'bad');
+      if (!err.expired) ctx.toast(`評分沒有改到：${err.message}`, 'bad');
     } finally {
       state.pending = false;
     }
@@ -381,7 +392,13 @@ export function reviewView(root, ctx) {
         remainEl.textContent = remainText(fresh);
       });
     } catch (err) {
-      ctx.toast(err.message, 'bad');
+      if (err.status === 409) {
+        // 雲端版本鎖：這張卡在別的分頁或裝置剛記過一次。系統自己重抓佇列就好，不叫人重新整理。
+        ctx.toast('這張剛才已經記過，換下一張', 'info');
+        load();
+      } else if (!err.expired) {
+        ctx.toast(`這題沒有存到：${err.message}`, 'bad');
+      }
     } finally {
       state.pending = false;
     }
@@ -521,7 +538,7 @@ export function reviewView(root, ctx) {
   }
 
   /**
-   * Esc 離開專注模式回今天。作答框裡也收：打到一半想走，不必先把焦點移出來。
+   * Esc 離開專注模式，回到進來的那一頁。作答框裡也收：打到一半想走，不必先把焦點移出來。
    * 離開不送任何東西，這張卡照樣到期，所以誤按的代價只是重新進來一次。
    * 對話框、選單、輸入法選字時的 Esc 是在關那些東西，不能順手把整頁換掉。
    */
@@ -530,13 +547,27 @@ export function reviewView(root, ctx) {
     if (document.querySelector('dialog[open]')) return;
     try { if (document.querySelector(':popover-open')) return; } catch { /* 舊瀏覽器不認得這個選擇器，當作沒開 */ }
     ev.preventDefault();
-    ctx.go('today');
+    ctx.go(from.id);
   }
+
+  // 換範圍。作答到一半（框裡有字、正在自評、或正看著批改）就等這張結束再換，
+  // 以前是整頁重畫，打到一半的答案直接不見。其餘情況立刻重抓。
+  ctx.onScopeChange(() => {
+    const typing = [...stage.querySelectorAll('input, textarea')].some((el) => el.value.trim() !== '');
+    if (!state.loading && (typing || state.selfPhase || state.verdict || state.amend)) {
+      state.rescope = true;
+      ctx.toast('範圍已換，這張答完起照新範圍出題', 'info');
+      return;
+    }
+    ctx.toast('範圍已換，這一批卡照新範圍重抓', 'info');
+    load();
+  });
 
   document.addEventListener('keydown', onKey);
 
   load();
   return () => {
+    ctx.onScopeChange(null);
     document.removeEventListener('keydown', onKey);
     dismissAmend?.();
     motion.killWithin(frame);
@@ -1076,6 +1107,9 @@ function verdictPanel(card, res, next, correct, animate, amending = false) {
       h('summary', { text: res.corrected ? '評分已更正' : amending ? '改成哪一個？' : '評分按錯了？' }),
       ratings,
     ));
+  } else if (res.reviewId) {
+    // 自動批改的題目沒有更正區。不說一聲，看起來像是漏做了。
+    box.append(h('p.hint.correction-note', { text: '這題是自動批改，評分不能改；重音與拼字照考卷的標準算。' }));
   }
 
   box.append(h('div.focus-actions', {},

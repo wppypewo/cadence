@@ -421,19 +421,11 @@ body[data-focus] .main { padding: 0; }
 .cloud-wait { max-width: 680px; margin: clamp(var(--s6), 10vh, 120px) auto 0; }
 .cloud-wait h1 { margin: 0 0 var(--s3); font-size: clamp(var(--t-2xl), 5vw, var(--t-3xl)); text-wrap: balance; }
 .cloud-wait > p { max-width: 58ch; color: var(--text-muted); }
-.cloud-checks {
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--s2); margin-top: var(--s6);
-}
-.cloud-checks p {
-  padding: var(--s3); border-top: 2px solid var(--accent);
-  background: var(--surface); color: var(--text-muted); font-size: var(--t-sm);
-}
+.cloud-wait > .btn { margin-top: var(--s5); }
 
 @media (max-width: 620px) {
   .auth-mode .rail { padding: var(--s4); }
   .auth-mode .brand span { display: inline; }
   .auth-mode .main { padding: var(--s8) var(--s4) var(--s5); }
   .auth-card { padding: var(--s5); }
-  .cloud-checks { grid-template-columns: 1fr; }
 }
