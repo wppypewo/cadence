@@ -85,6 +85,9 @@ export function practiceView(root, ctx) {
   // 表單草稿：題目、分數、規準、筆記與已計的時間。跟作文草稿、模考草稿一樣留在這台瀏覽器，
   // 換頁、重新整理或登入過期回來都還在，存好才清掉。
   function keepDraft() {
+    // 存好之後表單已經換成完成頁。pagehide 的監聽還掛著（重新整理不會走 cleanup），
+    // 這時把留在記憶體裡的舊值寫回去，下次進來剛存過的那筆又會冒出來。
+    if (!save.isConnected) return;
     const ms = elapsed + (startedAt ? Date.now() - startedAt : 0);
     const draft = { title: title.value, score: score.value, maxScore: maxScore.value, notes: notes.value, elapsed: ms, assessment: assessment.snapshot() };
     const empty = !draft.title && !draft.notes && !draft.score && ms < 1000 && !assessment.touched();
@@ -197,8 +200,9 @@ export function practiceView(root, ctx) {
       done.querySelector('.landing')?.focus();
       motion.stamp(done.querySelector('.stamp'));
     } catch (err) {
-      // 前綴講清楚這一筆沒進資料庫；表單與草稿都還在，修好再按一次就好。
-      status.textContent = `這次練習沒有存到：${err.message}`;
+      // 伺服器回了錯誤，前綴講清楚這一筆沒進資料庫；表單與草稿都還在，修好再按一次就好。
+      // 斷線時不能這樣講：請求可能已經送到，net.mjs 的訊息本來就寫「沒有確認存到」，照用。
+      status.textContent = err.offline ? err.message : `這次練習沒有存到：${err.message}`;
       status.hidden = false;
       save.disabled = false;
     }
@@ -309,8 +313,8 @@ export function practiceView(root, ctx) {
 
   function cleanup() {
     window.removeEventListener('pagehide', keepDraft);
-    // 已經存好、畫面換成完成頁的話，表單不在了，不要把舊值寫回草稿。
-    if (save.isConnected) keepDraft();
+    // 已經存好、畫面換成完成頁的話，keepDraft 自己會跳過，不把舊值寫回草稿。
+    keepDraft();
     window.clearInterval(tick);
     stream?.getTracks().forEach((track) => track.stop());
     if (recordingUrl) URL.revokeObjectURL(recordingUrl);

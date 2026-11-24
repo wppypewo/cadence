@@ -177,12 +177,18 @@ export function reviewView(root, ctx) {
     if (scopeBtn && scopeBtn.parentNode !== tools) tools.append(scopeBtn);
   }
 
+  // 每次 load 編一個號，只收最後一次的回應。載入中換範圍會再發一次 load，
+  // 舊範圍那份如果比較晚回來，不能蓋掉新範圍的卡。
+  let loadSeq = 0;
+
   async function load() {
+    const seq = ++loadSeq;
     state.loading = true;
     state.error = null;
     render();
     try {
       const data = await api.queue({ ...ctx.scopeQuery(), limit: 20, preset: state.preset });
+      if (seq !== loadSeq) return;
       state.cards = data.cards;
       state.remaining = data;
       state.idx = 0;
@@ -197,6 +203,7 @@ export function reviewView(root, ctx) {
         && data.remaining.due === 0 && !enoughShownToday();
       if (state.checkpoint) markEnoughShown();
     } catch (err) {
+      if (seq !== loadSeq) return;
       state.error = err.message;
     }
     state.loading = false;
@@ -396,6 +403,9 @@ export function reviewView(root, ctx) {
         // 雲端版本鎖：這張卡在別的分頁或裝置剛記過一次。系統自己重抓佇列就好，不叫人重新整理。
         ctx.toast('這張剛才已經記過，換下一張', 'info');
         load();
+      } else if (err.offline) {
+        // 斷線時請求可能已經送到，不能說「沒有存到」；net.mjs 的訊息寫的是「沒有確認存到」。
+        ctx.toast(err.message, 'bad');
       } else if (!err.expired) {
         ctx.toast(`這題沒有存到：${err.message}`, 'bad');
       }
@@ -550,11 +560,11 @@ export function reviewView(root, ctx) {
     ctx.go(from.id);
   }
 
-  // 換範圍。作答到一半（框裡有字、正在自評、或正看著批改）就等這張結束再換，
+  // 換範圍。作答到一半（框裡有字、已翻面看答案、正在自評、或正看著批改）就等這張結束再換，
   // 以前是整頁重畫，打到一半的答案直接不見。其餘情況立刻重抓。
   ctx.onScopeChange(() => {
     const typing = [...stage.querySelectorAll('input, textarea')].some((el) => el.value.trim() !== '');
-    if (!state.loading && (typing || state.selfPhase || state.verdict || state.amend)) {
+    if (!state.loading && (typing || isRevealed(stage) || state.selfPhase || state.verdict || state.amend)) {
       state.rescope = true;
       ctx.toast('範圍已換，這張答完起照新範圍出題', 'info');
       return;
