@@ -23,6 +23,7 @@
 
 import { h, clear, icon, num } from './dom.mjs';
 import { api } from './net.mjs';
+import { isCloudRuntime } from './runtime.mjs';
 import { render as renderMarkdown } from './markdown.mjs';
 import * as motion from './motion.mjs';
 import { KIND_ZH, SKILL_ZH } from './kinds.mjs';
@@ -66,7 +67,8 @@ export function todayView(root, ctx) {
     // 等它算完才出畫面的話，打開這一頁到能按下主按鈕會多等將近 0.1 秒。
     const side = h('aside.today-side', { 'aria-label': '今日一句與這 7 天穩下來的字' },
       readingBlock(alive),
-      weeklyBlock(alive));
+      weeklyBlock(alive),
+      isCloudRuntime() ? aiBriefBlock(alive) : null);
 
     clear(box).append(
       dateline(data),
@@ -396,6 +398,45 @@ function weeklyBlock(alive) {
     // 原生 replaceChildren 會把 null 印成字串「null」；h() 會濾掉，這裡要自己濾。
     sec.replaceChildren(head, ...body.filter(Boolean),
       h('p.side-foot', { text: `九成記憶能撐 21 天以上就算穩。目前共 ${num(data.matureTotal)} 張。` }));
+  }
+}
+
+/**
+ * 用 Gemini 把這 7 天的數字寫成一段回顧。按一次算一次、不存：
+ * 每次打開今天頁都自動產生的話，一天開十次就付十次錢，而數字其實一天只變一次。
+ */
+function aiBriefBlock(alive) {
+  const out = h('div.ai-brief', { 'aria-live': 'polite' });
+  const run = h('button.btn.btn-quiet.btn-sm', { type: 'button', text: '產生回顧', onclick: load });
+  const sec = h('section.side-block.ai-brief-block', {},
+    h('div.side-head', {}, h('h2.side-h', { text: 'AI 7 天回顧' }), run),
+    out,
+    h('p.side-foot', { text: 'Gemini 依複習與練習紀錄寫成，不存檔；數字以上面的統計為準。' }));
+  return sec;
+
+  async function load() {
+    run.disabled = true;
+    out.replaceChildren(h('p.side-empty', { text: '產生中，通常要 5–15 秒…' }));
+    let data;
+    try {
+      data = await api.aiWeeklyBrief();
+    } catch (err) {
+      if (alive()) out.replaceChildren(h('p.side-err.err-line', { text: `產生失敗：${err.message}` }));
+      run.disabled = false;
+      return;
+    }
+    if (!alive()) return;
+    run.disabled = false;
+    run.textContent = '重新產生';
+    const list = (title, items) => (items.length
+      ? [h('h3.ai-brief-h', { text: title }), h('ul.ai-brief-list', {}, items.map((t) => h('li', { text: t })))]
+      : []);
+    out.replaceChildren(
+      h('p.ai-brief-head', { text: data.brief.headline }),
+      ...list('做得好的', data.brief.highlights),
+      ...list('要注意的', data.brief.concerns),
+      ...list('下週照做', data.brief.nextSteps),
+    );
   }
 }
 

@@ -5,6 +5,7 @@
 
 import { h, clear, icon, announce } from './dom.mjs';
 import { api } from './net.mjs';
+import { isCloudRuntime } from './runtime.mjs';
 import * as motion from './motion.mjs';
 
 // 中文名跟 src/engine/today.mjs 的科目表一致：今天頁列的是那一份，點進來標題換了字會以為進錯科。
@@ -236,12 +237,56 @@ export function practiceView(root, ctx) {
       h('div.practice-tool-head', {}, h('h3', { text: '寫作草稿' }), count),
       draft,
       h('p.hint', { text: '草稿只存在這台瀏覽器；儲存練習後會清空。' }),
+      // 本機模式沒有 Gemini 路由，按了只會拿到 404，不如不顯示。
+      isCloudRuntime() ? aiGrader(() => draft.value) : null,
     );
     return {
       node, text: () => draft.value.trim() || null, wordCount: () => countWords(draft.value),
       defaultSource: () => '自由寫作',
       clearDraft: () => { try { localStorage.removeItem(key); } catch { /* 已儲存的紀錄不受影響。 */ } },
     };
+  }
+
+  /**
+   * 送草稿給 Gemini 照 DELF B1 評分格估分。結果只顯示、不存：要留紀錄就自己把分數填進下面的表單。
+   * 分數由後端依等級換算並套離題封頂，畫面只負責排版。
+   */
+  function aiGrader(readDraft) {
+    const task = h('textarea.input.practice-task.fr', {
+      lang: 'fr', rows: 3, maxlength: 2000, 'aria-label': '題目（選填）',
+      placeholder: 'Consigne（選填）：貼上題目，才能判斷是否離題',
+    });
+    const status = h('p.hint', { role: 'status' });
+    const result = h('div.ai-result', { 'aria-live': 'polite' });
+    const run = h('button.btn.btn-quiet', { type: 'button', text: 'AI 批改草稿', onclick: grade });
+    let busy = false;
+
+    async function grade() {
+      if (busy) return;
+      busy = true;
+      run.disabled = true;
+      status.textContent = '批改中，通常要 10–30 秒…';
+      clear(result);
+      try {
+        const data = await api.aiPeFeedback({ text: readDraft(), task: task.value });
+        status.textContent = '';
+        result.append(...renderGrade(data));
+        announce(data.total === null ? 'AI 批改完成，但有一項沒判到' : `AI 批改完成：${data.total} / 25`);
+      } catch (err) {
+        status.textContent = `批改失敗：${err.message}`;
+      } finally {
+        busy = false;
+        run.disabled = false;
+      }
+    }
+
+    return h('details.ai-grader', {},
+      h('summary', { text: 'AI 批改（Gemini，估分僅供參考）' }),
+      task,
+      h('div.ai-actions', {}, run),
+      status,
+      result,
+    );
   }
 
   function listeningTool() {
@@ -528,4 +573,47 @@ function formatDuration(sec) {
 
 function sourcePlaceholder(skill) {
   return ({ CE: '文章、書名或題組', PE: '題目或 prompt', CO: '音檔、影片或樣題', PO: '口說題目' })[skill];
+}
+
+const ANOMALY_ZH = {
+  thematique: 'Hors-sujet thématique（主題離題）',
+  discursif: 'Hors-sujet discursif（文體不對）',
+  complet: 'Hors-sujet complet（完全離題）',
+};
+
+/** 把後端的批改結果排成 DOM 節點。全部走 h() 的 text，模型回的字不會被當成 HTML。 */
+export function renderGrade(data) {
+  const total = data.total === null ? '— / 25' : `${data.total} / 25`;
+  const nodes = [
+    h('div.ai-total', {},
+      h('span.ai-total-n.num', { text: total }),
+      h('span.hint', { text: `${data.words} mots・AI 估分，不是官方分數` })),
+  ];
+  if (data.summary) nodes.push(h('p.ai-summary', { text: data.summary }));
+  for (const a of data.anomalies ?? []) {
+    nodes.push(h('p.ai-anomaly', {}, h('strong', { text: ANOMALY_ZH[a.type] ?? a.type }), `：${a.reason}`));
+  }
+  if (!data.rule) {
+    nodes.push(h('dl.ai-criteria', {}, data.criteria.flatMap((c) => [
+      h('dt', {},
+        h('span.fr', { lang: 'fr', text: c.criterion }),
+        h('span.ai-level', { text: c.level ?? '未判' }),
+        h('span.num', { text: c.points === null ? '—' : `${c.points}/5` }),
+        c.capped ? h('span.ai-capped', { text: '離題封頂' }) : null),
+      h('dd', {},
+        c.quote ? h('q.fr', { lang: 'fr', text: c.quote }) : null,
+        c.reason ? h('span', { text: ` ${c.reason}` }) : null),
+    ])));
+  }
+  if (data.fixes?.length) {
+    nodes.push(h('h4', { text: '最該改的地方' }), h('ol.ai-fixes', {}, data.fixes.map((f) => h('li', {},
+      h('del.fr', { lang: 'fr', text: f.original }), ' → ', h('ins.fr', { lang: 'fr', text: f.corrected }),
+      h('p.hint', { text: f.why }),
+    ))));
+  }
+  if (data.vocabulary?.length) {
+    nodes.push(h('h4', { text: '這題該會的字' }), h('ul.ai-vocab', {}, data.vocabulary.map((v) => h('li', {},
+      h('span.fr', { lang: 'fr', text: v.fr }), h('span.hint', { text: ` ${v.zh}` })))));
+  }
+  return nodes;
 }

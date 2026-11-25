@@ -128,6 +128,8 @@ web/
 | POST | `/api/practice` | 記 CE／PE／CO／PO 一次實作練習 |
 | POST | `/api/mock` | 一次記完整四科模考 |
 | POST | `/api/settings` | 寫設定 |
+| POST | `/api/ai/pe-feedback` | 雲端版限定。送 PE 草稿（與選填的題目）給 Gemini 照 B1 評分格判級；換算分數與離題封頂在 `src/cloud/ai.mjs` 算。79 字以下直接回 0 分不呼叫 API。結果不存 |
+| POST | `/api/ai/weekly-brief` | 雲端版限定。把最近 7 天的複習與練習數字整理成摘要交給 Gemini 寫回顧。結果不存 |
 
 伺服器只綁 `127.0.0.1`，不接受外部連線。
 

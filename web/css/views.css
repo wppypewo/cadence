@@ -53,6 +53,31 @@
   min-height: 420px; padding: var(--s5); resize: vertical;
   font: 400 var(--t-lg)/1.8 var(--font-fr);
 }
+/* AI 批改收在 details 裡：它是選用的輔助，不能比草稿本身更搶眼。 */
+.ai-grader { display: flex; flex-direction: column; gap: var(--s3); border-top: 1px solid var(--line); padding-top: var(--s3); }
+.ai-grader > summary { cursor: pointer; font-size: var(--t-sm); color: var(--text-muted); }
+.ai-grader[open] > summary { margin-bottom: var(--s3); }
+.practice-task { min-height: 72px; padding: var(--s3); resize: vertical; line-height: 1.6; width: 100%; }
+.ai-actions { display: flex; gap: var(--s3); margin: var(--s3) 0; }
+.ai-result { display: flex; flex-direction: column; gap: var(--s3); font-size: var(--t-sm); }
+.ai-result h4 { font-size: var(--t-sm); font-weight: 600; margin-top: var(--s2); }
+.ai-total { display: flex; align-items: baseline; gap: var(--s3); }
+.ai-total-n { font-size: var(--t-2xl); font-family: var(--font-num); }
+.ai-anomaly { color: var(--bad); }
+.ai-criteria { margin: 0; border-top: 1px solid var(--line); }
+.ai-criteria dt {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s2) var(--s3);
+  padding-top: var(--s2); font-weight: 600;
+}
+.ai-criteria dt .fr { flex: 1 1 12rem; }
+.ai-level { color: var(--text-muted); font-weight: 400; }
+/* 封頂不只靠紅色表示：另外寫出字，色盲也看得到。 */
+.ai-capped { color: var(--bad); font-weight: 400; font-size: var(--t-xs); }
+.ai-criteria dd { margin: var(--s1) 0 0; padding-bottom: var(--s2); border-bottom: 1px solid var(--line); color: var(--text-muted); }
+.ai-criteria q { color: var(--text); }
+.ai-fixes, .ai-vocab { margin: 0; padding-left: var(--s5); display: flex; flex-direction: column; gap: var(--s2); }
+.ai-fixes del { color: var(--bad); }
+.ai-fixes ins { text-decoration: none; color: var(--accent); font-weight: 600; }
 .practice-notes { min-height: 112px; padding: var(--s3); resize: vertical; line-height: 1.6; }
 .practice-audio { width: 100%; }
 .pass-list { display: grid; gap: var(--s2); }
@@ -190,6 +215,10 @@
 .side-foot { font-size: var(--t-xs); color: var(--text-faint); }
 .side-empty { font-size: var(--t-sm); color: var(--text-muted); }
 .side-err { font-size: var(--t-sm); color: var(--bad); }
+.ai-brief { display: flex; flex-direction: column; gap: var(--s2); font-size: var(--t-sm); }
+.ai-brief-head { font-weight: 600; }
+.ai-brief-h { font: 600 var(--t-xs)/1.4 var(--font-ui); color: var(--text-muted); margin-top: var(--s2); }
+.ai-brief-list { margin: 0; padding-left: var(--s5); display: flex; flex-direction: column; gap: var(--s1); }
 
 /* 法文句子是這一塊的主角，照全檔的原則用法文字體、比介面大。行高留給底線與下伸部。 */
 .sentence { font: 400 var(--t-xl)/1.7 var(--font-fr); }

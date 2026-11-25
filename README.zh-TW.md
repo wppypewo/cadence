@@ -139,6 +139,8 @@ SUPABASE_URL=
 SUPABASE_PUBLISHABLE_KEY=
 CADENCE_OWNER_EMAIL=
 CADENCE_TOKEN_SECRET=   # 64 位十六進位亂數，只放 Production／Preview Secret
+GEMINI_API_KEY=         # 選填；沒設時 AI 批改與 AI 回顧回 503，其他功能照常
+GEMINI_MODEL=           # 選填，預設 gemini-3.8-flash
 
 npm run build:web
 vercel deploy --prod

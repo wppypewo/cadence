@@ -122,6 +122,8 @@ SUPABASE_URL=
 SUPABASE_PUBLISHABLE_KEY=
 CADENCE_OWNER_EMAIL=
 CADENCE_TOKEN_SECRET=   # 64 random hex characters; Production/Preview secret only
+GEMINI_API_KEY=         # optional; without it the AI grading and AI review return 503, nothing else changes
+GEMINI_MODEL=           # optional, defaults to gemini-3.8-flash
 
 npm run build:web
 vercel deploy --prod
