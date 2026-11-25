@@ -1246,3 +1246,77 @@ table.grid tr[data-hit="1"] td { background: var(--accent-weak); color: var(--ac
 .example-credit { font-size: var(--t-xs); color: var(--text-faint); margin-top: 2px; }
 .example-credit a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
 .example-credit a:hover { color: var(--text); }
+
+/* ---- AI 對話（雲端版） ------------------------------------------------ */
+
+/* 跟這個 App 其他地方一樣用細線分層、不做一格一格的卡片：
+   自己說的話墊一層 --sunken 靠右，AI 的回覆靠左、左側一條線，掃一眼就分得出誰說的。 */
+.chat { display: flex; flex-direction: column; gap: var(--s3); font-size: var(--t-sm); }
+.chat-log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s4); }
+.chat-log:empty { display: none; }
+.chat-msg { display: flex; flex-direction: column; gap: var(--s1); min-width: 0; }
+.chat-msg[data-role="user"] {
+  align-self: flex-end; max-width: 85%;
+  padding: var(--s2) var(--s3); background: var(--sunken); border-radius: var(--r);
+}
+.chat-msg[data-role="model"] { padding-left: var(--s3); border-left: 2px solid var(--line-strong); }
+.chat-who { font-size: var(--t-2xs); font-weight: 600; color: var(--text-muted); }
+.chat-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.chat-pending .chat-text { color: var(--text-muted); }
+.chat-body { overflow-wrap: anywhere; }
+.chat-note { font-size: var(--t-xs); color: var(--text-muted); }
+.chat-status { font-size: var(--t-sm); color: var(--bad); }
+.chat-status:empty { display: none; }
+.chat-form { display: flex; flex-direction: column; gap: var(--s2); }
+.chat-input { width: 100%; min-height: 4.5em; resize: vertical; }
+.chat-bar { display: flex; align-items: center; justify-content: flex-end; gap: var(--s2); flex-wrap: wrap; }
+.chat-count { margin-right: auto; font-size: var(--t-xs); color: var(--text-muted); }
+.chat-extras { display: contents; }
+
+/* 批改結果與週回顧下方的追問：上面一條線跟結果分開，表示這是另一段。 */
+.chat-follow { display: flex; flex-direction: column; gap: var(--s3); margin-top: var(--s3); padding-top: var(--s3); border-top: 1px solid var(--line); }
+.chat-follow > h4 { font-size: var(--t-sm); font-weight: 600; }
+
+/* 右下角的按鈕。手機版要疊在底部導覽（52px）上面，複習的專注模式整個藏起來。 */
+.chat-fab {
+  position: fixed; right: var(--s5); bottom: var(--s5); z-index: var(--z-sticky);
+  min-height: 44px; padding: 0 var(--s4);
+  border: 1px solid var(--accent); border-radius: 999px;
+  background: var(--accent); color: var(--accent-on);
+  font: 600 var(--t-sm)/1 var(--font-ui);
+  box-shadow: var(--shadow); cursor: pointer;
+  transition: background var(--dur-out) var(--ease-out);
+}
+.chat-fab:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.chat-fab:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+body[data-focus] .chat-fab { display: none; }
+
+/* 面板沿用 .sheet 的進出場，只改尺寸：對話要高度，設定面板那個 460px 寬太擠。 */
+.chat-dock { width: min(600px, calc(100vw - var(--s6))); height: min(760px, calc(100dvh - var(--s6))); }
+.chat-dock[open] { display: flex; flex-direction: column; }
+.chat-dock-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--s3);
+  margin: var(--s5) var(--s5) 0; padding-bottom: var(--s3); border-bottom: 1px solid var(--text);
+}
+.chat-dock-head h2 { font: 500 var(--t-xl)/1.1 var(--font-fr); }
+.chat-tabs { margin: var(--s3) var(--s5) 0; align-self: flex-start; }
+/* .seg 的按鈕是 flex: 1，容器又靠左收縮，四個中文字會被擠成兩行；nowrap 讓按鈕依字寬撐開。 */
+.chat-tabs button { padding: 0 var(--s3); min-height: 32px; white-space: nowrap; font-size: var(--t-sm); }
+/* 輸入列 sticky 疊在捲動區底部（實測約 117px 高），scrollIntoView 不知道這件事，新回覆會被捲到輸入列後面；
+   scroll-padding 告訴瀏覽器底部這一段看不到。 */
+.chat-dock-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: var(--s4) var(--s5) 0; scroll-padding-bottom: 8rem; }
+.chat-pane { display: flex; flex-direction: column; gap: var(--s3); min-height: 100%; }
+/* 輸入框黏在面板底部，往上捲看舊訊息時還打得到字。 */
+.chat-dock .chat { flex: 1 1 auto; }
+.chat-dock .chat-form { position: sticky; bottom: 0; margin-top: auto; padding: var(--s2) 0 var(--s3); background: var(--surface); }
+.chat-setup { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+.chat-setup .hint { flex: 1 1 16rem; }
+.chat-select { flex: 1 1 14rem; min-width: 0; }
+.chat-card { font: italic 400 var(--t-md)/1.45 var(--font-fr); padding-left: var(--s3); border-left: 2px solid var(--accent); }
+.chat-foot { margin: 0 var(--s5); padding: var(--s2) 0 var(--s4); border-top: 1px solid var(--line); font-size: var(--t-xs); color: var(--text-muted); }
+
+@media (max-width: 860px) {
+  .chat-fab { right: var(--s4); bottom: calc(var(--s4) + 52px + env(safe-area-inset-bottom)); }
+  .chat-dock { width: calc(100vw - var(--s4)); height: calc(100dvh - var(--s4)); }
+  .chat-tabs button { min-height: 44px; }
+}

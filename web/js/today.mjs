@@ -26,6 +26,7 @@ import { api } from './net.mjs';
 import { isCloudRuntime } from './runtime.mjs';
 import { render as renderMarkdown } from './markdown.mjs';
 import * as motion from './motion.mjs';
+import { weeklyFollowUp } from './chat.mjs';
 import { KIND_ZH, SKILL_ZH } from './kinds.mjs';
 
 const WEEKDAY = ['週日', '週一', '週二', '週三', '週四', '週五', '週六'];
@@ -436,6 +437,8 @@ function aiBriefBlock(alive) {
       ...list('做得好的', data.brief.highlights),
       ...list('要注意的', data.brief.concerns),
       ...list('下週照做', data.brief.nextSteps),
+      // 重新產生會整塊換掉，舊回顧的追問跟著清空：問的是哪一份回顧要對得上。
+      weeklyFollowUp(data.brief),
     );
   }
 }

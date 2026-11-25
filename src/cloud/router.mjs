@@ -13,6 +13,7 @@ import {
 import { savePractice, saveMock } from './practice.mjs';
 import { listResources } from './resources.mjs';
 import { peFeedback, weeklyBrief } from './ai.mjs';
+import { aiChat, CHAT_MAX_BODY } from './chat.mjs';
 
 const MAX_BODY = 64 * 1024;
 
@@ -63,9 +64,13 @@ export function createCloudHandler({ env = process.env, fetchImpl = fetch } = {}
       if (method === 'POST' && path === 'checkin') return send(res, 200, await checkin(config, auth, await readBody(req), fetchImpl));
       if (method === 'POST' && path === 'practice') return send(res, 200, await savePractice(config, auth, await readBody(req), fetchImpl));
       if (method === 'POST' && path === 'mock') return send(res, 200, await saveMock(config, auth, await readBody(req), fetchImpl));
-      // AI 兩條路由都是 POST：會花錢的呼叫不放在 GET，免得預先載入或爬蟲誤觸。
+      // AI 路由都是 POST：會花錢的呼叫不放在 GET，免得預先載入或爬蟲誤觸。
       if (method === 'POST' && path === 'ai/pe-feedback') return send(res, 200, await peFeedback(env, await readBody(req), fetchImpl));
       if (method === 'POST' && path === 'ai/weekly-brief') return send(res, 200, await weeklyBrief(config, auth, env, fetchImpl));
+      // 對話每輪要整段歷史重送，20 輪加上作文會超過一般路由的 64 KB，單獨放寬。
+      if (method === 'POST' && path === 'ai/chat') {
+        return send(res, 200, await aiChat(config, auth, env, await readBody(req, CHAT_MAX_BODY), fetchImpl));
+      }
       if (method === 'GET' && path === 'settings') return send(res, 200, await readSettings(config, auth, fetchImpl));
       if (method === 'POST' && path === 'settings') {
         return send(res, 200, await saveSettings(config, auth, await readBody(req), fetchImpl));
@@ -113,18 +118,18 @@ function requestIsSecure(req) {
   return !/^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(host);
 }
 
-async function readBody(req) {
+async function readBody(req, max = MAX_BODY) {
   if (req.body !== undefined && req.body !== null) {
     const body = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : req.body;
     if (typeof body === 'object') return body;
-    if (Buffer.byteLength(String(body)) > MAX_BODY) throw new CloudError(413, '請求內容過大');
+    if (Buffer.byteLength(String(body)) > max) throw new CloudError(413, '請求內容過大');
     try { return body ? JSON.parse(body) : {}; } catch { throw new CloudError(400, '請求內容不是合法的 JSON'); }
   }
   const chunks = [];
   let size = 0;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > MAX_BODY) throw new CloudError(413, '請求內容過大');
+    if (size > max) throw new CloudError(413, '請求內容過大');
     chunks.push(chunk);
   }
   const raw = Buffer.concat(chunks).toString('utf8');

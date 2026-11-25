@@ -26,6 +26,7 @@ import { statsView } from './stats.mjs';
 import { forecastView } from './forecast.mjs';
 import { browseView } from './browse.mjs';
 import { practiceView } from './practice.mjs';
+import { mountChatDock } from './chat.mjs';
 import { mockView } from './mock.mjs';
 import { KIND_ZH } from './kinds.mjs';
 import { resourcesView } from './resources.mjs';
@@ -99,6 +100,8 @@ const ctx = {
   saveSettings,
   openSettings,
   openPractice,
+  // 右下角的 AI 對話面板；本機版沒有 AI 路由，openChat 是 null，呼叫端要自己判斷。
+  get openChat() { return els.chat ? (tab) => els.chat.open(tab) : null; },
   startReview,
   takeReviewPreset,
   get guided() { return state.guided; },
@@ -144,6 +147,8 @@ async function boot() {
   const session = await requireSession();
   if (!session) return;
   buildShell();
+  // 登入之後才掛：登入畫面上按了也只會拿到 401。
+  if (isCloudRuntime()) els.chat = mountChatDock();
   // 登入過期：常駐一則帶「重新登入」的提示。重新載入就會回到登入畫面；
   // 練習工作台與模考的草稿都在 localStorage，登入回來還在。
   window.addEventListener('cadence:session-expired', () => {
@@ -569,7 +574,8 @@ function openSettings({ focus = null } = {}) {
   // 不靠 dialog 的 close 事件清場。實測這台的 Electron 殼（Chrome 148）
   // 呼叫 close() 之後不會派送 close，靠它 remove 就會在 DOM 裡積一疊關著的 dialog。
   // 關的地方自己 remove，另外開新的之前先掃掉舊的——Esc 關掉的那種只能靠這一道。
-  for (const stale of document.querySelectorAll('dialog.sheet')) stale.remove();
+  // 對話面板也是 .sheet，但它常駐、關掉只是藏起來（三段對話留在裡面），不能一起清掉。
+  for (const stale of document.querySelectorAll('dialog.sheet:not(.chat-dock)')) stale.remove();
 
   const dlg = h('dialog.sheet');
   // close() 之後留 150ms 給 app.css 的離場（100ms）播完再拆；這段時間內再開設定，開頭那道掃除會先把它拿掉。

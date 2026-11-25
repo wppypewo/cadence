@@ -15,13 +15,16 @@
  *   >　　　　 引言
  *   ---　　　 分隔線
  *   ```　　　 程式碼區塊，區塊內一律原樣，不解析行內語法
- *   **粗體**、`行內碼`、[字](網址) 與 <網址>　行內只認這四種
+ *   **粗體**、*斜體*、`行內碼`、[字](網址) 與 <網址>　行內只認這五種
  *
  * 連結是 2026-09-10 補的。原本沒支援，理由寫的是「這幾份文件裡不存在」——
  * 那句話當時就是錯的：當時兩份加起來有四個 <網址>，全部原樣印成一串不能點的字，
  * 而 CO 那份的用途正是「只存連結」。要人反白複製一段網址才打得開，等於沒有入口。
  *
- * 沒支援的東西（圖片、斜體、刪除線、巢狀引言）在這幾份文件裡不存在。
+ * 斜體是 2026-11-25 為 AI 對話補的：Gemini 慣用 *mot* 標出法文字，不支援就會滿畫面星號。
+ * study/ 三份文件沒有單星號，加了不影響它們。
+ *
+ * 沒支援的東西（圖片、刪除線、巢狀引言）在這幾份文件裡不存在。
  * 真的出現時會原樣印出來，不會壞掉也不會被誤判成別的東西。
  *
  * 解析與建 DOM 拆成兩半：parseBlocks／parseInline 是純函式，測得起來；
@@ -155,16 +158,18 @@ function alignOf(cell) {
 const SAFE_HREF = /^https?:\/\//i;
 
 /**
- * 行內語法。只切 **粗體**、`行內碼` 與連結，其餘原樣。
+ * 行內語法。只切 **粗體**、*斜體*、`行內碼` 與連結，其餘原樣。
  *
  * 交替順序不決定誰先被認出來——正規表達式一律取位置最前的那一個，
  * 所以 `<https://…>` 寫在反引號裡仍然是行內碼，不會變成連結。
+ * 同一個位置上粗體排在斜體前面，`**x**` 才不會被切成兩個斜體星號。
+ * 斜體兩側不能貼著字母或數字（`2*3*4` 是算式），星號內側也不能是空白（`* 項目` 是清單寫法）。
  *
- * @returns {Array<{type:'text'|'strong'|'code'|'link', text:string, href?:string}>}
+ * @returns {Array<{type:'text'|'strong'|'em'|'code'|'link', text:string, href?:string}>}
  */
 export function parseInline(text) {
   const out = [];
-  const re = /\*\*([^*]+)\*\*|`([^`]+)`|\[([^\]]+)\]\(([^)\s]+)\)|<([^>\s]+)>/g;
+  const re = /\*\*([^*]+)\*\*|`([^`]+)`|\[([^\]]+)\]\(([^)\s]+)\)|<([^>\s]+)>|(?<![*\p{L}\p{N}])\*([^*\s](?:[^*]*[^*\s])?)\*(?![*\p{L}\p{N}])/gu;
   let last = 0;
   let m = re.exec(text);
   while (m) {
@@ -172,6 +177,7 @@ export function parseInline(text) {
     const href = m[4] ?? m[5];
     if (m[1] !== undefined) out.push({ type: 'strong', text: m[1] });
     else if (m[2] !== undefined) out.push({ type: 'code', text: m[2] });
+    else if (m[6] !== undefined) out.push({ type: 'em', text: m[6] });
     // <網址> 的顯示文字就是網址本身：這份文件的用途是讓人抄得到那串網址。
     else if (SAFE_HREF.test(href)) out.push({ type: 'link', text: m[3] ?? href, href });
     else out.push({ type: 'text', text: m[0] });
@@ -187,6 +193,7 @@ function inline(text) {
   return parseInline(text).map((t) => {
     if (t.type === 'strong') return h('strong', { text: t.text });
     if (t.type === 'code') return h('code', { text: t.text });
+    if (t.type === 'em') return h('em', { text: t.text });
     // 一律開新分頁：這幾個連結都是外部網站，點下去不該把正在做的複習頁換掉。
     // rel 兩個值是配 target="_blank" 的標配，少了等於把 window.opener 交出去。
     if (t.type === 'link') {

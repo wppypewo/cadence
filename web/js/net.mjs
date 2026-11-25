@@ -106,8 +106,9 @@ export const api = {
   checkin: (body) => call('POST', '/api/checkin', { body }),
   practice: (body) => call('POST', '/api/practice', { body }),
   mock: (body) => call('POST', '/api/mock', { body }),
-  // 兩個 AI 呼叫只在雲端版有路由；結果不存，按一次就向 Gemini 計費一次。
+  // AI 呼叫只在雲端版有路由；結果不存，按一次就向 Gemini 計費一次。對話也一樣，每送一則算一次。
   aiPeFeedback: (body) => call('POST', '/api/ai/pe-feedback', { body }),
   aiWeeklyBrief: () => call('POST', '/api/ai/weekly-brief', { body: {} }),
+  aiChat: (body) => call('POST', '/api/ai/chat', { body }),
   verb: (name) => call('GET', `/api/verb/${encodeURIComponent(name)}`),
 };
