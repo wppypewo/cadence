@@ -12,6 +12,7 @@ import {
 } from './analytics.mjs';
 import { savePractice, saveMock } from './practice.mjs';
 import { listResources } from './resources.mjs';
+import { peFeedback, weeklyBrief } from './ai.mjs';
 
 const MAX_BODY = 64 * 1024;
 
@@ -62,6 +63,9 @@ export function createCloudHandler({ env = process.env, fetchImpl = fetch } = {}
       if (method === 'POST' && path === 'checkin') return send(res, 200, await checkin(config, auth, await readBody(req), fetchImpl));
       if (method === 'POST' && path === 'practice') return send(res, 200, await savePractice(config, auth, await readBody(req), fetchImpl));
       if (method === 'POST' && path === 'mock') return send(res, 200, await saveMock(config, auth, await readBody(req), fetchImpl));
+      // AI 兩條路由都是 POST：會花錢的呼叫不放在 GET，免得預先載入或爬蟲誤觸。
+      if (method === 'POST' && path === 'ai/pe-feedback') return send(res, 200, await peFeedback(env, await readBody(req), fetchImpl));
+      if (method === 'POST' && path === 'ai/weekly-brief') return send(res, 200, await weeklyBrief(config, auth, env, fetchImpl));
       if (method === 'GET' && path === 'settings') return send(res, 200, await readSettings(config, auth, fetchImpl));
       if (method === 'POST' && path === 'settings') {
         return send(res, 200, await saveSettings(config, auth, await readBody(req), fetchImpl));
