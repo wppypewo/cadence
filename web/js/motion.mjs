@@ -75,6 +75,8 @@ export function rise(targets, { y = 6, stagger = 0.04, delay = 0, duration = DUR
 export function swapIn(targets) {
   const list = [targets].flat().filter(Boolean);
   if (REDUCE || !list.length) return;
+  // 連續換內容時先停掉上一段淡入，否則新的 from 會從半透明當起點、收尾的 clearProps 也會打架。
+  gsap.killTweensOf(list, 'opacity');
   gsap.from(list, { opacity: 0, duration: DUR.settle, ease: EASE.enter, clearProps: 'opacity' });
 }
 
@@ -200,5 +202,7 @@ export function onView(el, fn, threshold = 0.35) {
 /** 換頁時把還在跑的補間收掉，免得對已經被拆掉的節點繼續寫樣式。 */
 export function killWithin(root) {
   if (!root) return;
+  // 只停子孫，不停 root 自己：review 的 draw() 在換卡中途（swap 那一刻）呼叫 killWithin(stage)，
+  // stage 本身正被 slideCard 推進場，連它一起停，新卡就會卡在透明。
   gsap.killTweensOf(root.querySelectorAll('*'));
 }

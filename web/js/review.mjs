@@ -498,10 +498,16 @@ export function reviewView(root, ctx) {
     // 按住不放的自動重複一律不算：按住 Enter 會一路「下一張」，批改結果連看都沒看到。
     if (ev.repeat) return;
     if (ev.key === 'Escape') return void leaveKey(ev);
+    // 設定對話框開著、或焦點在輸入框裡時，按鍵是打給那裡的（見下方同一個判斷）。
+    const t = ev.target;
+    const typing = t?.closest?.('dialog[open]') || t?.matches?.('input, textarea, select, [contenteditable="true"]');
     // 換卡中的按鍵只用來把動畫播完，不做別的：新卡還沒出現，不能讓這一下落到它身上。
-    if (state.sliding) { motion.finishSlide(stage); return; }
+    // 只有會作用在卡片上的鍵（Enter、Space、數字、Z）才播完；Tab、方向鍵、打給對話框的字不碰動畫。
+    if (state.sliding) {
+      if (!typing && (ev.key === 'Enter' || ev.key === ' ' || /^[1-9z]$/i.test(ev.key))) motion.finishSlide(stage);
+      return;
+    }
     if (state.amend) {
-      const t = ev.target;
       // 焦點在更正評分的按鈕或摘要上時，Enter／Space 是按那顆，不是離開。
       if (t?.closest?.('.correction button, .correction summary')) return;
       if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); next(); }
@@ -512,8 +518,7 @@ export function reviewView(root, ctx) {
     if (state.checkpoint) return;
     // 設定對話框開著、或焦點在輸入框裡時，按鍵是打給那裡的——
     // 在設定裡打「3」不該順手替這張卡評分。作答框自己的 Enter 由它自己的 keydown 處理。
-    const t = ev.target;
-    if (t?.closest?.('dialog[open]') || t?.matches?.('input, textarea, select, [contenteditable="true"]')) return;
+    if (typing) return;
     // 打字題的焦點在輸入框裡，上一行已經擋掉，Z 在那裡就是打字；要改評分得 Shift+Tab 到上方那顆。
     if (ev.key.toLowerCase() === 'z' && !amendBtn.hidden) { ev.preventDefault(); amend(state.last); return; }
     const card = current();
