@@ -93,11 +93,9 @@ export function statsView(root, ctx) {
       ['今天', s.todayReviews, '題', accuracy === null ? '還沒開始' : `答對 ${pct(accuracy)}`],
       ['累計', s.totalReviews, '題', `紀錄檔 ${fmtBytes(d.journal.bytes)}`],
     ];
-    const counters = [];
     const figures = h('dl.figures');
     for (const [k, v, unit, sub] of figs) {
       const n = h('span.num', { text: num(v) });
-      counters.push([n, v]);
       figures.append(h('div.fig', {},
         h('dt', { text: k }),
         h('dd.fig-v', {}, n, h('span.u', { text: unit })),
@@ -125,10 +123,9 @@ export function statsView(root, ctx) {
     body.append(lower);
     arrangeLower(lower, practiceBlock(d, ctx), recentBlock(d), mockBlock(d, ctx));
 
-    // 三個招牌動作：數字滾上來、題型長條長出來、各節依序浮上來。
-    counters.forEach(([el, v], i) => motion.countUp(el, v, { delay: i * 0.05, duration: 1.1 }));
-    motion.grow(body.querySelectorAll('.krow .meter i'), { delay: 0.2 });
-    motion.rise(body.querySelectorAll('.sec'), { delay: 0.1, stagger: 0.05 });
+    // 骨架換成內容只淡入；累計數字是常駐資訊，直接顯示不滾。題型長條長出來，說明它是比例。
+    motion.swapIn(body);
+    motion.grow(body.querySelectorAll('.krow .meter i'), { delay: 0.1 });
   }
 
   return () => {

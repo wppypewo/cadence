@@ -15,7 +15,8 @@
  * 顏色　　單一強調色鈷藍。紅／綠／琥珀三色只留給批改與評分（錯／對／只差重音），
  *         其他地方不用，才不會稀釋它們的意思。也刻意避開藍紫漸層那一套。
  * 圓角　　全部 2px（--r）。辭典的版面是直角的，圓角只是讓邊緣不刺。
- * 動態　　CSS 過渡進場 160ms、離場 100ms，全部 ease-out。GSAP 的招牌動作另見 js/motion.mjs。
+ * 動態　　CSS 過渡進場 160ms（--ease-out 減速）、離場 100ms（--ease-exit 加速）。
+ *         顏色與框線的 hover 回饋也用 100ms：反覆做的操作最快。GSAP 的招牌動作另見 js/motion.mjs，數字一致。
  *         prefers-reduced-motion 時整組歸零，不是減半。
  *
  * 對比度（WCAG 相對亮度公式，2026-09-25 實算）：
@@ -85,6 +86,7 @@
   --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
   --dur-in: 160ms;
   --dur-out: 100ms;
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
 
   --z-sticky: 10;
   --z-overlay: 100;

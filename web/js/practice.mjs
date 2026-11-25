@@ -455,7 +455,7 @@ function todayTally(current) {
         h('span.tally', { text: parts.join('・') }),
       ));
     }
-    motion.rise([box], { delay: 0.25 });
+    motion.swapIn(box);
   }).catch(() => box.remove());
   return box;
 }

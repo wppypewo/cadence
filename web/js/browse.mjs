@@ -410,8 +410,8 @@ async function showVerb(name, out, back) {
   // 圖例放在表格上方：放在十二張表底下的話，看到圓點的當下要捲過整頁才找得到說明。
   panel.append(h('p.verb-legend', {}, h('span.dot', { 'aria-hidden': 'true' }), '會出題的時態。其餘只供查閱。'));
   panel.append(grid);
-  // 十二張表由左上往右下依序落下，眼睛跟著順序掃一遍，就知道這一頁有多少東西。
-  motion.rise(grid.children, { y: 8, stagger: 0.025, duration: 0.4 });
+  // 換一個動詞就換一整組表，查詢是反覆做的事：整組只淡入，不逐張落下。
+  motion.swapIn(grid);
 }
 
 function verbSub(data) {
