@@ -145,3 +145,24 @@ test('連結：表格儲存格裡的連結照樣切得出來', () => {
     { type: 'link', text: 'https://example.fr/ex1.mp3', href: 'https://example.fr/ex1.mp3' },
   ]);
 });
+
+test('斜體：單星號包住的字，粗體、算式與清單星號不受影響', () => {
+  assert.deepEqual(parseInline('**第 1 題**：*aller* 的 passé composé'), [
+    { type: 'strong', text: '第 1 題' },
+    { type: 'text', text: '：' },
+    { type: 'em', text: 'aller' },
+    { type: 'text', text: ' 的 passé composé' },
+  ]);
+  assert.deepEqual(parseInline('把 *je veux* 換成 *je voudrais*'), [
+    { type: 'text', text: '把 ' },
+    { type: 'em', text: 'je veux' },
+    { type: 'text', text: ' 換成 ' },
+    { type: 'em', text: 'je voudrais' },
+  ]);
+  // 兩側貼著字母或數字的星號是算式或字內符號，不是斜體。
+  assert.deepEqual(parseInline('2*3*4'), [{ type: 'text', text: '2*3*4' }]);
+  // 星號內側是空白就不算。
+  assert.deepEqual(parseInline('a * b * c'), [{ type: 'text', text: 'a * b * c' }]);
+  // 反引號裡的星號照舊是行內碼。
+  assert.deepEqual(parseInline('`*x*`'), [{ type: 'code', text: '*x*' }]);
+});

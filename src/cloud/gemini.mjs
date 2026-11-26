@@ -30,8 +30,7 @@ export function geminiConfig(env = process.env) {
  * thinking 是 3.8 Flash 支援的 low／medium／high；它不支援 minimal（文件的 thinking 表）。
  */
 export async function generateJson({ env, system, prompt, schema, thinking = 'medium', maxOutputTokens = 8192, fetchImpl = fetch }) {
-  const { apiKey, model } = geminiConfig(env);
-  const body = {
+  const { data, candidate, model } = await callGemini({
     systemInstruction: { parts: [{ text: system }] },
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     generationConfig: {
@@ -39,8 +38,46 @@ export async function generateJson({ env, system, prompt, schema, thinking = 'me
       maxOutputTokens,
       responseFormat: { text: { mimeType: 'APPLICATION_JSON', schema } },
     },
-  };
+  }, env, fetchImpl);
+  // MAX_TOKENS 代表 JSON 被截斷；SAFETY 等其他理由則可能整段是空的。兩種都不能拿去解析。
+  if (candidate.finishReason !== 'STOP') throw incomplete(candidate, data);
+  try {
+    return { value: JSON.parse(answerText(candidate)), model: data.modelVersion ?? model, usage: data.usageMetadata ?? null };
+  } catch {
+    throw new CloudError(502, 'Gemini 回傳的 JSON 不完整');
+  }
+}
 
+/**
+ * 多輪對話，回純文字。contents 是 [{ role: 'user' | 'model', text, signature? }]，
+ * 由呼叫端整理好、保證 user／model 交替且最後一則是 user。
+ *
+ * REST 是無狀態的，每一輪都要把整段歷史送回去。Gemini 3 系列的回應會帶 thoughtSignature，
+ * 文件要求下一輪把它原樣放回同一個 part；純文字回應漏帶不會被拒，但推理品質可能變差
+ * （ai.google.dev/gemini-api/docs/thought-signatures，2026-11-25 讀）。
+ * 所以這裡把簽章回給前端，前端下一輪連同那則回覆一起送回來。
+ */
+export async function generateChat({ env, system, contents, thinking = 'low', maxOutputTokens = 8192, fetchImpl = fetch }) {
+  const { data, candidate, model } = await callGemini({
+    systemInstruction: { parts: [{ text: system }] },
+    contents: contents.map(({ role, text, signature }) => ({
+      role,
+      parts: [signature ? { text, thoughtSignature: signature } : { text }],
+    })),
+    generationConfig: { thinkingConfig: { thinkingLevel: thinking }, maxOutputTokens },
+  }, env, fetchImpl);
+  const text = answerText(candidate).trim();
+  // 對話被截斷還有前半段可讀，照樣回給畫面並標記；JSON 被截斷就整個不能用，兩者處理不同。
+  const truncated = candidate.finishReason === 'MAX_TOKENS';
+  if (!text || (candidate.finishReason !== 'STOP' && !truncated)) throw incomplete(candidate, data);
+  // 簽章通常掛在最後一個 part；回覆拆成好幾段時取最後一個有簽章的。
+  const signature = (candidate.content?.parts ?? []).filter((part) => typeof part.thoughtSignature === 'string')
+    .map((part) => part.thoughtSignature).pop() ?? null;
+  return { text, signature, truncated, model: data.modelVersion ?? model, usage: data.usageMetadata ?? null };
+}
+
+async function callGemini(body, env, fetchImpl) {
+  const { apiKey, model } = geminiConfig(env);
   let res;
   try {
     res = await fetchImpl(`${ENDPOINT}/${model}:generateContent`, {
@@ -68,17 +105,17 @@ export async function generateJson({ env, system, prompt, schema, thinking = 'me
     throw new CloudError(502, 'Gemini 回了不是 JSON 的東西');
   }
   const candidate = data?.candidates?.[0];
-  // MAX_TOKENS 代表 JSON 被截斷；SAFETY 等其他理由則可能整段是空的。兩種都不能拿去解析。
-  if (!candidate || candidate.finishReason !== 'STOP') {
-    throw new CloudError(502, `Gemini 沒有完整回應（${candidate?.finishReason ?? data?.promptFeedback?.blockReason ?? '無候選'}）`);
-  }
-  // 開了 thinking 時 parts 可能夾帶 thought 摘要；只取正文。
-  const text = (candidate.content?.parts ?? [])
+  if (!candidate) throw incomplete(candidate, data);
+  return { data, candidate, model };
+}
+
+// 開了 thinking 時 parts 可能夾帶 thought 摘要；只取正文。
+function answerText(candidate) {
+  return (candidate.content?.parts ?? [])
     .filter((part) => typeof part.text === 'string' && !part.thought)
     .map((part) => part.text).join('');
-  try {
-    return { value: JSON.parse(text), model: data.modelVersion ?? model, usage: data.usageMetadata ?? null };
-  } catch {
-    throw new CloudError(502, 'Gemini 回傳的 JSON 不完整');
-  }
+}
+
+function incomplete(candidate, data) {
+  return new CloudError(502, `Gemini 沒有完整回應（${candidate?.finishReason ?? data?.promptFeedback?.blockReason ?? '無候選'}）`);
 }

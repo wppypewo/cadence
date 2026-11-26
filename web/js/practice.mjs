@@ -7,6 +7,7 @@ import { h, clear, icon, announce } from './dom.mjs';
 import { api } from './net.mjs';
 import { isCloudRuntime } from './runtime.mjs';
 import * as motion from './motion.mjs';
+import { peFollowUp } from './chat.mjs';
 
 // 中文名跟 src/engine/today.mjs 的科目表一致：今天頁列的是那一份，點進來標題換了字會以為進錯科。
 const SKILLS = {
@@ -268,9 +269,12 @@ export function practiceView(root, ctx) {
       status.textContent = '批改中，通常要 10–30 秒…';
       clear(result);
       try {
-        const data = await api.aiPeFeedback({ text: readDraft(), task: task.value });
+        const text = readDraft();
+        const consigne = task.value;
+        const data = await api.aiPeFeedback({ text, task: consigne });
         status.textContent = '';
-        result.append(...renderGrade(data));
+        // 追問帶的是送去批改的那一版草稿與這份結果；之後草稿再改，要重新批改才會換。
+        result.append(...renderGrade(data), peFollowUp({ text, task: consigne, result: data }));
         announce(data.total === null ? 'AI 批改完成，但有一項沒判到' : `AI 批改完成：${data.total} / 25`);
       } catch (err) {
         status.textContent = `批改失敗：${err.message}`;
@@ -350,8 +354,13 @@ export function practiceView(root, ctx) {
         message.textContent = `無法使用麥克風：${err.message}`;
       }
     }
+    // 情境對話在右下角的對話面板裡，這裡只放入口：口說練習最常卡在「對方回了什麼要怎麼接」，打字對練補的是這一段。
+    const roleplay = isCloudRuntime() && ctx.openChat
+      ? h('div.practice-actions', {},
+        h('button.btn.btn-sm', { type: 'button', text: 'AI 情境對話（打字對練）', onclick: () => ctx.openChat('roleplay') }))
+      : null;
     return {
-      node: h('section.practice-tool', {}, h('h3', { text: '口說錄音' }), h('div.practice-actions', {}, record), audio, message),
+      node: h('section.practice-tool', {}, h('h3', { text: '口說錄音' }), h('div.practice-actions', {}, record), audio, message, roleplay),
       text: () => null, wordCount: () => null, defaultSource: () => '口說練習', clearDraft: () => {},
     };
   }
