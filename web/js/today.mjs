@@ -30,6 +30,17 @@ import { weeklyFollowUp } from './chat.mjs';
 import { KIND_ZH, SKILL_ZH } from './kinds.mjs';
 
 const WEEKDAY = ['週日', '週一', '週二', '週三', '週四', '週五', '週六'];
+
+/** YYYY-MM-DD → 「11 月 21 日」。今天頁的日期都用報頭那行的寫法，不混用 11-21。 */
+function dayZh(iso) {
+  return `${Number(iso.slice(5, 7))} 月 ${Number(iso.slice(8, 10))} 日`;
+}
+
+/** 日期區間：同月份寫「11 月 21～27 日」，跨月寫完整的兩端。 */
+function rangeZh(from, to) {
+  if (from.slice(0, 7) === to.slice(0, 7)) return `${Number(from.slice(5, 7))} 月 ${Number(from.slice(8, 10))}～${Number(to.slice(8, 10))} 日`;
+  return `${dayZh(from)}～${dayZh(to)}`;
+}
 const ROMAN_MONTH = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
 
 export function todayView(root, ctx) {
@@ -346,7 +357,7 @@ function readingBlock(alive) {
       next.disabled = true;
       load(index + 1);
     });
-    const score = `認得 ${num(counts.seen)}／${num(counts.inBank)} 個字${counts.mature > 0 ? `，${num(counts.mature)} 個穩了` : ''}`;
+    const score = `認得 ${num(counts.seen)}/${num(counts.inBank)} 個字${counts.mature > 0 ? `，${num(counts.mature)} 個穩了` : ''}`;
     const outside = counts.outside > 0 ? `。冠詞、代名詞這類題庫沒收的 ${num(counts.outside)} 個不計` : '';
     sec.replaceChildren(
       h('div.side-head', {}, h('h2.side-h', { text: '今日一句' }), next),
@@ -381,7 +392,7 @@ function weeklyBlock(alive) {
       return;
     }
     if (!alive()) return;
-    const range = `${data.from.slice(5)}～${data.to.slice(5)}`;
+    const range = rangeZh(data.from, data.to);
     const list = (items) => h('ul.stable', {}, items.map((it) => h('li', {},
       h('span.fr', { lang: 'fr', text: it.label }),
       h('span.gl', { text: it.sub || KIND_ZH[it.kind] || '' }),
@@ -535,7 +546,7 @@ function paintMeter(task, meter, bar) {
   let ratio;
   if (task.mode === 'cards') {
     ratio = task.total ? task.seen / task.total : 0;
-    bits.push(`見過 ${num(task.seen)} / ${num(task.total)}`);
+    bits.push(`見過 ${num(task.seen)}/${num(task.total)}`);
   } else {
     ratio = task.window ? task.recent / task.window : 0;
   }
@@ -549,7 +560,7 @@ function paintMeter(task, meter, bar) {
 function recentText(task) {
   const verb = task.mode === 'cards' ? '寫了' : '做了';
   if (task.recent > 0) return `近 ${task.window} 天${verb} ${num(task.recent)} 天`;
-  if (task.lastDay) return `上次是 ${task.lastDay.slice(5)}`;
+  if (task.lastDay) return `上次是 ${dayZh(task.lastDay)}`;
   return `近 ${task.window} 天沒有紀錄`;
 }
 

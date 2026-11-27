@@ -168,7 +168,7 @@ export function reviewView(root, ctx) {
     // 做完這批 `load()` 會再抓一批。光寫「1 / 20」會被讀成「今天做完 20 張就收工」，
     // 但今天到期 9 張加上新卡額度 15 張其實是 24 張。所以前面明寫「這批」，
     // 今天還剩多少交給右邊那行講。
-    countEl.textContent = total && !state.loading ? `這批 ${Math.min(state.idx + 1, total)} / ${total}` : '';
+    countEl.textContent = total && !state.loading ? `這批 ${Math.min(state.idx + 1, total)}/${total}` : '';
     progressEl.setAttribute('aria-valuenow', String(state.idx));
     progressEl.setAttribute('aria-valuemax', String(total));
     motion.progress(bar, total ? state.idx / total : 0);

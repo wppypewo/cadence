@@ -27,7 +27,7 @@
 
 .wb-head { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s1); }
 .wb-back { margin: 0 0 var(--s3) calc(-1 * var(--s2)); }
-.wb-code { font: 600 var(--t-xs)/1 var(--font-num); letter-spacing: 0.1em; color: var(--accent); }
+.wb-code { font: 500 var(--t-xs)/1 var(--font-num); letter-spacing: 0.1em; color: var(--accent); }
 .wb-head h2 { font: 400 var(--t-3xl)/1.05 var(--font-fr); letter-spacing: -0.02em; }
 .wb-fr { font: italic 400 var(--t-lg)/1.3 var(--font-fr); color: var(--text-muted); }
 .wb-sub { font-size: var(--t-sm); color: var(--text-muted); }
@@ -60,14 +60,14 @@
 .practice-task { min-height: 72px; padding: var(--s3); resize: vertical; line-height: 1.6; width: 100%; }
 .ai-actions { display: flex; gap: var(--s3); margin: var(--s3) 0; }
 .ai-result { display: flex; flex-direction: column; gap: var(--s3); font-size: var(--t-sm); }
-.ai-result h4 { font-size: var(--t-sm); font-weight: 600; margin-top: var(--s2); }
+.ai-result h4 { font-size: var(--t-sm); font-weight: 500; margin-top: var(--s2); }
 .ai-total { display: flex; align-items: baseline; gap: var(--s3); }
 .ai-total-n { font-size: var(--t-2xl); font-family: var(--font-num); }
 .ai-anomaly { color: var(--bad); }
 .ai-criteria { margin: 0; border-top: 1px solid var(--line); }
 .ai-criteria dt {
   display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s2) var(--s3);
-  padding-top: var(--s2); font-weight: 600;
+  padding-top: var(--s2); font-weight: 500;
 }
 .ai-criteria dt .fr { flex: 1 1 12rem; }
 .ai-level { color: var(--text-muted); font-weight: 400; }
@@ -77,7 +77,7 @@
 .ai-criteria q { color: var(--text); }
 .ai-fixes, .ai-vocab { margin: 0; padding-left: var(--s5); display: flex; flex-direction: column; gap: var(--s2); }
 .ai-fixes del { color: var(--bad); }
-.ai-fixes ins { text-decoration: none; color: var(--accent); font-weight: 600; }
+.ai-fixes ins { text-decoration: none; color: var(--accent); font-weight: 500; }
 .practice-notes { min-height: 112px; padding: var(--s3); resize: vertical; line-height: 1.6; }
 .practice-audio { width: 100%; }
 .pass-list { display: grid; gap: var(--s2); }
@@ -85,7 +85,7 @@
 .pass-list input { width: 18px; height: 18px; accent-color: var(--accent); }
 .score-fields, .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s4); }
 .assessment { display: flex; flex-direction: column; gap: var(--s3); margin: 0; padding: 0; border: 0; }
-.assessment legend { margin-bottom: var(--s2); font-size: var(--t-sm); font-weight: 600; }
+.assessment legend { margin-bottom: var(--s2); font-size: var(--t-sm); font-weight: 500; }
 .mistake-tags { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s4); }
 /* 規準一項一列，細線分隔。兩欄會把「自我介紹／引導訪談」這種長標籤擠成兩行。 */
 .rubric-grid { display: flex; flex-direction: column; border-top: 1px solid var(--line); }
@@ -103,17 +103,17 @@
 }
 .baseline-step > .num { font: 400 var(--t-2xl)/1 var(--font-fr); color: var(--text-faint); }
 .baseline-step > div { display: flex; flex-direction: column; gap: 2px; }
-.baseline-step strong { font: 600 var(--t-sm)/1.2 var(--font-num); letter-spacing: 0.08em; color: var(--accent); }
+.baseline-step strong { font: 500 var(--t-sm)/1.2 var(--font-num); letter-spacing: 0.04em; color: var(--accent); }
 .baseline-step small { font-size: var(--t-sm); color: var(--text-muted); }
 
 .mock-fieldset { margin: 0; padding: 0; border: 0; }
-.mock-fieldset legend { margin-bottom: var(--s2); font-size: var(--t-sm); font-weight: 600; }
+.mock-fieldset legend { margin-bottom: var(--s2); font-size: var(--t-sm); font-weight: 500; }
 .mock-scores { display: flex; flex-direction: column; border-top: 1px solid var(--line); }
 .mock-score {
   display: grid; grid-template-columns: 3rem minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center; gap: var(--s2); padding: var(--s2) 0; border-bottom: 1px solid var(--line);
 }
-.mock-score strong { font: 600 var(--t-sm)/1 var(--font-num); letter-spacing: 0.08em; color: var(--accent); }
+.mock-score strong { font: 500 var(--t-sm)/1 var(--font-num); letter-spacing: 0.04em; color: var(--accent); }
 .mock-score .of { color: var(--text-faint); }
 /* 過門檻與否是在評分，所以這一行可以用評分色；只上字色與左線，不鋪底。 */
 .mock-result { padding-left: var(--s3); border-left: 2px solid var(--line-strong); font-size: var(--t-sm); color: var(--text-muted); }
@@ -132,7 +132,7 @@
 .wb-after h3 { margin-bottom: var(--s3); font-size: var(--t-xs); font-weight: 500; color: var(--text-muted); }
 .tally { font-size: var(--t-sm); text-align: right; }
 .skill[data-done='1'] .tally { color: var(--text-muted); }
-.skill[aria-current] .skill-main > span:first-child { font-weight: 600; }
+.skill[aria-current] .skill-main > span:first-child { font-weight: 500; }
 .skill[data-low='1'] .tally, .skill[data-low='1'] .dim { color: var(--warn); }
 
 @media (max-width: 1100px) {
@@ -194,7 +194,7 @@
 .cast-go .cast-k { color: var(--text); }
 .cast-note { margin-top: var(--s1); font-size: var(--t-xs); color: var(--text-faint); }
 .cast-note:only-child { margin-top: 0; font-size: var(--t-sm); color: var(--text-muted); }
-.cast-note strong { color: var(--text); font-weight: 600; }
+.cast-note strong { color: var(--text); font-weight: 500; }
 
 .hero-act { display: flex; align-items: center; gap: var(--s4) var(--s5); flex-wrap: wrap; margin-top: var(--s6); }
 /* 全頁唯一一顆實心鍵，比預設大一號；按鈕字不換行，數字在窄欄也不會被拆到下一行。 */
@@ -210,14 +210,14 @@
 }
 .side-block { display: flex; flex-direction: column; gap: var(--s2); }
 .side-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s3); }
-.side-h { font: 600 var(--t-xs)/1.4 var(--font-ui); letter-spacing: 0.08em; color: var(--text-faint); }
+.side-h { font: 500 var(--t-xs)/1.4 var(--font-ui); letter-spacing: 0.04em; color: var(--text-faint); }
 .side-n { font-size: var(--t-xs); color: var(--text-faint); }
 .side-foot { font-size: var(--t-xs); color: var(--text-faint); }
 .side-empty { font-size: var(--t-sm); color: var(--text-muted); }
 .side-err { font-size: var(--t-sm); color: var(--bad); }
 .ai-brief { display: flex; flex-direction: column; gap: var(--s2); font-size: var(--t-sm); }
-.ai-brief-head { font-weight: 600; }
-.ai-brief-h { font: 600 var(--t-xs)/1.4 var(--font-ui); color: var(--text-muted); margin-top: var(--s2); }
+.ai-brief-head { font-weight: 500; }
+.ai-brief-h { font: 500 var(--t-xs)/1.4 var(--font-ui); color: var(--text-muted); margin-top: var(--s2); }
 .ai-brief-list { margin: 0; padding-left: var(--s5); display: flex; flex-direction: column; gap: var(--s1); }
 
 /* 法文句子是這一塊的主角，照全檔的原則用法文字體、比介面大。行高留給底線與下伸部。 */
@@ -229,7 +229,7 @@
  * 底線是非文字圖形，要 3:1：--accent-mid 3.77／3.17、--line-strong 3.72／3.12。
  */
 .w { text-underline-offset: 0.28em; text-decoration-thickness: 2px; }
-.w[data-tier="mature"] { color: var(--accent); font-weight: 600; }
+.w[data-tier="mature"] { color: var(--accent); font-weight: 500; }
 .w[data-tier="seen"] { color: var(--text); text-decoration-line: underline; text-decoration-color: var(--accent-mid); }
 .w[data-tier="fresh"] { color: var(--text-muted); text-decoration-line: underline; text-decoration-style: dotted; text-decoration-color: var(--line-strong); }
 .w[data-tier="outside"] { color: var(--text-faint); }
@@ -252,7 +252,7 @@
 .stable .d { font: 400 var(--t-sm) var(--font-fr); color: var(--ok); }
 .side-more summary { padding-top: var(--s2); font-size: var(--t-xs); color: var(--text-muted); cursor: pointer; }
 .side-more .stable { border-top: 0; }
-/* 手機上 27px 高按不準。不改成 flex 撐高：summary 一變 flex，展開三角形就沒了。 */
+/* 手機上 27px 高按不準。不改成 flex 撐高：summary 一變 flex，展開三角形就沒了。 13px 不是隨手值：12px 字 ×1.6 行高約 19px，上下各 13 共約 45px，剛好過 44px 觸控下限。 */
 @media (max-width: 860px) { .side-more summary { padding-block: 13px; } }
 
 /* ---- 四科帳本 ---- */
@@ -312,10 +312,10 @@
  */
 .stamp {
   display: inline-flex; flex-direction: column; align-items: center;
-  padding: 3px var(--s2);
+  padding: var(--s1) var(--s2);
   border: 2px solid var(--accent); border-radius: var(--r);
   background: var(--bg); color: var(--accent);
-  font: 600 var(--t-xs)/1.2 var(--font-ui); letter-spacing: 0.06em; white-space: nowrap;
+  font: 500 var(--t-xs)/1.2 var(--font-ui); letter-spacing: 0.06em; white-space: nowrap;
   rotate: -7deg; cursor: pointer;
 }
 .stamp b { font: italic 500 var(--t-md)/1 var(--font-fr); letter-spacing: 0; }
@@ -386,7 +386,7 @@ button.stamp:hover:not(:disabled) { background: var(--accent-weak); }
 .md-table th, .md-table td {
   padding: var(--s2) var(--s3); border: 1px solid var(--line); vertical-align: top;
 }
-.md-table th { background: var(--surface); font-weight: 600; white-space: nowrap; }
+.md-table th { background: var(--surface); font-weight: 500; white-space: nowrap; }
 
 .ledger-note { padding-top: var(--s3); font-size: var(--t-xs); color: var(--text-faint); }
 
@@ -472,7 +472,7 @@ button.stamp:hover:not(:disabled) { background: var(--accent-weak); }
 /* 題型・等級・第幾次。資訊有用但不該搶眼，排成一行小字。 */
 .card-kind {
   display: flex; flex-wrap: wrap; justify-content: center; gap: var(--s3);
-  font-size: var(--t-xs); letter-spacing: 0.08em; color: var(--text-faint);
+  font-size: var(--t-xs); letter-spacing: 0.04em; color: var(--text-faint);
 }
 .card-kind span + span::before { content: '·'; margin-right: var(--s3); }
 
@@ -530,7 +530,7 @@ button.stamp:hover:not(:disabled) { background: var(--accent-weak); }
   /* .prompt 是直向 flex，不 align-self 就會拉成整條橫幅。 */
   align-self: center;
   display: inline-block; padding: var(--s1) var(--s3);
-  font-family: var(--font-fr); font-size: var(--t-xl); font-weight: 600;
+  font-family: var(--font-fr); font-size: var(--t-xl); font-weight: 500;
   color: var(--accent); border: 1px solid var(--accent); border-radius: var(--r);
 }
 .rw-source { max-width: 56ch; font-size: var(--t-lg); line-height: 1.6; }
@@ -548,7 +548,7 @@ button.stamp:hover:not(:disabled) { background: var(--accent-weak); }
 
 /* 只留一條底線：這是在紙上寫字的地方，不是一個表單欄位。 */
 .answer-input {
-  width: min(420px, 100%); padding: 0 0 10px;
+  width: min(420px, 100%); padding: 0 0 12px;
   font-family: var(--font-fr); font-size: var(--t-2xl); line-height: 1.2; text-align: center;
   background: transparent; color: var(--text);
   border: 0; border-bottom: 1px solid var(--line-strong); border-radius: 0;
@@ -556,11 +556,11 @@ button.stamp:hover:not(:disabled) { background: var(--accent-weak); }
 .answer-input::placeholder { color: var(--text-faint); font-family: var(--font-ui); font-size: var(--t-md); }
 /* 聚焦時底線加粗並換強調色，padding 少 1px 抵掉多出來的那 1px 邊框，字才不會跳。 */
 .answer-input:focus, .answer-input:focus-visible {
-  outline: none; border-bottom: 2px solid var(--accent); padding-bottom: 9px;
+  outline: none; border-bottom: 2px solid var(--accent); padding-bottom: 11px;
 }
 /* 作答框要多行：一整句寫在單行輸入框裡看不到自己寫了什麼。 */
 .answer-area {
-  width: min(600px, 100%); min-height: 96px; padding: var(--s2) 0 10px;
+  width: min(600px, 100%); min-height: 96px; padding: var(--s2) 0 12px;
   font-size: var(--t-xl); line-height: 1.5; text-align: left; resize: vertical;
 }
 
@@ -645,7 +645,7 @@ button.stamp:hover:not(:disabled) { background: var(--accent-weak); }
   transition: background var(--dur-out) var(--ease-out), border-color var(--dur-out) var(--ease-out);
 }
 .rate + .rate { border-left: 1px solid var(--line); }
-.rate b { font-size: var(--t-md); font-weight: 600; }
+.rate b { font-size: var(--t-md); font-weight: 500; }
 .rate kbd { position: absolute; top: var(--s2); left: var(--s2); }
 /* 按下去之後這張卡會排到哪一天。比數字鍵重要，所以用 muted 不用 faint。 */
 .rate small { font-family: var(--font-num); font-size: var(--t-sm); color: var(--text-muted); }
@@ -678,7 +678,7 @@ button.stamp:hover:not(:disabled) { background: var(--accent-weak); }
 
 .verdict-head {
   display: flex; align-items: center; justify-content: center; gap: var(--s2);
-  font-weight: 600;
+  font-weight: 500;
 }
 .verdict[data-tone="ok"]   .verdict-head { color: var(--ok); }
 .verdict[data-tone="near"] .verdict-head { color: var(--warn); }
@@ -889,7 +889,7 @@ button.stamp:hover:not(:disabled) { background: var(--accent-weak); }
   gap: var(--s3); padding: var(--s2) 0; border-bottom: 1px solid var(--line);
 }
 .skill:first-child, .attempt:first-child { border-top: 1px solid var(--line); }
-.skill-code { font-family: var(--font-num); font-size: var(--t-xs); font-weight: 600; letter-spacing: 0.04em; color: var(--accent); }
+.skill-code { font-family: var(--font-num); font-size: var(--t-xs); font-weight: 500; letter-spacing: 0.04em; color: var(--accent); }
 .skill-main, .attempt-main { display: flex; flex-direction: column; min-width: 0; font-size: var(--t-sm); }
 .skill-main > *, .attempt-main > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dim { font-size: var(--t-xs); color: var(--text-muted); }
@@ -920,7 +920,7 @@ button.stamp:hover:not(:disabled) { background: var(--accent-weak); }
 .chart .marker-t { fill: var(--warn); font-size: var(--tick, 10px); }
 
 .legend { display: flex; flex-wrap: wrap; gap: var(--s4); margin-top: var(--s3); font-size: var(--t-xs); color: var(--text-muted); }
-.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: var(--s2); vertical-align: -1px; }
 /* 「未學」「沒學到」那一格的顏色就是 --sunken，跟底色幾乎一樣，不描邊會像少了一個色塊。 */
 .legend i.blank { box-shadow: inset 0 0 0 1px var(--line-strong); }
 
@@ -976,10 +976,10 @@ button.stamp:hover:not(:disabled) { background: var(--accent-weak); }
 .fc-big .of { font-size: var(--t-lg); color: var(--text-muted); }
 /* 全範圍比例只當資訊，不比目標，所以退到跟前提同一級的灰字。 */
 .fc-rate { font-size: var(--t-sm); color: var(--text-muted); max-width: 64ch; text-wrap: pretty; }
-.fc-rate b { font-family: var(--font-num); font-weight: 600; color: var(--text); }
+.fc-rate b { font-family: var(--font-num); font-weight: 500; color: var(--text); }
 /* 學過的卡記得幾成。目標比的是這個數，所以它帶達標的語意色、字級僅次於大數字。 */
 .fc-learned { font-size: var(--t-lg); color: var(--text); }
-.fc-learned b { font-family: var(--font-num); font-weight: 600; }
+.fc-learned b { font-family: var(--font-num); font-weight: 500; }
 .fc-verdict[data-tone="ok"] .tone { color: var(--ok); }
 .fc-verdict[data-tone="bad"] .tone { color: var(--warn); }
 .fc-verdict .sub { font-size: var(--t-sm); color: var(--text-muted); max-width: 64ch; text-wrap: pretty; }
@@ -1000,7 +1000,7 @@ button.stamp:hover:not(:disabled) { background: var(--accent-weak); }
 
 /* 反推結果的那一句。跟結論同一套字，但小一級：它是結論的推論，不是第二個結論。 */
 .sec .lead { font: 400 var(--t-xl)/1.4 var(--font-fr); margin-bottom: var(--s2); }
-.sec .lead b { font-family: var(--font-num); font-weight: 600; color: var(--accent); }
+.sec .lead b { font-family: var(--font-num); font-weight: 500; color: var(--accent); }
 
 table.grid { width: 100%; margin-top: var(--s4); border-collapse: collapse; font-size: var(--t-sm); }
 table.grid th, table.grid td { padding: var(--s2) var(--s3); text-align: right; white-space: nowrap; }
@@ -1118,7 +1118,7 @@ table.grid tr[data-hit="1"] td { background: var(--accent-weak); color: var(--ac
   display: flex; align-items: baseline; gap: var(--s2); flex-wrap: wrap;
   padding-bottom: var(--s2); margin-bottom: var(--s1);
   border-bottom: 1px solid var(--line-strong);
-  font-size: var(--t-sm); font-weight: 600;
+  font-size: var(--t-sm); font-weight: 500;
 }
 .tense h3 .raw { font: italic 400 var(--t-sm)/1 var(--font-fr); color: var(--text-muted); }
 .dot {
@@ -1126,7 +1126,7 @@ table.grid tr[data-hit="1"] td { background: var(--accent-weak); color: var(--ac
   background: var(--accent); flex: none; align-self: center;
 }
 .verb-table { width: 100%; border-collapse: collapse; }
-.verb-table td { padding: 3px 0; white-space: nowrap; }
+.verb-table td { padding: var(--s1) 0; white-space: nowrap; }
 .verb-table .p { width: 4.5em; color: var(--text-muted); font-size: var(--t-sm); }
 .verb-table .f { font: 400 var(--t-lg)/1.35 var(--font-fr); }
 
@@ -1176,7 +1176,7 @@ table.grid tr[data-hit="1"] td { background: var(--accent-weak); color: var(--ac
   padding: var(--s4) 0; border-bottom: 1px solid var(--line);
 }
 .res-steps h3 { font: 500 var(--t-xl)/1.2 var(--font-fr); }
-.res-rhythm { font-size: var(--t-sm); font-weight: 600; color: var(--text); }
+.res-rhythm { font-size: var(--t-sm); font-weight: 500; color: var(--text); }
 .res-copy { max-width: 56ch; font-size: var(--t-sm); color: var(--text-muted); }
 
 /* 週計畫：星期、科目代號、任務、時間、開始。代號沿用今天頁帳本的樣子，兩頁講的是同四科。 */
@@ -1198,7 +1198,7 @@ table.grid tr[data-hit="1"] td { background: var(--accent-weak); color: var(--ac
 }
 .res-row:first-child { padding-top: var(--s2); }
 .res-source { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--s1) var(--s3); font-size: var(--t-xs); color: var(--text-muted); }
-.res-source > span:first-child { font-weight: 600; }
+.res-source > span:first-child { font-weight: 500; }
 .res-skills { color: var(--text-faint); }
 .res-row h3 { margin-top: var(--s2); font: 500 var(--t-xl)/1.25 var(--font-fr); }
 .res-desc { max-width: 58ch; margin-top: var(--s2); font-size: var(--t-sm); color: var(--text-muted); text-wrap: pretty; }
@@ -1207,7 +1207,7 @@ table.grid tr[data-hit="1"] td { background: var(--accent-weak); color: var(--ac
 .resource-notes dt { color: var(--text-faint); white-space: nowrap; }
 .resource-notes dd { margin: 0; color: var(--text); }
 .res-go { padding-top: var(--s1); }
-.resource-link { display: inline-flex; align-items: center; gap: var(--s2); min-height: 32px; color: var(--accent); font-weight: 600; font-size: var(--t-sm); text-decoration: none; white-space: nowrap; }
+.resource-link { display: inline-flex; align-items: center; gap: var(--s2); min-height: 32px; color: var(--accent); font-weight: 500; font-size: var(--t-sm); text-decoration: none; white-space: nowrap; }
 .resource-link:hover { color: var(--accent-hover); text-decoration: underline; text-underline-offset: 3px; }
 .resource-link svg { width: 16px; height: 16px; transition: transform var(--dur-out) var(--ease-out); }
 .resource-link:hover svg { transform: translateX(3px); }
@@ -1241,7 +1241,7 @@ table.grid tr[data-hit="1"] td { background: var(--accent-weak); color: var(--ac
   border-top: 1px solid var(--line); padding-top: var(--s3);
 }
 .example-fr { font-family: var(--font-fr); font-size: var(--t-lg); line-height: 1.45; }
-.example-hit { font-weight: 600; color: var(--accent); }
+.example-hit { font-weight: 500; color: var(--accent); }
 .example-zh { font-size: var(--t-sm); color: var(--text-muted); margin-top: 2px; }
 .example-credit { font-size: var(--t-xs); color: var(--text-faint); margin-top: 2px; }
 .example-credit a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
@@ -1260,7 +1260,7 @@ table.grid tr[data-hit="1"] td { background: var(--accent-weak); color: var(--ac
   padding: var(--s2) var(--s3); background: var(--sunken); border-radius: var(--r);
 }
 .chat-msg[data-role="model"] { padding-left: var(--s3); border-left: 2px solid var(--line-strong); }
-.chat-who { font-size: var(--t-2xs); font-weight: 600; color: var(--text-muted); }
+.chat-who { font-size: var(--t-2xs); font-weight: 500; color: var(--text-muted); }
 .chat-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .chat-pending .chat-text { color: var(--text-muted); }
 .chat-body { overflow-wrap: anywhere; }
@@ -1275,7 +1275,7 @@ table.grid tr[data-hit="1"] td { background: var(--accent-weak); color: var(--ac
 
 /* 批改結果與週回顧下方的追問：上面一條線跟結果分開，表示這是另一段。 */
 .chat-follow { display: flex; flex-direction: column; gap: var(--s3); margin-top: var(--s3); padding-top: var(--s3); border-top: 1px solid var(--line); }
-.chat-follow > h4 { font-size: var(--t-sm); font-weight: 600; }
+.chat-follow > h4 { font-size: var(--t-sm); font-weight: 500; }
 
 /* 右下角的按鈕。手機版要疊在底部導覽（52px）上面，複習的專注模式整個藏起來。 */
 .chat-fab {
@@ -1283,7 +1283,7 @@ table.grid tr[data-hit="1"] td { background: var(--accent-weak); color: var(--ac
   min-height: 44px; padding: 0 var(--s4);
   border: 1px solid var(--accent); border-radius: 999px;
   background: var(--accent); color: var(--accent-on);
-  font: 600 var(--t-sm)/1 var(--font-ui);
+  font: 500 var(--t-sm)/1 var(--font-ui);
   box-shadow: var(--shadow); cursor: pointer;
   transition: background var(--dur-out) var(--ease-out);
 }
