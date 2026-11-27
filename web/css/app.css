@@ -23,7 +23,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-h1, h2, h3 { margin: 0; font-weight: 600; line-height: 1.25; letter-spacing: -0.01em; }
+h1, h2, h3 { margin: 0; font-weight: 500; line-height: 1.25; letter-spacing: -0.01em; }
 p { margin: 0; }
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
@@ -105,7 +105,7 @@ kbd {
   transition: color var(--dur-out) var(--ease-out), border-color var(--dur-out) var(--ease-out);
 }
 .nav a:hover { color: var(--text); }
-.nav a[aria-current="page"] { color: var(--text); font-weight: 600; border-left-color: var(--accent); }
+.nav a[aria-current="page"] { color: var(--text); font-weight: 500; border-left-color: var(--accent); }
 .nav .badge {
   font: 500 var(--t-sm)/1 var(--font-num); font-variant-numeric: lining-nums tabular-nums;
   color: var(--accent);
@@ -142,10 +142,10 @@ body[data-focus] .main { padding: 0; }
 .page-head h1, .page-head h2 { font: 500 var(--t-2xl)/1.1 var(--font-fr); letter-spacing: -0.015em; }
 .page-head p { color: var(--text-muted); font-size: var(--t-sm); margin-top: var(--s1); }
 
-/* 區段小標：全大寫式的細字，給側欄與表格欄頭用。 */
+/* 區段小標：小字、淡色、微加字距，不全大寫（2026-11-27 unslop：字距 0.08em→0.04em、字重 600→500）。給側欄與表格欄頭用。 */
 .kicker {
   margin: 0 0 var(--s3);
-  font: 600 var(--t-xs)/1 var(--font-ui); letter-spacing: 0.08em; color: var(--text-faint);
+  font: 500 var(--t-xs)/1 var(--font-ui); letter-spacing: 0.04em; color: var(--text-faint);
 }
 
 /* ---- 元件 ------------------------------------------------------------- */
@@ -179,8 +179,8 @@ body[data-focus] .main { padding: 0; }
 .btn-quiet { border-color: transparent; padding: 0 var(--s2); color: var(--text-muted); }
 .btn-quiet:hover:not(:disabled) { border-color: transparent; color: var(--text); }
 
-.btn-sm { min-height: 30px; padding: 0 var(--s3); font-size: var(--t-xs); }
-.btn-lg { min-height: 52px; padding: 0 var(--s5); font-size: var(--t-lg); font-weight: 600; }
+.btn-sm { min-height: 32px; padding: 0 var(--s3); font-size: var(--t-xs); }
+.btn-lg { min-height: 52px; padding: 0 var(--s5); font-size: var(--t-lg); font-weight: 500; }
 .btn-lg .num { font-size: 1.15em; font-weight: 500; }
 
 .field { display: flex; flex-direction: column; gap: var(--s1); }
@@ -213,7 +213,7 @@ body[data-focus] .main { padding: 0; }
   position: absolute; inset: 0; opacity: 0; cursor: pointer; margin: 0;
 }
 .toggle span {
-  display: inline-flex; align-items: center; min-height: 30px; padding: 0 var(--s3);
+  display: inline-flex; align-items: center; min-height: 32px; padding: 0 var(--s3);
   border: 1px solid var(--line-strong); border-radius: var(--r);
   font-size: var(--t-sm); color: var(--text-muted);
   transition: background var(--dur-out) var(--ease-out), color var(--dur-out) var(--ease-out);
@@ -273,7 +273,7 @@ body[data-focus] .main { padding: 0; }
 .seg button[aria-pressed="true"] { background: var(--text); color: var(--bg); }
 
 /* 範圍選單的內容。 */
-.scope-h { margin: 0 0 var(--s2); font-size: var(--t-xs); font-weight: 600; letter-spacing: 0.06em; color: var(--text-faint); }
+.scope-h { margin: 0 0 var(--s2); font-size: var(--t-xs); font-weight: 500; letter-spacing: 0.04em; color: var(--text-faint); }
 .scope-h + .toggles { margin-bottom: var(--s4); }
 .toggles { display: flex; flex-wrap: wrap; gap: var(--s1); }
 .scope-note { font-size: var(--t-xs); color: var(--text-faint); line-height: 1.5; }
@@ -444,7 +444,7 @@ body[data-focus] .main { padding: 0; }
   padding: var(--s6);
 }
 .auth-card h1 { margin-bottom: var(--s1); font-size: var(--t-2xl); text-wrap: balance; }
-.auth-card label { margin-top: var(--s2); font-size: var(--t-sm); font-weight: 600; }
+.auth-card label { margin-top: var(--s2); font-size: var(--t-sm); font-weight: 500; }
 .auth-card .btn { margin-top: var(--s2); }
 .auth-lead { max-width: 38ch; color: var(--text-muted); text-wrap: pretty; }
 .auth-switch {
